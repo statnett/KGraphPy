@@ -1,6 +1,7 @@
 from rdflib.graph import Graph
-from rdflib.plugin import register, Parser
-from rdflib import URIRef
+from rdflib.plugin import register
+from rdflib.parser import Parser
+from rdflib import URIRef, Literal
 import cim_plugin.cimxml
 
 register(
@@ -18,13 +19,17 @@ def check_plugin_registered(name: str) -> None:
             print(" -", p.name, "=>", p.module_path, p.class_name)
 
 def main():
-    file="./cimtest1.xml"
-    check_plugin_registered("cimxml")
+    file="./cimtest2.xml"
+    linkmlfile = "../CoreEquipment.linkml.yaml"
     g = Graph()
-    g.parse(file, format="cimxml")
-    # for s, p, o in g:
+    g.parse(file, format="cimxml", schema_path=linkmlfile)
+    for s, p, o in g:
+        if isinstance(o, Literal):
+            print(f"Subject '{s}', predicate '{p}' and Object '{o}' with datatype: {o.datatype}")
         # print(s, "->", p, "->", o)
-    print("postprocess:", list(g.triples((None, URIRef("urn:processed"), None))))
+    # check_plugin_registered("cimxml")
+    # print(list(g.triples((URIRef('http://iec.ch/TC57/CIM100#_b294e2e6-d1cd-2644-b079-27641ab2d844'), None, None))))
+
 
 if __name__ == "__main__":
     main()
