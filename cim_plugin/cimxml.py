@@ -155,6 +155,14 @@ def fix_rdf_ids(graph, schemaview):
             graph.add((s, p, new_uri))
             graph.remove((s, p, old_uri))
 
+
+def graph_uses_canonical_namespace(graph, canonical_ns):
+    for _, uri in graph.namespaces():
+        if str(uri).rstrip("#/") == canonical_ns.rstrip("#/"):
+            return True
+    return False
+
+
 def detect_cim_namespace(schemaview):
     prefixes = schemaview.schema.prefixes
 
@@ -178,6 +186,11 @@ def detect_cim_namespace(schemaview):
     raise ValueError("Model has no 'cim' prefix defined")
 
 def normalize_cim_uris(graph, canonical_ns):
+    if graph_uses_canonical_namespace(graph, canonical_ns):
+        print("CIM namespace matches model. Skip normalisation")
+        return
+    
+    print("Normalising CIM namespaces...")
     triples = list(graph)
     for s, p, o in triples:
         new_s = normalize_uri(s, canonical_ns)
