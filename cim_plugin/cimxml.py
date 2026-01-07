@@ -148,37 +148,21 @@ def inject_integer_type(schemaview: SchemaView) -> None:
     schemaview.set_modified() # Oppdater interne indekser i SchemaView 
 
 
-# def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
-
-#     with open(schema_path) as f:
-#         raw = yaml.safe_load(f)
-
-#     # Find all class attributes which had integer as range before import into schemaview by examining the raw file
-#     # These were reassigned as string because integer was not a type in the linkML model
-#     integer_attrs = []
-
-#     for cls_name, cls in raw.get("classes", {}).items():
-#         if cls is None:
-#             continue
-
-#         attrs = cls.get("attributes") or {}
-#         for slot_name, slot_def in attrs.items():
-#             if slot_def and slot_def.get("range") == "integer":
-#                 integer_attrs.append((cls_name, slot_name))
-
-#     # Reassign integer to the ranges of these class attributes
-#     for cls_name, slot_name in integer_attrs:
-#         cls = schemaview.get_class(cls_name)
-#         if cls and cls.attributes and slot_name in cls.attributes:
-#             cls.attributes[slot_name].range = "integer"
-
-#     schemaview.set_modified()
-
-
 def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
+    """Find the slots which contain range: integer in raw yaml, and patch them in the schemaview.
+    
+    Parameters:
+        schemaview (SchemaView): The schemaview which is to be patched.
+        schema_path (str): Path to the file with the raw yaml linkML data.
+
+    Raises:
+        ValueError: - If slot is not a dict in the raw yaml.
+                    - If slot is not found in the schemaview.
+    """
     with open(schema_path) as f:
         raw = yaml.safe_load(f)
 
+    # Consider refactoring the integer_attrs collection into a separate function
     integer_attrs = []
 
     # Find all class attribute slots which had integer as range before import into schemaview, by examining the raw file
@@ -189,8 +173,16 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
 
         attrs = cls.get("attributes") or {}
         for slot_name, slot_def in attrs.items():
+            print(attrs.items())
+            if not isinstance(slot_def, dict):
+                raise ValueError(f"{slot_name} in {cls_name} have unexpected structure. Attributes should be dict.")
+            
             if slot_def and slot_def.get("range") == "integer":
                 integer_attrs.append(slot_name)
+
+    if not integer_attrs: 
+        print("No attributes with range=integer found. No changes made to schemaview.") 
+        return
 
     # Reassign integer to the ranges of these class attribute slots
     for slot_name in integer_attrs:
@@ -198,6 +190,8 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
         if slot:
             slot.range = "integer"
             schemaview.add_slot(slot)
+        else:
+            raise ValueError(f"{slot_name} not found in schemaview")
 
     schemaview.set_modified()
 
