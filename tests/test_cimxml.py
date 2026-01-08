@@ -1,7 +1,8 @@
 from cim_plugin.cimxml import (
     looks_like_cim_uri, 
     inject_integer_type, 
-    patch_integer_ranges, 
+    patch_integer_ranges,
+    detect_uri_collisions, 
     _clean_uri
 )
 import pytest
@@ -10,7 +11,7 @@ from linkml_runtime.linkml_model import TypeDefinition
 from collections import defaultdict
 import yaml
 from pathlib import Path
-from rdflib import URIRef
+from rdflib import URIRef, Graph
 import logging
 from pytest import LogCaptureFixture
 
@@ -363,6 +364,106 @@ def test_patch_integer_ranges_mismatchedschemaviews(tmp_path: Path, mock_schemav
     assert sv.schema.slots["startDate"].range == "string"
     sv.add_slot.assert_not_called() 
     sv.set_modified.assert_not_called()
+
+
+
+# Unit tests detect_uri_collisions
+
+
+@pytest.mark.parametrize(
+    "triples",
+    [
+        pytest.param([(URIRef("http://ex.com#a"), URIRef("p"), URIRef("http://ex.com#b"))],
+                     id="Completely different uris"),
+        pytest.param([(URIRef("http://ex.com#_a"), URIRef("p"), URIRef("http://ex.com#_b"))],
+                     id="Completely different, but require cleaning"),
+        pytest.param([
+            (URIRef("http://ex.com#_a"), URIRef("p"), URIRef("http://ex.com#_b")),
+            (URIRef("http://ex.com#_c"), URIRef("p"), URIRef("http://ex.com#_d")),
+        ], id="Several triples, no collision")
+    ]
+)
+def test_detect_uri_collisions_nocollision(triples: list) -> None:
+    g = Graph()
+    for s, p, o in triples:
+        g.add((s, p, o))
+
+    id_set = {"a", "b", "c", "d"}
+
+    detect_uri_collisions(g, id_set)
+
+
+def test_detect_uri_collisions_multiple() -> None:
+    g = Graph()
+
+    g.add((URIRef("http://ex.com#_a"), URIRef("p"), URIRef("o")))
+    g.add((URIRef("http://other.com#a"), URIRef("p"), URIRef("o")))
+    g.add((URIRef("http://ex.com#_b"), URIRef("p"), URIRef("o")))
+    g.add((URIRef("http://other.com#b"), URIRef("p"), URIRef("o")))
+
+    id_set = {"a", "b"}
+
+    with pytest.raises(ValueError) as exc:
+        detect_uri_collisions(g, id_set)
+
+    msg = str(exc.value)
+
+    assert "http://ex.com#_a" in msg
+    assert "http://other.com#a" in msg
+    assert "urn:uuid:a" in msg
+
+    assert "http://ex.com#_b" in msg
+    assert "http://other.com#b" in msg
+    assert "urn:uuid:b" in msg
+
+
+def test_detect_uri_collisionsinobject() -> None:
+    g = Graph()
+    g.add((URIRef("s1"), URIRef("p"), URIRef("http://ex.com#_x")))
+    g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#x")))
+
+    id_set = {"x"}
+
+    with pytest.raises(ValueError) as exc:
+        detect_uri_collisions(g, id_set)
+
+    msg = str(exc.value)
+    assert "http://ex.com#_x" in msg
+    assert "http://other.com#x" in msg
+    assert "urn:uuid:x" in msg
+
+
+def test_detect_uri_collisionssubjectvsobject() -> None:
+    g = Graph()
+    g.add((URIRef("http://ex.com#_x"), URIRef("p"), URIRef("o1")))
+    g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#x")))
+
+    id_set = {"x"}
+
+    with pytest.raises(ValueError) as exc:
+        detect_uri_collisions(g, id_set)
+
+    msg = str(exc.value)
+    assert "http://ex.com#_x" in msg
+    assert "http://other.com#x" in msg
+    assert "urn:uuid:x" in msg
+
+
+def test_detect_uri_collisionemptyfragments() -> None:
+    g = Graph()
+    g.add((URIRef("http://ex.com#_"), URIRef("p"), URIRef("o1")))
+    g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#__")))
+
+    id_set = {"x"}
+
+    with pytest.raises(ValueError) as exc:
+        detect_uri_collisions(g, id_set)
+
+    msg = str(exc.value)
+    assert "http://ex.com#_" in msg
+    assert "http://other.com#__" in msg
+    assert "urn:uuid:" in msg
+
 
 # Unit tests _clean_uri
 @pytest.mark.parametrize(

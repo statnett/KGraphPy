@@ -211,8 +211,49 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
 
     schemaview.set_modified()
 
+
+def detect_uri_collisions(graph: Graph, id_set: set[str]) -> None:
+    """Scan the graph for URI collisions that will happen if they are cleaned with _clean_uri.
+   
+    Parameters:
+        graph (Graph): The graph to scan for collisions.
+        id_set (set[str]): A set of uri that should be cleaned.
+    
+    Raises: 
+        ValueError: with list of collisions if collisions are found.
+    """
+    uri_map = {}
+    reverse_map = {}
+    collisions = []
+
+    for s, p, o in graph:
+        # SUBJECT
+        if isinstance(s, URIRef):
+            new_s = _clean_uri(s, uri_map, id_set)
+            if new_s != s:
+                if new_s in reverse_map and reverse_map[new_s] != s:
+                    collisions.append((s, reverse_map[new_s], new_s))
+                else:
+                    reverse_map[new_s] = s
+
+        # OBJECT
+        if isinstance(o, URIRef):
+            new_o = _clean_uri(o, uri_map, id_set)
+            if new_o != o:
+                if new_o in reverse_map and reverse_map[new_o] != o:
+                    collisions.append((o, reverse_map[new_o], new_o))
+                else:
+                    reverse_map[new_o] = o
+
+    if collisions:
+        msg_lines = ["IRI collisions detected:"]
+        for old, existing, new in collisions:
+            msg_lines.append(f"  {old} and {existing} both map to {new}")
+        raise ValueError("\n".join(msg_lines))
+
+
 def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef], id_set: set[str]) -> URIRef:
-    """Clean a uri for _, and # with everything before it.
+    """Clean a uri for _ and # with everything before it, and add urn:uuid: as prefix.
 
     The uri is cleaned if:
         - It contains _ at the beginning of the fragment (after #)
