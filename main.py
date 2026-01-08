@@ -4,6 +4,12 @@ from rdflib.parser import Parser
 from rdflib import URIRef, Literal, XSD
 from rdflib.compare import to_isomorphic, graph_diff
 import cim_plugin.cimxml
+import logging
+from logging.config import dictConfig
+from cim_plugin.log_config import LOG_CONFIG
+
+dictConfig(LOG_CONFIG)
+logger = logging.getLogger('cimxml_logger')
 
 register(
     "cimxml",          # formatnavn du ønsker

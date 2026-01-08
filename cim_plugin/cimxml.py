@@ -7,7 +7,9 @@ from linkml_runtime.utils.schemaview import SchemaView
 import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
+import logging
 
+logger = logging.getLogger('cimxml_logger')
 
 MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
 DCAT = Namespace("http://www.w3.org/ns/dcat#")
@@ -23,38 +25,53 @@ class CIMXMLParser(Parser):
         self.slot_index: dict|None = None
         self.class_index: dict|None = None
         self.model_uuid: uuid.UUID|None = None
-        print("CIMXMLParser loaded")
+        logger.info("CIMXMLParser loaded")
 
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
-        print("CIMXMLParser.parse called")
+        logger.info("CIMXMLParser.parse called")
         rdfxml = RDFXMLParser()     # Parsing data as if it was RDF/XML format
         rdfxml.parse(source, sink, **kwargs)
         if "schema_path" in kwargs:
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
             self.schemaview = SchemaView(self.schema_path)
-            inject_integer_type(self.schemaview)    # Add integer to linkML model primitive types
-            patch_integer_ranges(self.schemaview, self.schema_path) # Reassign datatypes to integer (were automatically assigned to string when loaded)
+            self.patch_missing_datatypes_in_model()
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.post_process(sink)
         else:
-            print("Cannot perform post processing without the model. Data parsed as RDF/XML.")
+            logger.info("Cannot perform post processing without the model. Data parsed as RDF/XML.")
         
     def post_process(self, graph: Graph) -> None:
-        print("Running post-process")
+        logger.info("Running post-process")
         self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
         self.fix_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
         canonical_namespace = detect_cim_namespace(self.schemaview)
         normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
 
+    def patch_missing_datatypes_in_model(self) -> None:
+        if self.schema_path and self.schemaview and self.schemaview.schema:
+            types = self.schemaview.schema.types
+            if isinstance(types, dict):
+                if "integer" in types:
+                    return
+            
+                try:
+                    t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
+                    types["integer"] = t 
+                    self.schemaview.set_modified() 
+                    # inject_integer_type(self.schemaview)    # Add integer to linkML model primitive types
+                    patch_integer_ranges(self.schemaview, self.schema_path) # Reassign datatypes to integer (were automatically assigned to string when loaded)
+                except ValueError as e:
+                    logger.error(e)
+
     def fix_rdf_ids(self, graph: Graph, by: str = "urn:uuid") -> None:
         if by == "urn:uuid":
             self.normalize_rdf_ids(graph)   # Fix rdf:IDs by removing _ and adding urn:uuid
-            print("Filling in rdf:id with urn:uuid")
+            logger.info("Filling in rdf:id with urn:uuid")
         elif by == "prefix":
             add_prefix_to_rdf_ids(graph)    # Fix rdf:IDs by adding prefix
-            print("Filling in rdf:id with prefix")
+            logger.info("Filling in rdf:id with prefix")
         else:
             raise ValueError(f"'{by}' is not an approved method.")
 
@@ -84,10 +101,10 @@ class CIMXMLParser(Parser):
                     graph.add((s, p, new_o))
 
     def enrich_literal_datatypes(self, graph: Graph) -> Graph:
-        print("Enriching literal datatypes")
+        logger.info("Enriching literal datatypes")
 
         if self.schemaview is None or self.slot_index is None:
-            print("Missing schemaview or slot_index. Enriching not possible.")
+            logger.error("Missing schemaview or slot_index. Enriching not possible.")
             return graph
 
         triples_to_add = []
@@ -106,7 +123,7 @@ class CIMXMLParser(Parser):
                 datatype_uri = resolve_datatype_from_slot(self.schemaview, slot)
 
                 if not datatype_uri:
-                    print(f"  [DEBUG] Ingen datatype funnet for range: {slot.range}, for {slot.name}")
+                    logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
                     continue
 
                 new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
@@ -118,8 +135,8 @@ class CIMXMLParser(Parser):
             graph.remove(t)
         for t in triples_to_add:
             graph.add(t)
-        print(f"Fant ikke: {unfound_predicates}")
-        print("\nEnriching done. La til", len(triples_to_add), "tripler.")
+        logger.info(f"Did not find these predicates in model: {unfound_predicates}")
+        logger.info(f"Enriching done. Added datatypes to {len(triples_to_add)} triples.")
         return graph
 
 def inject_integer_type(schemaview: SchemaView) -> None: 
@@ -173,7 +190,6 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
 
         attrs = cls.get("attributes") or {}
         for slot_name, slot_def in attrs.items():
-            print(attrs.items())
             if not isinstance(slot_def, dict):
                 raise ValueError(f"{slot_name} in {cls_name} have unexpected structure. Attributes should be dict.")
             
@@ -181,7 +197,7 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
                 integer_attrs.append(slot_name)
 
     if not integer_attrs: 
-        print("No attributes with range=integer found. No changes made to schemaview.") 
+        logger.info("No attributes with range=integer found. No changes made to schemaview.") 
         return
 
     # Reassign integer to the ranges of these class attribute slots
