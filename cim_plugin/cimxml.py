@@ -212,57 +212,38 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
     schemaview.set_modified()
 
 def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef], id_set: set[str]) -> URIRef:
+    """Clean a uri for _, and # with everything before it.
+
+    The uri is cleaned if:
+        - It contains _ at the beginning of the fragment (after #)
+        - It is in id_set
+    
+    Parameters:
+        uri (URIRef): The uri to be cleaned.
+        uri_map (dict[str, URIRef]): A map keeping track of cleaned uri.
+        id_set (set[str]): A set of uri fragments that should be cleaned even if they don't contain _.
+
+    Returns:
+        URIRef: The cleaned uri.
+    """
     uri_str = str(uri)
 
-    # Bare URIer med fragment (#id) er aktuelle
     if "#" not in uri_str:
         return uri
 
-    fragment = uri_str.split("#")[-1]
+    if len(uri_str.split("#")) > 2:
+        logger.warning(f"{uri_str} has more then one #")
 
-    # Normaliser KUN hvis fragmentet er en faktisk rdf:ID 
-    # # dvs. det finnes i id_set, eller starter med "_" 
+    fragment = uri_str.split("#")[-1]
     if fragment not in id_set and not fragment.startswith("_"): 
         return uri
 
-    # Fjern leading underscore
     clean = fragment.lstrip("_")
-
     if uri_str not in uri_map: 
         uri_map[uri_str] = URIRef(f"urn:uuid:{clean}") 
         
     return uri_map[uri_str]
 
-    # def enrich_literal_datatypes(self, graph):
-    #     print("Enriching")
-    #     if self.schemaview is None or self.slot_index is None:
-    #         print("No schemaview found.")
-    #         return
-        
-    #     triples_to_add = []
-    #     triples_to_remove = []
-
-    #     for s, p, o in graph:
-    #         if isinstance(o, Literal) and o.datatype is None:
-    #             # print(p)
-    #             slot = self.slot_index.get(str(p))
-    #             # print(slot)
-    #             if slot and slot.range:
-    #                 t = self.schemaview.get_type(slot.range)
-    #                 if t and t.uri:
-    #                     datatype_uri = self.schemaview.expand_curie(t.uri)
-    #                     # print(datatype_uri)
-    #                     new_literal = Literal(o.value, datatype=URIRef(datatype_uri))
-
-    #                     triples_to_remove.append((s, p, o))
-    #                     triples_to_add.append((s, p, new_literal))
-
-    #     for t in triples_to_remove:
-    #         graph.remove(t)
-    #     for t in triples_to_add:
-    #         graph.add(t)
-
-    #     return graph
 
 def find_model_uuid(graph: Graph) -> uuid.UUID: 
     # Søk etter md:FullModel 
@@ -324,29 +305,29 @@ def resolve_datatype_from_slot(sv, slot):
 
     return None
 
-def resolve_range_datatype(schemaview, range_name):
-    """
-    Returnerer RDF-datatype for en LinkML-range.
-    Prioritet:
-      1. CIM-annotert datatype (annotations["uri"])
-      2. LinkML-type sin uri (xsd:float osv.)
-    """
+# def resolve_range_datatype(schemaview, range_name):
+#     """
+#     Returnerer RDF-datatype for en LinkML-range.
+#     Prioritet:
+#       1. CIM-annotert datatype (annotations["uri"])
+#       2. LinkML-type sin uri (xsd:float osv.)
+#     """
 
-    t = schemaview.get_type(range_name)
-    if not t:
-        return None
+#     t = schemaview.get_type(range_name)
+#     if not t:
+#         return None
 
-    # 1. CIM-type (fra annotations)
-    if t.annotations:
-        ann = t.annotations.get("uri")
-        if ann and ann.value:
-            return schemaview.expand_curie(ann.value)
+#     # 1. CIM-type (fra annotations)
+#     if t.annotations:
+#         ann = t.annotations.get("uri")
+#         if ann and ann.value:
+#             return schemaview.expand_curie(ann.value)
 
-    # 2. XSD-type (fra type.uri)
-    if t.uri:
-        return schemaview.expand_curie(t.uri)
+#     # 2. XSD-type (fra type.uri)
+#     if t.uri:
+#         return schemaview.expand_curie(t.uri)
 
-    return None
+#     return None
 
 def create_typed_literal(value, datatype_uri, schemaview):
     # 1. Expand CURIE if needed

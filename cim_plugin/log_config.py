@@ -18,7 +18,7 @@ LOG_CONFIG = {
         },
         "stream_handler": {
             "class": "logging.StreamHandler",
-            "level": "ERROR",
+            "level": "WARNING",
             "formatter": "standard",
             "stream": "ext://sys.stdout"
         }

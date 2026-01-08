@@ -1,10 +1,20 @@
-from cim_plugin.cimxml import looks_like_cim_uri, inject_integer_type, patch_integer_ranges
+from cim_plugin.cimxml import (
+    looks_like_cim_uri, 
+    inject_integer_type, 
+    patch_integer_ranges, 
+    _clean_uri
+)
 import pytest
 from unittest.mock import MagicMock
 from linkml_runtime.linkml_model import TypeDefinition
 from collections import defaultdict
 import yaml
 from pathlib import Path
+from rdflib import URIRef
+import logging
+from pytest import LogCaptureFixture
+
+logger = logging.getLogger("cimxml_logger")
 
 # @pytest.fixture
 # def mock_schemaview():
@@ -354,7 +364,96 @@ def test_patch_integer_ranges_mismatchedschemaviews(tmp_path: Path, mock_schemav
     sv.add_slot.assert_not_called() 
     sv.set_modified.assert_not_called()
 
+# Unit tests _clean_uri
+@pytest.mark.parametrize(
+    "uri,id_set,expected",
+    [
+        pytest.param(URIRef("http://example.com/nohash"), {"id1"}, URIRef("http://example.com/nohash"),
+                     id="URI wo # → returned unchanged"),
+        pytest.param(URIRef("http://example.com#abc"), {"id1"}, URIRef("http://example.com#abc"),
+                     id="Fragment not in id_set and wo _ → returned unchanged"),
+        pytest.param(URIRef("http://example.com#_abc"), {"id1"}, URIRef("urn:uuid:abc"),
+                     id="Fragment with _ → cleaned"),
+        pytest.param(URIRef("http://example.com#id1"), {"id1"}, URIRef("urn:uuid:id1"),
+                     id="Fragment in id_set wo _ → cleaned"),
+        pytest.param(URIRef("http://example.com#_id1"), {"id1"}, URIRef("urn:uuid:id1"),
+                     id="Fragment in id_set and has _ → cleaned"),
+        pytest.param(URIRef("http://example.com#"), {"id1"}, URIRef("http://example.com#"),
+                     id="No fragment → unchanged"),
+        pytest.param(URIRef("http://example.com#_"), {"id1"}, URIRef("urn:uuid:"),
+                     id="Just _ fragment → cleaned"),
+        pytest.param(URIRef("http://example.com#__id1"), {"id1"}, URIRef("urn:uuid:id1"),
+                     id="Fragment with 2+ _ → cleaned"),
 
+    ]
+)
+def test_clean_uri_basic(uri: URIRef, id_set: set[str], expected: URIRef) -> None:
+    uri_map = {}
+    result = _clean_uri(uri, uri_map, id_set)
+    assert result == expected
+
+def test_clean_uri_uses_cache() -> None:
+    uri = URIRef("http://example.com#_abc")
+    id_set = {"abc"}
+    uri_map = {}
+
+    first = _clean_uri(uri, uri_map, id_set)
+    second = _clean_uri(uri, uri_map, id_set)
+
+    assert first is second  # Same object → same uri_map
+    assert list(uri_map.values()) == [first]    # uri_map should only have one entry
+
+def test_clean_uri_cacheonlyforcleaned() -> None:
+    uri = URIRef("http://example.com#not_in_set")
+    id_set = {"something_else"}
+    uri_map = {}
+
+    result = _clean_uri(uri, uri_map, id_set)
+
+    assert uri_map == {} # No caching when nothing cleaned
+    assert result == uri
+
+@pytest.mark.parametrize(
+        "input, ids, output",
+        [
+            pytest.param("http://example.com#a#b#_c", {"id"}, "urn:uuid:c", id="Cleaned because of _ in last fragment"),
+            pytest.param("http://example.com#_a#b#c", {"id"}, "http://example.com#_a#b#c", id="Not cleaned because _ in first fragment"),
+            pytest.param("http://example.com#a#_b#c", {"id"}, "http://example.com#a#_b#c", id="Not cleaned because _ in second fragment"),
+            pytest.param("http://example.com#a#b#c", {"id"}, "http://example.com#a#b#c", id="Not cleaned because there are no _"),
+            pytest.param("http://example.com#a#b#c", {"c"}, "urn:uuid:c", id="Cleaned because fragment in id_set"),
+            pytest.param("http://example.com#a#b#c", {"b"}, "http://example.com#a#b#c", id="Not cleaned because wrong fragment in id_set"),
+        ]
+)
+def test_clean_uri_multiplehashes(input: str, ids: set[str], output: str, caplog: LogCaptureFixture) -> None:
+    # These tests show what happends if there are multiple # in the URIRef.
+    # It relies on a warning being logged and manually checking that the result is correct.
+    # Consider if the function should fail instead.
+    uri = URIRef(input)
+    id_set = ids
+    uri_map = {}
+
+    result = _clean_uri(uri, uri_map, id_set)
+
+    assert result == URIRef(output)
+    assert f"{input} has more then one #" in caplog.text
+
+
+def test_clean_uri_multipleurissamefragments() -> None:
+    # This test shows that two identical fragments with different URIs will end up the same object in the graph 
+    uri1 = URIRef("http://example.com#_abc")
+    uri2 = URIRef("http://other.com#_abc")
+
+    id_set = {"abc"}
+    uri_map = {}
+
+    cleaned1 = _clean_uri(uri1, uri_map, id_set)
+    cleaned2 = _clean_uri(uri2, uri_map, id_set)
+
+    assert cleaned1 is not cleaned2 # They are not the same object
+    assert cleaned1 == cleaned2 # They look identical
+    assert cleaned1 == URIRef("urn:uuid:abc")
+    assert len(uri_map) == 2
+    assert set(uri_map.values()) == {cleaned1}
 
 # Unit tests looks_like_cim_uri
 
