@@ -64,6 +64,7 @@ class CIMXMLParser(Parser):
                     patch_integer_ranges(self.schemaview, self.schema_path) # Reassign datatypes to integer (were automatically assigned to string when loaded)
                 except ValueError as e:
                     logger.error(e)
+                    raise
 
     def fix_rdf_ids(self, graph: Graph, by: str = "urn:uuid") -> None:
         if by == "urn:uuid":
@@ -76,8 +77,14 @@ class CIMXMLParser(Parser):
             raise ValueError(f"'{by}' is not an approved method.")
 
     def normalize_rdf_ids(self, graph: Graph) -> None: 
-        """Remove _ and replace prefix set by RDFXMLparser with urn:uuid."""
-        uri_map = {} 
+        """Remove _ and replace prefix set by RDFXMLparser with urn:uuid.
+        
+        Parameters:
+            graph (Graph): The graph to be normalized.
+
+        Raises:
+            ValueError: If normalization makes different URIs identical. List of URIs affected is given.
+        """
         id_set = set()
 
         for s in graph.subjects(): # Collect all relevant subjects
@@ -86,6 +93,13 @@ class CIMXMLParser(Parser):
                 frag = s_str.split("#")[-1] 
                 id_set.add(frag.lstrip("_"))
 
+        try:
+            detect_uri_collisions(graph, id_set)
+        except ValueError as e:
+            logger.error(e)
+            raise
+
+        uri_map = {} 
         for s, p, o in list(graph): 
             if isinstance(s, URIRef):   # Clean subjects 
                 new_s = _clean_uri(s, uri_map, id_set) 
