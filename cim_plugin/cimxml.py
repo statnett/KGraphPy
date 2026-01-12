@@ -78,8 +78,8 @@ class CIMXMLParser(Parser):
             logger.info(f"Model has correct namespace for {prefix}.")
             return False
 
-        logger.info(f"Wrong namespace detected for {prefix}. Correcting to {new_namespace}.")
-        update_namespace_model(self.schemaview, prefix, new_namespace)
+        logger.info(f"Wrong namespace detected for {prefix} in model. Correcting to {new_namespace}.")
+        update_namespace_in_model(self.schemaview, prefix, new_namespace)
         return True
     
 
@@ -101,12 +101,13 @@ class CIMXMLParser(Parser):
             # Ingenting å gjøre
             return
 
+        logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {new_namespace}.")
+        
         # Oppdater binding
         graph.bind(prefix, Namespace(new_namespace), replace=True)
 
         # Oppdater triples
-        update_namespace_data(graph, old_ns, new_namespace)
-
+        update_namespace_in_graph(graph, old_ns, new_namespace)
 
 
     def patch_missing_datatypes_in_model(self) -> None:
@@ -267,30 +268,32 @@ def _get_current_namespace_from_graph(graph: Graph, prefix: str) -> Optional[str
     return None
 
 
-def update_namespace_model(schemaview, prefix: str, new_namespace: str):
+def update_namespace_in_model(schemaview: SchemaView, prefix: str, new_namespace: str) -> None:
+    """Update namespace in linkML SchemaView for a given prefix.
+    
+    Parameters:
+        schemaview (SchemaView): The schemaview to update.
+        prefix (str): The prefix to be given new namespace.
+        new_namespace (str): The new namespace.
+
+    Raises:
+        ValueError: If schemaview is not found or missing schema.
     """
-    Oppdaterer namespace for en prefix på en trygg måte.
-    Håndterer både namespaces og prefixes.
-    """
+    if not schemaview or not schemaview.schema:
+        raise ValueError("Schemaview not found or schemaview is missing schema.")
 
     schema = schemaview.schema
 
-    # 1. Oppdater namespaces hvis det finnes
-    if hasattr(schema, "namespaces") and schema.namespaces:
-        if prefix in schema.namespaces:
-            schema.namespaces[prefix].uri = new_namespace
-
-    # 2. Oppdater prefixes hvis det finnes
-    if hasattr(schema, "prefixes") and schema.prefixes:
-        p = schema.prefixes.get(prefix)
-        if p:
+    prefixes = getattr(schema, "prefixes", None)
+    if isinstance(prefixes, dict):
+        p = prefixes.get(prefix)
+        if p and hasattr(p, "prefix_reference"):
             p.prefix_reference = new_namespace
 
-    # 3. Rebuild SchemaView-indekser
     schemaview.__init__(schema)
 
 
-def update_namespace_data(graph: Graph, old_ns: str, new_ns: str) -> None:
+def update_namespace_in_graph(graph: Graph, old_ns: str, new_ns: str) -> None:
     """
     Erstatter alle forekomster av old_ns med new_ns i subject, predicate og object.
     Returnerer antall endrede triples.

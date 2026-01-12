@@ -94,8 +94,8 @@ def main():
     print(isoC==isoT)
     in_both, in_cim, in_trig = graph_diff(g_test, t_test)
     print(f"In cim: {len(in_cim)}, in trig: {len(in_trig)}")
-    for pfx, ns in g.namespace_manager.namespaces():
-        print(pfx, ns)
+    # for pfx, ns in g.namespace_manager.namespaces():
+    #     print(pfx, ns)
     # print("cim:")
     # count = 0
     # for s, p, o in in_cim:

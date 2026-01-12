@@ -2,6 +2,8 @@ from cim_plugin.cimxml import (
     CIMXMLParser,
     _get_current_namespace_from_model,
     _get_current_namespace_from_graph,
+    update_namespace_in_model,
+    update_namespace_in_graph,
     inject_integer_type, 
     patch_integer_ranges,
     detect_uri_collisions, 
@@ -23,21 +25,43 @@ import copy
 logger = logging.getLogger("cimxml_logger")
 
 
+# @pytest.fixture
+# def mock_schemaview():
+#     def _factory(types=None, slots=None):
+#         mock_schema = MagicMock()
+#         mock_schema.types = types
+#         mock_schema.slots = slots or {}
+
+#         mock_schemaview = MagicMock()
+#         mock_schemaview.schema = mock_schema
+#         mock_schemaview.set_modified = MagicMock()
+
+#         mock_schemaview.get_slot.side_effect = lambda name: mock_schema.slots.get(name)
+
+#         def add_slot(slot):
+#             mock_schema.slots[slot.name] = slot
+
+#         mock_schemaview.add_slot.side_effect = add_slot
+
+#         return mock_schemaview
+
+#     return _factory
+
+
 @pytest.fixture
 def mock_schemaview():
-    def _factory(types=None, slots=None):
+    def _factory(types=None, slots=None, namespaces=None, prefixes=None):
         mock_schema = MagicMock()
         mock_schema.types = types
         mock_schema.slots = slots or {}
+        mock_schema.namespaces = namespaces if namespaces is not None else {}
+        mock_schema.prefixes = prefixes if prefixes is not None else {}
 
         mock_schemaview = MagicMock()
         mock_schemaview.schema = mock_schema
         mock_schemaview.set_modified = MagicMock()
-
-        # get_slot henter fra schema.slots
         mock_schemaview.get_slot.side_effect = lambda name: mock_schema.slots.get(name)
 
-        # add_slot oppdaterer schema.slots
         def add_slot(slot):
             mock_schema.slots[slot.name] = slot
 
@@ -46,7 +70,6 @@ def mock_schemaview():
         return mock_schemaview
 
     return _factory
-
 
 # Unit tests CIMXMLParser.normalize_rdf_ids
 
@@ -258,14 +281,6 @@ def test_get_current_namespace_from_model_nomutationofschemaview(mock_schemaview
 
 
 # Unit tests _get_current_namespace_from_graph
-
-# @pytest.fixture
-# def graph():
-#     g = Graph()
-#     g.namespace_manager.bind("ex", Namespace("http://example.org/"))
-#     g.namespace_manager.bind("foo", Namespace("http://foo.bar/"))
-#     return g
-
 
 @pytest.mark.parametrize(
     "prefix, expected",
