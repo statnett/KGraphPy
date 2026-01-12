@@ -62,8 +62,8 @@ def main():
     t = Dataset()
     t.parse(tfile, format="trig")
     tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
-    g_normalized = rewrite_uri(g, "http://iec.ch/TC57/CIM100#", "https://cim.ucaiug.io/ns#")
-    g_normalized = rewrite_uri(g_normalized, "http://iec.ch/TC57/CIM100-EuropeanExtension/1/0#", "https://cim.ucaiug.io/ns/eu#")
+    # g_normalized = rewrite_uri(g, "http://iec.ch/TC57/CIM100#", "https://cim.ucaiug.io/ns#")
+    # g_normalized = rewrite_uri(g, "http://iec.ch/TC57/CIM100-EuropeanExtension/1/0#", "https://cim.ucaiug.io/ns/eu#")
     t_normalized = normalize_strings(tgraph)
     # g_normalized = normalize_strings(g_normalized)
     # count = 0
@@ -79,7 +79,7 @@ def main():
     #         # print(f"Subject '{s}', predicate '{p}' and Object '{o}' with datatype: {o.datatype}")
 
     # check_plugin_registered("cimxml")
-    g_test = g_normalized
+    g_test = g
     t_test = t_normalized
     # print(f"CIMXML: {len(g_test)}")
     # for item in list(g_test.triples((URIRef('urn:uuid:43e27a15-0192-4c01-bec3-413f770618c7'), None, None))):

@@ -1,10 +1,11 @@
 from cim_plugin.cimxml import (
     CIMXMLParser,
+    _get_current_namespace_model,
     inject_integer_type, 
     patch_integer_ranges,
     detect_uri_collisions, 
     _clean_uri,
-    looks_like_cim_uri, 
+    # looks_like_cim_uri, 
 )
 import pytest
 from unittest.mock import patch, MagicMock, call
@@ -12,9 +13,11 @@ from linkml_runtime.linkml_model import TypeDefinition
 from collections import defaultdict
 import yaml
 from pathlib import Path
-from rdflib import URIRef, Graph, Literal, BNode
+from rdflib import URIRef, Graph, Literal, BNode, Namespace
 import logging
 from pytest import LogCaptureFixture
+from types import SimpleNamespace
+import copy
 
 logger = logging.getLogger("cimxml_logger")
 
@@ -153,6 +156,103 @@ def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicM
     mock_clean.assert_not_called()
     mock_detect.assert_called_once()
 
+
+# Unit tests for _get_current_namespace_model
+@pytest.mark.parametrize(
+    "namespaces,prefixes,prefix,expected",
+    [
+        pytest.param(
+            {"ex": SimpleNamespace(uri="http://example.org/")},
+            None,
+            "ex",
+            "http://example.org/",
+            id="Namespace found"
+        ),
+        pytest.param(
+            None,
+            {"ex": SimpleNamespace(prefix_reference="http://example.org/")},
+            "ex",
+            "http://example.org/",
+            id="Prefix found"
+        ),
+        pytest.param(
+            {"foo": SimpleNamespace(uri="http://foo.org/")},
+            {"bar": SimpleNamespace(prefix_reference="http://bar.org/")},
+            "missing",
+            None,
+            id="Neither namespace or prefix found"
+        ),
+        pytest.param(
+            {"ex": SimpleNamespace(uri="http://ns-first.org/")},
+            {"ex": SimpleNamespace(prefix_reference="http://prefix-second.org/")},
+            "ex",
+            "http://ns-first.org/",
+            id="Namespace overruling prefix"
+        ),
+    ]
+)
+def test__get_current_namespace_model_basic(mock_schemaview: MagicMock, namespaces: SimpleNamespace|None, prefixes: SimpleNamespace|None, prefix: str, expected: str|None) -> None:
+    sv = mock_schemaview()
+    sv.schema.namespaces = namespaces
+    sv.schema.prefixes = prefixes
+
+    result = _get_current_namespace_model(sv, prefix)
+    assert result == expected
+
+
+def test_raises_error_when_schema_missing(mock_schemaview: MagicMock) -> None:
+    sv = mock_schemaview()
+    sv.schema = None
+
+    with pytest.raises(ValueError) as exc_info:
+        _get_current_namespace_model(sv, "ex")
+
+    assert "Schemaview not found or schemaview is missing schema." in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "namespaces,prefixes,prefix,expected",
+    [
+        pytest.param({}, {}, "ex", None, id="Empty namespaces and prefixes"),
+        pytest.param(None, None, "ex", None, id="None namespaces and prefixes"),
+        pytest.param(["not", "a", "dict"], None, "ex", None, id="Wrong type in namespace"),
+        pytest.param(None, ["wrong", "type"], "ex", None, id="Wrong type in prefixes"),
+        pytest.param({"ex": SimpleNamespace(not_uri="oops")}, None, "ex", None, id="Namespace not a uri"),
+        pytest.param(None, {"ex": SimpleNamespace(not_prefix="oops")}, "ex", None, id=".prefix_reference missing"),
+        pytest.param({"": SimpleNamespace(uri="http://empty.org/")}, None, "", "http://empty.org/", id="Prefix and empty string"),
+        pytest.param({"ex": SimpleNamespace(uri="http://example.org/")}, None, None, None, id="Prefix is None"),
+    ]
+)
+def test__get_current_namespace_model_edgecases(mock_schemaview, namespaces, prefixes, prefix, expected):
+    sv = mock_schemaview()
+    sv.schema.namespaces = namespaces
+    sv.schema.prefixes = prefixes
+
+    result = _get_current_namespace_model(sv, prefix)
+    assert result == expected
+
+
+def test_get_current_namespace_model_nomutationofschemaview(mock_schemaview):
+    sv = mock_schemaview()
+    sv.schema.namespaces = {"ex": SimpleNamespace(uri="http://example.org/")}
+    sv.schema.prefixes = {"ex": SimpleNamespace(prefix_reference="http://example.org/prefix")}
+
+    schema_before_id = id(sv.schema)
+    namespaces_before = copy.deepcopy(sv.schema.namespaces)
+    prefixes_before = copy.deepcopy(sv.schema.prefixes)
+    types_before = copy.deepcopy(getattr(sv.schema, "types", None))
+    slots_before = copy.deepcopy(getattr(sv.schema, "slots", None))
+
+    result = _get_current_namespace_model(sv, "ex")
+
+    assert result == "http://example.org/"
+
+    # Checking that nothing has been changed in the schemaview
+    assert id(sv.schema) == schema_before_id
+    assert sv.schema.namespaces == namespaces_before
+    assert sv.schema.prefixes == prefixes_before
+    assert getattr(sv.schema, "types", None) == types_before
+    assert getattr(sv.schema, "slots", None) == slots_before
 
 # Unit tests inject_integer_type
 
@@ -651,22 +751,22 @@ def test_clean_uri_multipleurissamefragments() -> None:
 
 # Unit tests looks_like_cim_uri
 
-@pytest.mark.parametrize(
-    "input, output",
-    [
-        pytest.param("https://cim.ucaiug.io/ns", True, id="Namespace match: cim"),
-        pytest.param("http://iec.ch/TC57", True, id="Namespace match: tc57"),
-        pytest.param("UCaiug", True, id="Namespace match upper letters: ucaiug"),
-        pytest.param("tac57", False, id="Not matched"),
-        pytest.param("57", False, id="Numerical input as string")
-    ]
-)
-def test_looks_like_cim_uri_various(input, output):
-    assert looks_like_cim_uri(input) == output
+# @pytest.mark.parametrize(
+#     "input, output",
+#     [
+#         pytest.param("https://cim.ucaiug.io/ns", True, id="Namespace match: cim"),
+#         pytest.param("http://iec.ch/TC57", True, id="Namespace match: tc57"),
+#         pytest.param("UCaiug", True, id="Namespace match upper letters: ucaiug"),
+#         pytest.param("tac57", False, id="Not matched"),
+#         pytest.param("57", False, id="Numerical input as string")
+#     ]
+# )
+# def test_looks_like_cim_uri_various(input, output):
+#     assert looks_like_cim_uri(input) == output
 
-def test_looks_like_cim_uri_numericinput():
-    with pytest.raises(AttributeError):
-        looks_like_cim_uri(57) # type: ignore
+# def test_looks_like_cim_uri_numericinput():
+#     with pytest.raises(AttributeError):
+#         looks_like_cim_uri(57) # type: ignore
 
 if __name__ == "__main__":
     pytest.main()

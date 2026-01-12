@@ -8,11 +8,17 @@ import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
+from typing import Optional, Dict, Any
+
+# from asyncio import graph
 
 logger = logging.getLogger('cimxml_logger')
 
+# Namespaces
 MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
 DCAT = Namespace("http://www.w3.org/ns/dcat#")
+CIM = Namespace("https://cim.ucaiug.io/ns#")
+EU = Namespace("https://cim.ucaiug.io/ns/eu#")
 
 class CIMXMLParser(Parser):
     name = "cimxml"
@@ -35,7 +41,9 @@ class CIMXMLParser(Parser):
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
             self.schemaview = SchemaView(self.schema_path)
-            self.patch_missing_datatypes_in_model()
+            self.ensure_correct_namespace_model(prefix="cim", new_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
+            self.ensure_correct_namespace_model(prefix="eu", new_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
+            self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.post_process(sink)
         else:
@@ -44,10 +52,62 @@ class CIMXMLParser(Parser):
     def post_process(self, graph: Graph) -> None:
         logger.info("Running post-process")
         self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
-        self.fix_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
-        canonical_namespace = detect_cim_namespace(self.schemaview)
-        normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
+        self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
+        self.ensure_correct_namespace_data(graph, prefix="cim", new_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
+        self.ensure_correct_namespace_data(graph, prefix="eu", new_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
+        # canonical_namespace = detect_cim_namespace(self.schemaview)
+        # normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
+
+    def ensure_correct_namespace_model(self, prefix: str, new_namespace: str) -> bool:
+        """
+        Sjekker om namespace for prefix allerede er riktig.
+        Hvis ikke, oppdaterer den og returnerer True.
+        Hvis alt allerede stemmer, returnerer den False.
+        """
+
+        if not self.schemaview:
+            raise ValueError("Schemaview not found")
+
+        current = _get_current_namespace_model(self.schemaview, prefix)
+        
+        if current is None:
+            raise ValueError(f"Prefix {prefix} not found in schemaview")
+
+        if current == new_namespace:
+            logger.info(f"Model has correct namespace for {prefix}.")
+            return False
+
+        logger.info(f"Wrong namespace detected for {prefix}. Correcting to {new_namespace}.")
+        update_namespace_model(self.schemaview, prefix, new_namespace)
+        return True
+    
+
+    def ensure_correct_namespace_data(self, graph: Graph, prefix: str, new_namespace: str) -> None:
+        """
+        Oppdaterer namespace for et prefix i grafen.
+        - Henter gammel namespace automatisk
+        - Oppdaterer prefix-binding
+        - Oppdaterer alle triples som bruker gammel namespace
+        Returnerer antall endrede triples.
+        """
+
+        old_ns = _get_current_namespace_data(graph, prefix)
+
+        if old_ns is None:
+            raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
+
+        if old_ns == new_namespace:
+            # Ingenting å gjøre
+            return
+
+        # Oppdater binding
+        graph.bind(prefix, Namespace(new_namespace), override=True)
+
+        # Oppdater triples
+        update_namespace_data(graph, old_ns, new_namespace)
+
+
 
     def patch_missing_datatypes_in_model(self) -> None:
         if self.schema_path and self.schemaview and self.schemaview.schema:
@@ -66,15 +126,15 @@ class CIMXMLParser(Parser):
                     logger.error(e)
                     raise
 
-    def fix_rdf_ids(self, graph: Graph, by: str = "urn:uuid") -> None:
-        if by == "urn:uuid":
-            self.normalize_rdf_ids(graph)   # Fix rdf:IDs by removing _ and adding urn:uuid
-            logger.info("Filling in rdf:id with urn:uuid")
-        elif by == "prefix":
-            add_prefix_to_rdf_ids(graph)    # Fix rdf:IDs by adding prefix
-            logger.info("Filling in rdf:id with prefix")
-        else:
-            raise ValueError(f"'{by}' is not an approved method.")
+    # def fix_rdf_ids(self, graph: Graph, by: str = "urn:uuid") -> None:
+    #     if by == "urn:uuid":
+    #         self.normalize_rdf_ids(graph)   # Fix rdf:IDs by removing _ and adding urn:uuid
+    #         logger.info("Filling in rdf:id with urn:uuid")
+    #     elif by == "prefix":
+    #         add_prefix_to_rdf_ids(graph)    # Fix rdf:IDs by adding prefix
+    #         logger.info("Filling in rdf:id with prefix")
+    #     else:
+    #         raise ValueError(f"'{by}' is not an approved method.")
 
     def normalize_rdf_ids(self, graph: Graph) -> None: 
         """Remove _ and replace prefix set by RDFXMLparser with urn:uuid.
@@ -153,6 +213,111 @@ class CIMXMLParser(Parser):
         logger.info(f"Enriching done. Added datatypes to {len(triples_to_add)} triples.")
         return graph
 
+
+def _get_current_namespace_model(schemaview: SchemaView, prefix: str) -> Optional[str]:
+    if not schemaview or not schemaview.schema:
+        raise ValueError("Schemaview not found or schemaview is missing schema.")
+
+    schema = schemaview.schema
+
+    # 1. namespaces
+    namespaces = getattr(schema, "namespaces", None)
+    if isinstance(namespaces, dict):
+        ns = namespaces.get(prefix)
+        if ns and hasattr(ns, "uri"):
+            return ns.uri
+
+    # 2. prefixes
+    prefixes = getattr(schema, "prefixes", None)
+    if isinstance(prefixes, dict):
+        p = prefixes.get(prefix)
+        if p and hasattr(p, "prefix_reference"):
+            return p.prefix_reference
+
+    return None
+
+# def _get_current_namespace_model(schemaview: SchemaView, prefix: str) -> str|None:
+#     """
+#     Returnerer nåværende namespace for en prefix, uansett LinkML-versjon.
+#     Returnerer None hvis prefix ikke finnes.
+#     """
+#     if not schemaview or not schemaview.schema:
+#         raise ValueError("Schemaview not found or schemaview is missing schema.")
+
+#     schema = schemaview.schema
+
+#     # 1. Nyere/eldre modeller kan ha namespaces
+#     if hasattr(schema, "namespaces") and schema.namespaces:
+#         ns = schema.namespaces.get(prefix)
+#         if ns:
+#             return ns.uri
+
+#     # 2. De fleste moderne modeller bruker prefixes
+#     if hasattr(schema, "prefixes") and schema.prefixes:
+#         p = schema.prefixes.get(prefix) # type: ignore
+#         if p:
+#             return p.prefix_reference   # type: ignore
+
+#     return None
+
+
+def _get_current_namespace_data(graph: Graph, prefix: str) -> str | None:
+    """
+    Returnerer namespace-URI for et gitt prefix i grafen.
+    """
+    for pfx, ns in graph.namespace_manager.namespaces():
+        if pfx == prefix:
+            return str(ns)
+    return None
+
+
+def update_namespace_model(schemaview, prefix: str, new_namespace: str):
+    """
+    Oppdaterer namespace for en prefix på en trygg måte.
+    Håndterer både namespaces og prefixes.
+    """
+
+    schema = schemaview.schema
+
+    # 1. Oppdater namespaces hvis det finnes
+    if hasattr(schema, "namespaces") and schema.namespaces:
+        if prefix in schema.namespaces:
+            schema.namespaces[prefix].uri = new_namespace
+
+    # 2. Oppdater prefixes hvis det finnes
+    if hasattr(schema, "prefixes") and schema.prefixes:
+        p = schema.prefixes.get(prefix)
+        if p:
+            p.prefix_reference = new_namespace
+
+    # 3. Rebuild SchemaView-indekser
+    schemaview.__init__(schema)
+
+
+def update_namespace_data(graph: Graph, old_ns: str, new_ns: str) -> None:
+    """
+    Erstatter alle forekomster av old_ns med new_ns i subject, predicate og object.
+    Returnerer antall endrede triples.
+    """
+    to_add = [] 
+    to_remove = [] 
+    
+    for s, p, o in graph: 
+        new_s = URIRef(str(s).replace(old_ns, new_ns)) if isinstance(s, URIRef) and str(s).startswith(old_ns) else s 
+        new_p = URIRef(str(p).replace(old_ns, new_ns)) if isinstance(p, URIRef) and str(p).startswith(old_ns) else p 
+        new_o = URIRef(str(o).replace(old_ns, new_ns)) if isinstance(o, URIRef) and str(o).startswith(old_ns) else o 
+        
+        if (new_s, new_p, new_o) != (s, p, o): 
+            to_remove.append((s, p, o)) 
+            to_add.append((new_s, new_p, new_o)) 
+            
+    for triple in to_remove: 
+        graph.remove(triple) 
+        
+    for triple in to_add: 
+        graph.add(triple)
+
+
 def inject_integer_type(schemaview: SchemaView) -> None: 
     """Inject integer into types in the SchemaView of a linkML file.
 
@@ -176,7 +341,7 @@ def inject_integer_type(schemaview: SchemaView) -> None:
     t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
     types["integer"] = t 
 
-    schemaview.set_modified() # Oppdater interne indekser i SchemaView 
+    schemaview.set_modified()
 
 
 def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
@@ -440,60 +605,60 @@ def _build_slot_index(schemaview):
 #     return slot_index, class_index
 
 
-def get_cim_base(schemaview):
-    """
-    Returnerer CIM-base-URI fra en LinkML SchemaView.
-    Søker etter prefix_reference som inneholder 'CIM'.
-    Faller tilbake til første prefix som slutter med '#'.
-    """
-    prefixes = schemaview.schema.prefixes
+# def get_cim_base(schemaview):
+#     """
+#     Returnerer CIM-base-URI fra en LinkML SchemaView.
+#     Søker etter prefix_reference som inneholder 'CIM'.
+#     Faller tilbake til første prefix som slutter med '#'.
+#     """
+#     prefixes = schemaview.schema.prefixes
 
-    # Førstevalg: prefix som inneholder 'CIM'
-    for pfx, prefix_obj in prefixes.items():
-        ref = prefix_obj.prefix_reference
-        if ref and "CIM" in ref:
-            return ref
+#     # Førstevalg: prefix som inneholder 'CIM'
+#     for pfx, prefix_obj in prefixes.items():
+#         ref = prefix_obj.prefix_reference
+#         if ref and "CIM" in ref:
+#             return ref
 
-    # Andrevalg: første prefix som slutter med '#'
-    for pfx, prefix_obj in prefixes.items():
-        ref = prefix_obj.prefix_reference
-        if ref and ref.endswith("#"):
-            return ref
+#     # Andrevalg: første prefix som slutter med '#'
+#     for pfx, prefix_obj in prefixes.items():
+#         ref = prefix_obj.prefix_reference
+#         if ref and ref.endswith("#"):
+#             return ref
 
-    raise ValueError("Fant ingen CIM-base i schema prefixes")
-
-
-def get_cim_base_from_graph(graph: Graph) -> str:
-    """
-    Finn CIM-base-URI fra namespaces i grafen.
-
-    Strategi:
-    1. Hvis det finnes et prefix som heter 'cim' → bruk det.
-    2. Ellers: feile eksplisitt, så du ikke gjetter feil.
-    """
-    ns_map = dict(graph.namespaces())
-
-    # 1. Eksakt 'cim' er det vi stoler på
-    if "cim" in ns_map:
-        return str(ns_map["cim"])
-
-    # Hvis du vil være streng, stopper du her:
-    raise ValueError("Fant ikke 'cim' prefix i grafen. Kan ikke bestemme CIM-base.")
+#     raise ValueError("Fant ingen CIM-base i schema prefixes")
 
 
-def add_prefix_to_rdf_ids(graph):
-    cim_base = get_cim_base_from_graph(graph).rstrip("#") + "#"
+# def get_cim_base_from_graph(graph: Graph) -> str:
+#     """
+#     Finn CIM-base-URI fra namespaces i grafen.
 
-    candidates = []
-    for node in graph.all_nodes():
-        if isinstance(node, URIRef) and "#" in node:
-            base, frag = node.rsplit("#", 1)
+#     Strategi:
+#     1. Hvis det finnes et prefix som heter 'cim' → bruk det.
+#     2. Ellers: feile eksplisitt, så du ikke gjetter feil.
+#     """
+#     ns_map = dict(graph.namespaces())
 
-            # Hopp over hvis den allerede er i CIM-namespace
-            if base.startswith(cim_base.rstrip("#")):
-                continue
+#     # 1. Eksakt 'cim' er det vi stoler på
+#     if "cim" in ns_map:
+#         return str(ns_map["cim"])
 
-            candidates.append((node, frag))
+#     # Hvis du vil være streng, stopper du her:
+#     raise ValueError("Fant ikke 'cim' prefix i grafen. Kan ikke bestemme CIM-base.")
+
+
+# def add_prefix_to_rdf_ids(graph):
+#     cim_base = get_cim_base_from_graph(graph).rstrip("#") + "#"
+
+#     candidates = []
+#     for node in graph.all_nodes():
+#         if isinstance(node, URIRef) and "#" in node:
+#             base, frag = node.rsplit("#", 1)
+
+#             # Hopp over hvis den allerede er i CIM-namespace
+#             if base.startswith(cim_base.rstrip("#")):
+#                 continue
+
+#             candidates.append((node, frag))
 
     for old_uri, frag in candidates:
         new_uri = URIRef(f"{cim_base}{frag}")
@@ -509,68 +674,68 @@ def add_prefix_to_rdf_ids(graph):
             graph.remove((s, p, old_uri))
 
 
-def graph_uses_canonical_namespace(graph, canonical_ns):
-    for _, uri in graph.namespaces():
-        if str(uri).rstrip("#/") == canonical_ns.rstrip("#/"):
-            return True
-    return False
+# def graph_uses_canonical_namespace(graph, canonical_ns):
+#     for _, uri in graph.namespaces():
+#         if str(uri).rstrip("#/") == canonical_ns.rstrip("#/"):
+#             return True
+#     return False
 
 
-def detect_cim_namespace(schemaview):
-    prefixes = schemaview.schema.prefixes
+# def detect_cim_namespace(schemaview):
+#     prefixes = schemaview.schema.prefixes
 
-    if "cim" in prefixes:
-        pref = prefixes["cim"]
+#     if "cim" in prefixes:
+#         pref = prefixes["cim"]
 
-        # LinkML Prefix object → extract actual URI string
-        if hasattr(pref, "prefix_reference"):
-            ns = pref.prefix_reference
-        elif hasattr(pref, "uri"):
-            ns = pref.uri
-        else:
-            raise ValueError("Prefix object has no usable URI field")
+#         # LinkML Prefix object → extract actual URI string
+#         if hasattr(pref, "prefix_reference"):
+#             ns = pref.prefix_reference
+#         elif hasattr(pref, "uri"):
+#             ns = pref.uri
+#         else:
+#             raise ValueError("Prefix object has no usable URI field")
 
-        # Normalize
-        if not ns.endswith("#"):
-            ns = ns.rstrip("/") + "#"
+#         # Normalize
+#         if not ns.endswith("#"):
+#             ns = ns.rstrip("/") + "#"
 
-        return ns
+#         return ns
 
-    raise ValueError("Model has no 'cim' prefix defined")
+#     raise ValueError("Model has no 'cim' prefix defined")
 
-def normalize_cim_uris(graph, canonical_ns):
-    if graph_uses_canonical_namespace(graph, canonical_ns):
-        print("CIM namespace matches model. Skip normalisation")
-        return
+# def normalize_cim_uris(graph, canonical_ns):
+#     if graph_uses_canonical_namespace(graph, canonical_ns):
+#         print("CIM namespace matches model. Skip normalisation")
+#         return
     
-    print("Normalising CIM namespaces...")
-    triples = list(graph)
-    for s, p, o in triples:
-        new_s = normalize_uri(s, canonical_ns)
-        new_p = normalize_uri(p, canonical_ns)
-        new_o = normalize_uri(o, canonical_ns)
+#     print("Normalising CIM namespaces...")
+#     triples = list(graph)
+#     for s, p, o in triples:
+#         new_s = normalize_uri(s, canonical_ns)
+#         new_p = normalize_uri(p, canonical_ns)
+#         new_o = normalize_uri(o, canonical_ns)
 
-        if (s, p, o) != (new_s, new_p, new_o):
-            graph.remove((s, p, o))
-            graph.add((new_s, new_p, new_o))
+#         if (s, p, o) != (new_s, new_p, new_o):
+#             graph.remove((s, p, o))
+#             graph.add((new_s, new_p, new_o))
 
-def normalize_uri(term, canonical_ns):
-    if not isinstance(term, URIRef):
-        return term
-    uri = str(term)
-    if looks_like_cim_uri(uri):
-        local = uri.split("#")[-1]
-        return URIRef(canonical_ns + local)
-    return term
+# def normalize_uri(term, canonical_ns):
+#     if not isinstance(term, URIRef):
+#         return term
+#     uri = str(term)
+#     if looks_like_cim_uri(uri):
+#         local = uri.split("#")[-1]
+#         return URIRef(canonical_ns + local)
+#     return term
 
-def looks_like_cim_uri(uri: str) -> bool:
-    u = uri.lower()
-    return (
-        "cim" in u or
-        "tc57" in u or
-        "ucaiug" in u or
-        "entsoe" in u
-    )
+# def looks_like_cim_uri(uri: str) -> bool:
+#     u = uri.lower()
+#     return (
+#         "cim" in u or
+#         "tc57" in u or
+#         "ucaiug" in u or
+#         "entsoe" in u
+#     )
 
 if __name__ == "__main__":
     print("cimxml plugin for rdflib")
