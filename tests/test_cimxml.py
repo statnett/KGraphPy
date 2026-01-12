@@ -1,6 +1,7 @@
 from cim_plugin.cimxml import (
     CIMXMLParser,
-    _get_current_namespace_model,
+    _get_current_namespace_from_model,
+    _get_current_namespace_from_graph,
     inject_integer_type, 
     patch_integer_ranges,
     detect_uri_collisions, 
@@ -157,7 +158,7 @@ def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicM
     mock_detect.assert_called_once()
 
 
-# Unit tests for _get_current_namespace_model
+# Unit tests for _get_current_namespace_from_model
 @pytest.mark.parametrize(
     "namespaces,prefixes,prefix,expected",
     [
@@ -191,21 +192,21 @@ def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicM
         ),
     ]
 )
-def test__get_current_namespace_model_basic(mock_schemaview: MagicMock, namespaces: SimpleNamespace|None, prefixes: SimpleNamespace|None, prefix: str, expected: str|None) -> None:
+def test_get_current_namespace_from_model_basic(mock_schemaview: MagicMock, namespaces: SimpleNamespace|None, prefixes: SimpleNamespace|None, prefix: str, expected: str|None) -> None:
     sv = mock_schemaview()
     sv.schema.namespaces = namespaces
     sv.schema.prefixes = prefixes
 
-    result = _get_current_namespace_model(sv, prefix)
+    result = _get_current_namespace_from_model(sv, prefix)
     assert result == expected
 
 
-def test_raises_error_when_schema_missing(mock_schemaview: MagicMock) -> None:
+def test_get_current_namespace_from_model_missingschema(mock_schemaview: MagicMock) -> None:
     sv = mock_schemaview()
     sv.schema = None
 
     with pytest.raises(ValueError) as exc_info:
-        _get_current_namespace_model(sv, "ex")
+        _get_current_namespace_from_model(sv, "ex")
 
     assert "Schemaview not found or schemaview is missing schema." in str(exc_info.value)
 
@@ -223,16 +224,17 @@ def test_raises_error_when_schema_missing(mock_schemaview: MagicMock) -> None:
         pytest.param({"ex": SimpleNamespace(uri="http://example.org/")}, None, None, None, id="Prefix is None"),
     ]
 )
-def test__get_current_namespace_model_edgecases(mock_schemaview, namespaces, prefixes, prefix, expected):
+def test__get_current_namespace_from_model_edgecases(mock_schemaview: MagicMock, namespaces: dict|list|None, prefixes: dict|list|None, prefix: str|None, expected: str|None) -> None:
     sv = mock_schemaview()
     sv.schema.namespaces = namespaces
     sv.schema.prefixes = prefixes
 
-    result = _get_current_namespace_model(sv, prefix)
+    # Ignoring pylance so wrong input can be tested
+    result = _get_current_namespace_from_model(sv, prefix)   # type: ignore
     assert result == expected
 
 
-def test_get_current_namespace_model_nomutationofschemaview(mock_schemaview):
+def test_get_current_namespace_from_model_nomutationofschemaview(mock_schemaview: MagicMock) -> None:
     sv = mock_schemaview()
     sv.schema.namespaces = {"ex": SimpleNamespace(uri="http://example.org/")}
     sv.schema.prefixes = {"ex": SimpleNamespace(prefix_reference="http://example.org/prefix")}
@@ -243,7 +245,7 @@ def test_get_current_namespace_model_nomutationofschemaview(mock_schemaview):
     types_before = copy.deepcopy(getattr(sv.schema, "types", None))
     slots_before = copy.deepcopy(getattr(sv.schema, "slots", None))
 
-    result = _get_current_namespace_model(sv, "ex")
+    result = _get_current_namespace_from_model(sv, "ex")
 
     assert result == "http://example.org/"
 
@@ -253,6 +255,103 @@ def test_get_current_namespace_model_nomutationofschemaview(mock_schemaview):
     assert sv.schema.prefixes == prefixes_before
     assert getattr(sv.schema, "types", None) == types_before
     assert getattr(sv.schema, "slots", None) == slots_before
+
+
+# Unit tests _get_current_namespace_from_graph
+
+# @pytest.fixture
+# def graph():
+#     g = Graph()
+#     g.namespace_manager.bind("ex", Namespace("http://example.org/"))
+#     g.namespace_manager.bind("foo", Namespace("http://foo.bar/"))
+#     return g
+
+
+@pytest.mark.parametrize(
+    "prefix, expected",
+    [
+        pytest.param("ex", "http://example.org/", id="Simple test 1"),
+        pytest.param("foo", "http://foo.bar/", id="Simple test 2"),
+        pytest.param("missing", None, id="Prefix not found"),
+        pytest.param("", "http://empty_string.prefix", id="Prefix empty string"),
+        pytest.param("EX", None, id="Wrong case"),
+        pytest.param("ex ", None, id="Extra whitespace"),
+        pytest.param(None, None, id="Prefix None")
+    ],
+)
+def test_get_current_namespace_from_graph_basic(prefix: str, expected: str|None) -> None:
+    g = Graph()
+    g.namespace_manager.bind("ex", Namespace("http://example.org/"))
+    g.namespace_manager.bind("foo", Namespace("http://foo.bar/"))
+    g.namespace_manager.bind("", Namespace("http://empty_string.prefix"))
+    result = _get_current_namespace_from_graph(g, prefix)
+    assert result == expected
+
+
+def test_get_current_namespace_from_graph_empty_graph() -> None:
+    g = Graph()
+    assert _get_current_namespace_from_graph(g, "ex") is None
+
+
+def test_get_current_namespace_from_graph_prefixessameuri() -> None:
+    # This test shows that rdflib does not allow the same namespace with multiple prefixes.
+    # Technically not a test of this function, but included for documentation.
+    g = Graph()
+    g.namespace_manager.bind("ex", Namespace("http://example.org/"))
+
+    assert _get_current_namespace_from_graph(g, "ex") == "http://example.org/"
+    
+    # If override is False ex is kept and ex2 is ignored 
+    # If override is True ex2 is kept and ex is removed
+    g.namespace_manager.bind("ex2", Namespace("http://example.org/"), override=True)
+
+    assert _get_current_namespace_from_graph(g, "ex") is None # Because ex has been replaced by ex2
+    assert _get_current_namespace_from_graph(g, "ex2") == "http://example.org/"
+
+    prefixes = {pfx for pfx, _ in g.namespace_manager.namespaces()} 
+    assert "ex" not in prefixes 
+    assert "ex2" in prefixes
+
+
+def test_get_current_namespace_from_graph_namespaceuriisuriref() -> None:
+    g = Graph()
+    g.namespace_manager.bind("ex", URIRef("http://example.org/uri"))
+
+    result = _get_current_namespace_from_graph(g, "ex")
+    assert result == "http://example.org/uri"
+
+
+def test_get_current_namespace_from_graph_rebindingprefixoverwritesprevious() -> None:
+    g = Graph()
+    g.namespace_manager.bind("ex", Namespace("http://old.example.org/"))
+    g.namespace_manager.bind("ex", Namespace("http://new.example.org/"), replace=True)
+
+    result = _get_current_namespace_from_graph(g, "ex")
+    assert result == "http://new.example.org/"
+
+
+def test_get_current_namespace_from_graph_namespaceuriinvalidstring() -> None:
+    g = Graph()
+    g.namespace_manager.bind("weird", Namespace("not a uri at all"))
+
+    result = _get_current_namespace_from_graph(g, "weird")
+    assert result == "not a uri at all"
+
+
+@pytest.mark.parametrize(
+    "prefix, uri",
+    [
+        pytest.param("ø", "http://example.org/unicode1", id="ø in prefix"),
+        pytest.param("π", "http://example.org/unicode2", id="pi in prefix"),
+        pytest.param("префикс", "http://example.org/unicode3", id="Greek prefix"),
+    ],
+)
+def test_get_current_namespace_from_graph_unicodeprefix(prefix: str, uri: str) -> None:
+    g = Graph()
+    g.namespace_manager.bind(prefix, Namespace(uri))
+
+    result = _get_current_namespace_from_graph(g, prefix)
+    assert result == uri
 
 # Unit tests inject_integer_type
 

@@ -69,7 +69,7 @@ class CIMXMLParser(Parser):
         if not self.schemaview:
             raise ValueError("Schemaview not found")
 
-        current = _get_current_namespace_model(self.schemaview, prefix)
+        current = _get_current_namespace_from_model(self.schemaview, prefix)
         
         if current is None:
             raise ValueError(f"Prefix {prefix} not found in schemaview")
@@ -92,7 +92,7 @@ class CIMXMLParser(Parser):
         Returnerer antall endrede triples.
         """
 
-        old_ns = _get_current_namespace_data(graph, prefix)
+        old_ns = _get_current_namespace_from_graph(graph, prefix)
 
         if old_ns is None:
             raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
@@ -102,7 +102,7 @@ class CIMXMLParser(Parser):
             return
 
         # Oppdater binding
-        graph.bind(prefix, Namespace(new_namespace), override=True)
+        graph.bind(prefix, Namespace(new_namespace), replace=True)
 
         # Oppdater triples
         update_namespace_data(graph, old_ns, new_namespace)
@@ -214,7 +214,20 @@ class CIMXMLParser(Parser):
         return graph
 
 
-def _get_current_namespace_model(schemaview: SchemaView, prefix: str) -> Optional[str]:
+def _get_current_namespace_from_model(schemaview: SchemaView, prefix: str) -> Optional[str]:
+    """Get namespace for a given prefix from a linkML SchemaView.
+    
+    Parameters:
+        schemaview (Schemaview): Target for collection of namespace.
+        prefix (str): The prefix of the namespace.
+    
+    Raises:
+        ValueError: If SchemaView or SchemaView.schema is not found.
+
+    Returns:
+        str: The namespace of the given prefix.
+        None: If the prefix is not found in the schema.
+    """
     if not schemaview or not schemaview.schema:
         raise ValueError("Schemaview not found or schemaview is missing schema.")
 
@@ -236,34 +249,17 @@ def _get_current_namespace_model(schemaview: SchemaView, prefix: str) -> Optiona
 
     return None
 
-# def _get_current_namespace_model(schemaview: SchemaView, prefix: str) -> str|None:
-#     """
-#     Returnerer nåværende namespace for en prefix, uansett LinkML-versjon.
-#     Returnerer None hvis prefix ikke finnes.
-#     """
-#     if not schemaview or not schemaview.schema:
-#         raise ValueError("Schemaview not found or schemaview is missing schema.")
 
-#     schema = schemaview.schema
+def _get_current_namespace_from_graph(graph: Graph, prefix: str) -> Optional[str]:
+    """Get namespace uri for a given prefix.
+    
+    Parameters:
+        graph (Graph): Target for collection of namespace.
+        prefix (str): The prefix of the namespace.
 
-#     # 1. Nyere/eldre modeller kan ha namespaces
-#     if hasattr(schema, "namespaces") and schema.namespaces:
-#         ns = schema.namespaces.get(prefix)
-#         if ns:
-#             return ns.uri
-
-#     # 2. De fleste moderne modeller bruker prefixes
-#     if hasattr(schema, "prefixes") and schema.prefixes:
-#         p = schema.prefixes.get(prefix) # type: ignore
-#         if p:
-#             return p.prefix_reference   # type: ignore
-
-#     return None
-
-
-def _get_current_namespace_data(graph: Graph, prefix: str) -> str | None:
-    """
-    Returnerer namespace-URI for et gitt prefix i grafen.
+    Returns:
+        str: The namespace of the given prefix.
+        None: If the prefix is not found in the graph.
     """
     for pfx, ns in graph.namespace_manager.namespaces():
         if pfx == prefix:
