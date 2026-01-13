@@ -223,7 +223,8 @@ def _get_current_namespace_from_model(schemaview: SchemaView, prefix: str) -> Op
         prefix (str): The prefix of the namespace.
     
     Raises:
-        ValueError: If SchemaView or SchemaView.schema is not found.
+        ValueError: - If SchemaView or SchemaView.schema is not found.
+                    - If SchemaView contains the attribute "namespaces" (indicating that it is outdated).
 
     Returns:
         str: The namespace of the given prefix.
@@ -234,14 +235,11 @@ def _get_current_namespace_from_model(schemaview: SchemaView, prefix: str) -> Op
 
     schema = schemaview.schema
 
-    # 1. namespaces
-    namespaces = getattr(schema, "namespaces", None)
-    if isinstance(namespaces, dict):
-        ns = namespaces.get(prefix)
-        if ns and hasattr(ns, "uri"):
-            return ns.uri
+    # The attribute "namespaces" is deprecated. The presence of it indicates an outdated schemaview.
+    # As an outdated schemaview may also have other issues, the function raises an error to fail the entire process.
+    if hasattr(schema, "namespaces"):
+        raise ValueError("The attribute 'namespaces' found in schema. This schemaview is outdated.")
 
-    # 2. prefixes
     prefixes = getattr(schema, "prefixes", None)
     if isinstance(prefixes, dict):
         p = prefixes.get(prefix)
@@ -659,18 +657,18 @@ def _build_slot_index(schemaview):
 
 #             candidates.append((node, frag))
 
-    for old_uri, frag in candidates:
-        new_uri = URIRef(f"{cim_base}{frag}")
+    # for old_uri, frag in candidates:
+    #     new_uri = URIRef(f"{cim_base}{frag}")
 
-        # Flytt triples der old_uri er subjekt
-        for p, o in list(graph.predicate_objects(old_uri)):
-            graph.add((new_uri, p, o))
-            graph.remove((old_uri, p, o))
+    #     # Flytt triples der old_uri er subjekt
+    #     for p, o in list(graph.predicate_objects(old_uri)):
+    #         graph.add((new_uri, p, o))
+    #         graph.remove((old_uri, p, o))
 
-        # Flytt triples der old_uri er objekt
-        for s, p in list(graph.subject_predicates(old_uri)):
-            graph.add((s, p, new_uri))
-            graph.remove((s, p, old_uri))
+    #     # Flytt triples der old_uri er objekt
+    #     for s, p in list(graph.subject_predicates(old_uri)):
+    #         graph.add((s, p, new_uri))
+    #         graph.remove((s, p, old_uri))
 
 
 # def graph_uses_canonical_namespace(graph, canonical_ns):

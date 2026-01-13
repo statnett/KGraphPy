@@ -2,14 +2,15 @@ import pytest
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix
 from typing import Callable, Any, Optional, Dict
-from cim_plugin.cimxml import update_namespace_in_model
+from cim_plugin.cimxml import _get_current_namespace_from_model, update_namespace_in_model
+import copy
 
+# There are numerous type: ignore in this file. Where not otherwise stated, this is to silence 
+# pylance about schemaview.schema.prefixes, which is caused by linkML having too wide type hints.
 
 @pytest.fixture
 def make_schemaview() -> Callable[..., SchemaView]:
-    """
-    Lager et ekte SchemaView basert på et ekte SchemaDefinition.
-    """
+    """Make a sample SchemaView."""
     def _factory(prefixes=None) -> SchemaView:
         schema = SchemaDefinition(
             id="test",
@@ -19,6 +20,99 @@ def make_schemaview() -> Callable[..., SchemaView]:
         return SchemaView(schema)
 
     return _factory
+
+# Unit tests for _get_current_namespace_from_model
+@pytest.mark.parametrize(
+    "prefixes,prefix,expected",
+    [
+        pytest.param(
+            [{"ex": Prefix(prefix_prefix="ex", prefix_reference="http://example.org/")}],
+            "ex",
+            "http://example.org/",
+            id="Prefix found"
+        ),
+        pytest.param(
+            [
+                {"foo": Prefix(prefix_prefix="foo", prefix_reference="http://foo.org/")},
+                {"bar": Prefix(prefix_prefix="bar", prefix_reference="http://bar.org/")},
+            ],
+            "bar",
+            "http://bar.org/",
+            id="Multiple prefixes registered"
+        ),
+        pytest.param(
+            [
+                {"foo": Prefix(prefix_prefix="foo", prefix_reference="http://foo.org/")},
+                {"bar": Prefix(prefix_prefix="bar", prefix_reference="http://bar.org/")},
+            ],
+            "missing",
+            None,
+            id="No prefix found"
+        ),
+    ]
+)
+def test_get_current_namespace_from_model_basic(make_schemaview: Callable[..., SchemaView], prefixes: list[dict], prefix: str, expected: str|None) -> None:
+    sv = make_schemaview(prefixes)
+    result = _get_current_namespace_from_model(sv, prefix)
+    assert result == expected
+
+
+def test_get_current_namespace_from_model_missingschema(make_schemaview: Callable[..., SchemaView]) -> None:
+    sv = make_schemaview()
+    sv.schema = None
+
+    with pytest.raises(ValueError) as exc_info:
+        _get_current_namespace_from_model(sv, "ex")
+
+    assert "Schemaview not found or schemaview is missing schema." in str(exc_info.value)
+
+
+def test_get_current_namespace_from_model_schemahasnamespaces(make_schemaview: Callable[..., SchemaView]) -> None:
+    # The field "namespaces" is deprecated from linkML. 
+    # This test shows that a schemaview that contain namespaces is outdated and cannot be handled.
+    sv = make_schemaview(prefixes=[{"foo": Prefix(prefix_prefix="foo", prefix_reference="http://foo.org/")}])
+    # Ignoring pylance for testing wrong input
+    sv.schema.namespaces = {}   # type: ignore
+
+    with pytest.raises(ValueError) as exc_info:
+        _get_current_namespace_from_model(sv, "ex")
+
+    assert "The attribute 'namespaces' found in schema. This schemaview is outdated." in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "prefixes,prefix,expected",
+    [
+        pytest.param({}, "ex", None, id="Empty prefixes"),
+        pytest.param(None, "ex", None, id="None prefixes"),
+        pytest.param(None, None, None, id="Prefix is None"),
+        pytest.param({}, 1, None, id="Prefix is int"),
+    ]
+)
+def test__get_current_namespace_from_model_edgecases(make_schemaview: Callable[..., SchemaView], prefixes: dict|None|int, prefix: str|None, expected: str|None) -> None:
+    sv = make_schemaview(prefixes=prefixes)
+
+    # Ignoring pylance for testing wrong input
+    result = _get_current_namespace_from_model(sv, prefix)   # type: ignore
+    assert result == expected
+
+
+def test_get_current_namespace_from_model_nomutationofschemaview(make_schemaview: Callable[..., SchemaView]) -> None:
+    prefixes = [{"foo": Prefix(prefix_prefix="foo", prefix_reference="http://foo.org/")},
+                {"bar": Prefix(prefix_prefix="bar", prefix_reference="http://bar.org/")}]
+    sv = make_schemaview(prefixes=prefixes)
+    schema_before_id = id(sv.schema)
+    prefixes_before = copy.deepcopy(sv.schema.prefixes) # type: ignore
+    name_before = copy.deepcopy(getattr(sv.schema, "name", None))
+
+    result = _get_current_namespace_from_model(sv, "foo")
+
+    assert result == "http://foo.org/"
+
+    # Checking that nothing has been changed in the schemaview
+    assert id(sv.schema) == schema_before_id
+    assert sv.schema.prefixes == prefixes_before    # type: ignore
+    assert getattr(sv.schema, "name", None) == name_before
 
 
 # Unit tests update_namespace_in_model
@@ -102,7 +196,7 @@ def test_update_namespace_in_model_prefixesisnone(make_schemaview: Callable[...,
     assert sv.schema.prefixes == {} # type: ignore
 
 
-def test_update_namespace_in_model_missingprefixesattribute(monkeypatch: pytest.MonkeyPatch, make_schemaview: Callable[..., SchemaView]) -> None: 
+def test_update_namespace_in_model_missingprefixesattribute(make_schemaview: Callable[..., SchemaView]) -> None: 
     sv = make_schemaview({"ex": Prefix(prefix_prefix="ex", prefix_reference="http://old/")}) 
     del sv.schema.prefixes  # type: ignore
     update_namespace_in_model(sv, "ex", "http://updated/") 

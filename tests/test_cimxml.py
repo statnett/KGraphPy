@@ -181,103 +181,103 @@ def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicM
     mock_detect.assert_called_once()
 
 
-# Unit tests for _get_current_namespace_from_model
-@pytest.mark.parametrize(
-    "namespaces,prefixes,prefix,expected",
-    [
-        pytest.param(
-            {"ex": SimpleNamespace(uri="http://example.org/")},
-            None,
-            "ex",
-            "http://example.org/",
-            id="Namespace found"
-        ),
-        pytest.param(
-            None,
-            {"ex": SimpleNamespace(prefix_reference="http://example.org/")},
-            "ex",
-            "http://example.org/",
-            id="Prefix found"
-        ),
-        pytest.param(
-            {"foo": SimpleNamespace(uri="http://foo.org/")},
-            {"bar": SimpleNamespace(prefix_reference="http://bar.org/")},
-            "missing",
-            None,
-            id="Neither namespace or prefix found"
-        ),
-        pytest.param(
-            {"ex": SimpleNamespace(uri="http://ns-first.org/")},
-            {"ex": SimpleNamespace(prefix_reference="http://prefix-second.org/")},
-            "ex",
-            "http://ns-first.org/",
-            id="Namespace overruling prefix"
-        ),
-    ]
-)
-def test_get_current_namespace_from_model_basic(mock_schemaview: MagicMock, namespaces: SimpleNamespace|None, prefixes: SimpleNamespace|None, prefix: str, expected: str|None) -> None:
-    sv = mock_schemaview()
-    sv.schema.namespaces = namespaces
-    sv.schema.prefixes = prefixes
+# # Unit tests for _get_current_namespace_from_model
+# @pytest.mark.parametrize(
+#     "namespaces,prefixes,prefix,expected",
+#     [
+#         pytest.param(
+#             {"ex": SimpleNamespace(uri="http://example.org/")},
+#             None,
+#             "ex",
+#             "http://example.org/",
+#             id="Namespace found"
+#         ),
+#         pytest.param(
+#             None,
+#             {"ex": SimpleNamespace(prefix_reference="http://example.org/")},
+#             "ex",
+#             "http://example.org/",
+#             id="Prefix found"
+#         ),
+#         pytest.param(
+#             {"foo": SimpleNamespace(uri="http://foo.org/")},
+#             {"bar": SimpleNamespace(prefix_reference="http://bar.org/")},
+#             "missing",
+#             None,
+#             id="Neither namespace or prefix found"
+#         ),
+#         pytest.param(
+#             {"ex": SimpleNamespace(uri="http://ns-first.org/")},
+#             {"ex": SimpleNamespace(prefix_reference="http://prefix-second.org/")},
+#             "ex",
+#             "http://ns-first.org/",
+#             id="Namespace overruling prefix"
+#         ),
+#     ]
+# )
+# def test_get_current_namespace_from_model_basic(mock_schemaview: MagicMock, namespaces: SimpleNamespace|None, prefixes: SimpleNamespace|None, prefix: str, expected: str|None) -> None:
+#     sv = mock_schemaview()
+#     sv.schema.namespaces = namespaces
+#     sv.schema.prefixes = prefixes
 
-    result = _get_current_namespace_from_model(sv, prefix)
-    assert result == expected
-
-
-def test_get_current_namespace_from_model_missingschema(mock_schemaview: MagicMock) -> None:
-    sv = mock_schemaview()
-    sv.schema = None
-
-    with pytest.raises(ValueError) as exc_info:
-        _get_current_namespace_from_model(sv, "ex")
-
-    assert "Schemaview not found or schemaview is missing schema." in str(exc_info.value)
+#     result = _get_current_namespace_from_model(sv, prefix)
+#     assert result == expected
 
 
-@pytest.mark.parametrize(
-    "namespaces,prefixes,prefix,expected",
-    [
-        pytest.param({}, {}, "ex", None, id="Empty namespaces and prefixes"),
-        pytest.param(None, None, "ex", None, id="None namespaces and prefixes"),
-        pytest.param(["not", "a", "dict"], None, "ex", None, id="Wrong type in namespace"),
-        pytest.param(None, ["wrong", "type"], "ex", None, id="Wrong type in prefixes"),
-        pytest.param({"ex": SimpleNamespace(not_uri="oops")}, None, "ex", None, id="Namespace not a uri"),
-        pytest.param(None, {"ex": SimpleNamespace(not_prefix="oops")}, "ex", None, id=".prefix_reference missing"),
-        pytest.param({"": SimpleNamespace(uri="http://empty.org/")}, None, "", "http://empty.org/", id="Prefix and empty string"),
-        pytest.param({"ex": SimpleNamespace(uri="http://example.org/")}, None, None, None, id="Prefix is None"),
-    ]
-)
-def test__get_current_namespace_from_model_edgecases(mock_schemaview: MagicMock, namespaces: dict|list|None, prefixes: dict|list|None, prefix: str|None, expected: str|None) -> None:
-    sv = mock_schemaview()
-    sv.schema.namespaces = namespaces
-    sv.schema.prefixes = prefixes
+# def test_get_current_namespace_from_model_missingschema(mock_schemaview: MagicMock) -> None:
+#     sv = mock_schemaview()
+#     sv.schema = None
 
-    # Ignoring pylance so wrong input can be tested
-    result = _get_current_namespace_from_model(sv, prefix)   # type: ignore
-    assert result == expected
+#     with pytest.raises(ValueError) as exc_info:
+#         _get_current_namespace_from_model(sv, "ex")
+
+#     assert "Schemaview not found or schemaview is missing schema." in str(exc_info.value)
 
 
-def test_get_current_namespace_from_model_nomutationofschemaview(mock_schemaview: MagicMock) -> None:
-    sv = mock_schemaview()
-    sv.schema.namespaces = {"ex": SimpleNamespace(uri="http://example.org/")}
-    sv.schema.prefixes = {"ex": SimpleNamespace(prefix_reference="http://example.org/prefix")}
+# @pytest.mark.parametrize(
+#     "namespaces,prefixes,prefix,expected",
+#     [
+#         pytest.param({}, {}, "ex", None, id="Empty namespaces and prefixes"),
+#         pytest.param(None, None, "ex", None, id="None namespaces and prefixes"),
+#         pytest.param(["not", "a", "dict"], None, "ex", None, id="Wrong type in namespace"),
+#         pytest.param(None, ["wrong", "type"], "ex", None, id="Wrong type in prefixes"),
+#         pytest.param({"ex": SimpleNamespace(not_uri="oops")}, None, "ex", None, id="Namespace not a uri"),
+#         pytest.param(None, {"ex": SimpleNamespace(not_prefix="oops")}, "ex", None, id=".prefix_reference missing"),
+#         pytest.param({"": SimpleNamespace(uri="http://empty.org/")}, None, "", "http://empty.org/", id="Prefix and empty string"),
+#         pytest.param({"ex": SimpleNamespace(uri="http://example.org/")}, None, None, None, id="Prefix is None"),
+#     ]
+# )
+# def test__get_current_namespace_from_model_edgecases(mock_schemaview: MagicMock, namespaces: dict|list|None, prefixes: dict|list|None, prefix: str|None, expected: str|None) -> None:
+#     sv = mock_schemaview()
+#     sv.schema.namespaces = namespaces
+#     sv.schema.prefixes = prefixes
 
-    schema_before_id = id(sv.schema)
-    namespaces_before = copy.deepcopy(sv.schema.namespaces)
-    prefixes_before = copy.deepcopy(sv.schema.prefixes)
-    types_before = copy.deepcopy(getattr(sv.schema, "types", None))
-    slots_before = copy.deepcopy(getattr(sv.schema, "slots", None))
+#     # Ignoring pylance so wrong input can be tested
+#     result = _get_current_namespace_from_model(sv, prefix)   # type: ignore
+#     assert result == expected
 
-    result = _get_current_namespace_from_model(sv, "ex")
 
-    assert result == "http://example.org/"
+# def test_get_current_namespace_from_model_nomutationofschemaview(mock_schemaview: MagicMock) -> None:
+#     sv = mock_schemaview()
+#     sv.schema.namespaces = {"ex": SimpleNamespace(uri="http://example.org/")}
+#     sv.schema.prefixes = {"ex": SimpleNamespace(prefix_reference="http://example.org/prefix")}
 
-    # Checking that nothing has been changed in the schemaview
-    assert id(sv.schema) == schema_before_id
-    assert sv.schema.namespaces == namespaces_before
-    assert sv.schema.prefixes == prefixes_before
-    assert getattr(sv.schema, "types", None) == types_before
-    assert getattr(sv.schema, "slots", None) == slots_before
+#     schema_before_id = id(sv.schema)
+#     namespaces_before = copy.deepcopy(sv.schema.namespaces)
+#     prefixes_before = copy.deepcopy(sv.schema.prefixes)
+#     types_before = copy.deepcopy(getattr(sv.schema, "types", None))
+#     slots_before = copy.deepcopy(getattr(sv.schema, "slots", None))
+
+#     result = _get_current_namespace_from_model(sv, "ex")
+
+#     assert result == "http://example.org/"
+
+#     # Checking that nothing has been changed in the schemaview
+#     assert id(sv.schema) == schema_before_id
+#     assert sv.schema.namespaces == namespaces_before
+#     assert sv.schema.prefixes == prefixes_before
+#     assert getattr(sv.schema, "types", None) == types_before
+#     assert getattr(sv.schema, "slots", None) == slots_before
 
 
 # Unit tests _get_current_namespace_from_graph
