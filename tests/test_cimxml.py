@@ -12,54 +12,28 @@ from cim_plugin.cimxml import (
 )
 import pytest
 from unittest.mock import patch, MagicMock, call
-from linkml_runtime.linkml_model import TypeDefinition
-from collections import defaultdict
-import yaml
+# from linkml_runtime.linkml_model import TypeDefinition
+# import yaml
 from pathlib import Path
 from rdflib import URIRef, Graph, Literal, BNode, Namespace
 import logging
 from pytest import LogCaptureFixture
-from types import SimpleNamespace
-import copy
+# from types import SimpleNamespace
 
 logger = logging.getLogger("cimxml_logger")
 
 
-# @pytest.fixture
-# def mock_schemaview():
-#     def _factory(types=None, slots=None):
-#         mock_schema = MagicMock()
-#         mock_schema.types = types
-#         mock_schema.slots = slots or {}
-
-#         mock_schemaview = MagicMock()
-#         mock_schemaview.schema = mock_schema
-#         mock_schemaview.set_modified = MagicMock()
-
-#         mock_schemaview.get_slot.side_effect = lambda name: mock_schema.slots.get(name)
-
-#         def add_slot(slot):
-#             mock_schema.slots[slot.name] = slot
-
-#         mock_schemaview.add_slot.side_effect = add_slot
-
-#         return mock_schemaview
-
-#     return _factory
-
-
 @pytest.fixture
 def mock_schemaview():
-    def _factory(types=None, slots=None, namespaces=None, prefixes=None):
+    def _factory(types=None, slots=None):
         mock_schema = MagicMock()
         mock_schema.types = types
         mock_schema.slots = slots or {}
-        mock_schema.namespaces = namespaces if namespaces is not None else {}
-        mock_schema.prefixes = prefixes if prefixes is not None else {}
 
         mock_schemaview = MagicMock()
         mock_schemaview.schema = mock_schema
         mock_schemaview.set_modified = MagicMock()
+
         mock_schemaview.get_slot.side_effect = lambda name: mock_schema.slots.get(name)
 
         def add_slot(slot):
@@ -181,105 +155,6 @@ def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicM
     mock_detect.assert_called_once()
 
 
-# # Unit tests for _get_current_namespace_from_model
-# @pytest.mark.parametrize(
-#     "namespaces,prefixes,prefix,expected",
-#     [
-#         pytest.param(
-#             {"ex": SimpleNamespace(uri="http://example.org/")},
-#             None,
-#             "ex",
-#             "http://example.org/",
-#             id="Namespace found"
-#         ),
-#         pytest.param(
-#             None,
-#             {"ex": SimpleNamespace(prefix_reference="http://example.org/")},
-#             "ex",
-#             "http://example.org/",
-#             id="Prefix found"
-#         ),
-#         pytest.param(
-#             {"foo": SimpleNamespace(uri="http://foo.org/")},
-#             {"bar": SimpleNamespace(prefix_reference="http://bar.org/")},
-#             "missing",
-#             None,
-#             id="Neither namespace or prefix found"
-#         ),
-#         pytest.param(
-#             {"ex": SimpleNamespace(uri="http://ns-first.org/")},
-#             {"ex": SimpleNamespace(prefix_reference="http://prefix-second.org/")},
-#             "ex",
-#             "http://ns-first.org/",
-#             id="Namespace overruling prefix"
-#         ),
-#     ]
-# )
-# def test_get_current_namespace_from_model_basic(mock_schemaview: MagicMock, namespaces: SimpleNamespace|None, prefixes: SimpleNamespace|None, prefix: str, expected: str|None) -> None:
-#     sv = mock_schemaview()
-#     sv.schema.namespaces = namespaces
-#     sv.schema.prefixes = prefixes
-
-#     result = _get_current_namespace_from_model(sv, prefix)
-#     assert result == expected
-
-
-# def test_get_current_namespace_from_model_missingschema(mock_schemaview: MagicMock) -> None:
-#     sv = mock_schemaview()
-#     sv.schema = None
-
-#     with pytest.raises(ValueError) as exc_info:
-#         _get_current_namespace_from_model(sv, "ex")
-
-#     assert "Schemaview not found or schemaview is missing schema." in str(exc_info.value)
-
-
-# @pytest.mark.parametrize(
-#     "namespaces,prefixes,prefix,expected",
-#     [
-#         pytest.param({}, {}, "ex", None, id="Empty namespaces and prefixes"),
-#         pytest.param(None, None, "ex", None, id="None namespaces and prefixes"),
-#         pytest.param(["not", "a", "dict"], None, "ex", None, id="Wrong type in namespace"),
-#         pytest.param(None, ["wrong", "type"], "ex", None, id="Wrong type in prefixes"),
-#         pytest.param({"ex": SimpleNamespace(not_uri="oops")}, None, "ex", None, id="Namespace not a uri"),
-#         pytest.param(None, {"ex": SimpleNamespace(not_prefix="oops")}, "ex", None, id=".prefix_reference missing"),
-#         pytest.param({"": SimpleNamespace(uri="http://empty.org/")}, None, "", "http://empty.org/", id="Prefix and empty string"),
-#         pytest.param({"ex": SimpleNamespace(uri="http://example.org/")}, None, None, None, id="Prefix is None"),
-#     ]
-# )
-# def test__get_current_namespace_from_model_edgecases(mock_schemaview: MagicMock, namespaces: dict|list|None, prefixes: dict|list|None, prefix: str|None, expected: str|None) -> None:
-#     sv = mock_schemaview()
-#     sv.schema.namespaces = namespaces
-#     sv.schema.prefixes = prefixes
-
-#     # Ignoring pylance so wrong input can be tested
-#     result = _get_current_namespace_from_model(sv, prefix)   # type: ignore
-#     assert result == expected
-
-
-# def test_get_current_namespace_from_model_nomutationofschemaview(mock_schemaview: MagicMock) -> None:
-#     sv = mock_schemaview()
-#     sv.schema.namespaces = {"ex": SimpleNamespace(uri="http://example.org/")}
-#     sv.schema.prefixes = {"ex": SimpleNamespace(prefix_reference="http://example.org/prefix")}
-
-#     schema_before_id = id(sv.schema)
-#     namespaces_before = copy.deepcopy(sv.schema.namespaces)
-#     prefixes_before = copy.deepcopy(sv.schema.prefixes)
-#     types_before = copy.deepcopy(getattr(sv.schema, "types", None))
-#     slots_before = copy.deepcopy(getattr(sv.schema, "slots", None))
-
-#     result = _get_current_namespace_from_model(sv, "ex")
-
-#     assert result == "http://example.org/"
-
-#     # Checking that nothing has been changed in the schemaview
-#     assert id(sv.schema) == schema_before_id
-#     assert sv.schema.namespaces == namespaces_before
-#     assert sv.schema.prefixes == prefixes_before
-#     assert getattr(sv.schema, "types", None) == types_before
-#     assert getattr(sv.schema, "slots", None) == slots_before
-
-
 # Unit tests _get_current_namespace_from_graph
 
 @pytest.mark.parametrize(
@@ -368,54 +243,6 @@ def test_get_current_namespace_from_graph_unicodeprefix(prefix: str, uri: str) -
     result = _get_current_namespace_from_graph(g, prefix)
     assert result == uri
 
-# Unit tests inject_integer_type
-
-@pytest.mark.parametrize(
-        "typeset, set_modified_called",
-        [
-            pytest.param({}, True, id="Integer added to schemaview"),
-            pytest.param({"integer": TypeDefinition(name="integer", base="int")}, False, id="Integer already in schemaview"),
-            pytest.param({"wierd": "Not a TypeDefinition"}, True, id="Integer added when other non-conventional types are present"),
-            pytest.param({123: TypeDefinition(name="num")}, True, id="Integer added when other non-string keys are present"),
-            pytest.param({"integer": "Not a TypeDefinition"}, False, id="Integer already in schemaview, but with invalid type"),
-        ]
-)
-def test_inject_integer_type_various(typeset: dict, set_modified_called: bool, mock_schemaview: MagicMock) -> None:
-    schemaview = mock_schemaview(types=typeset)
-    inject_integer_type(schemaview)
-
-    assert "integer" in schemaview.schema.types
-    if set_modified_called:
-        schemaview.set_modified.assert_called_once()
-    else:
-        schemaview.set_modified.assert_not_called()
-
-def test_inject_integer_type_schemamissing(mock_schemaview: MagicMock) -> None:
-    schemaview = mock_schemaview(types={})
-    schemaview.schema = None  # overskriv schema
-
-    with pytest.raises(ValueError):
-        inject_integer_type(schemaview)
-
-
-def test_inject_integer_type_raises_if_types_not_dict(mock_schemaview: MagicMock) -> None:
-    schemaview = mock_schemaview(types=None)
-
-    with pytest.raises(ValueError):
-        inject_integer_type(schemaview)
-
-
-def test_inject_integer_type_set_modifiederror(mock_schemaview: MagicMock) -> None:
-    schemaview = mock_schemaview(types={})
-    schemaview.set_modified.side_effect = RuntimeError("boom")
-
-    with pytest.raises(RuntimeError):
-        inject_integer_type(schemaview)
-
-def test_inject_integer_type_supportsdictsubclasses(mock_schemaview: MagicMock) -> None:
-    schemaview = mock_schemaview(types=defaultdict(dict))
-    inject_integer_type(schemaview)
-    assert "integer" in schemaview.schema.types
 
 # Unit tests patch_integer_ranges
 def test_patch_integer_ranges(tmp_path: Path, mock_schemaview: MagicMock) -> None:

@@ -329,16 +329,14 @@ def inject_integer_type(schemaview: SchemaView) -> None:
         raise ValueError("No schema found for schemaview")
 
     types = schemaview.schema.types
-    if not isinstance(types, dict): 
-        raise ValueError("Schema types is not a dictionary")
 
-    if "integer" in types: 
-        return 
+    if isinstance(types, dict):
+        if "integer" in types:
+            return 
 
-    t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
-    types["integer"] = t 
-
-    schemaview.set_modified()
+        t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
+        types["integer"] = t 
+        schemaview.set_modified()
 
 
 def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
