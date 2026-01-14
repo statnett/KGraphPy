@@ -54,8 +54,8 @@ class CIMXMLParser(Parser):
         logger.info("Running post-process")
         self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
         self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
-        self.ensure_correct_namespace_data(graph, prefix="cim", new_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
-        self.ensure_correct_namespace_data(graph, prefix="eu", new_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
+        ensure_correct_namespace_data(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
+        ensure_correct_namespace_data(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
         # canonical_namespace = detect_cim_namespace(self.schemaview)
         # normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
@@ -87,21 +87,6 @@ class CIMXMLParser(Parser):
         logger.info(f"Wrong namespace detected for {prefix} in model. Correcting to {correct_namespace}.")
         update_namespace_in_model(self.schemaview, prefix, correct_namespace)
         
-
-    def ensure_correct_namespace_data(self, graph: Graph, prefix: str, new_namespace: str) -> None:
-        old_ns = _get_current_namespace_from_graph(graph, prefix)
-
-        if old_ns is None:
-            raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
-
-        if old_ns == new_namespace:
-            return
-
-        logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {new_namespace}.")
-        
-        graph.bind(prefix, Namespace(new_namespace), replace=True)
-        update_namespace_in_graph(graph, old_ns, new_namespace)
-
 
     def patch_missing_datatypes_in_model(self) -> None:
         if self.schema_path and self.schemaview and self.schemaview.schema:
@@ -284,18 +269,28 @@ def update_namespace_in_model(schemaview: SchemaView, prefix: str, new_namespace
     schemaview.__init__(schema)
 
 
-def update_namespace_in_graph(graph: Graph, old_ns: str, new_ns: str) -> None:
+def update_namespace_in_graph(graph: Graph, old_namespace: str, new_namespace: str) -> None:
+    """Update an old namespace with a new namespace for every triple in a graph.
+    
+    Parameters:
+        graph (Graph): The graph where namespaces are to be replaced.
+        old_namespace (str): The namespace to be replaced.
+        new_namespace (str): The namespace to replace the old with.
+
+    Raises:
+        ValueError: If old_namespace is an empty string. 
+                    Prevents the new namespace being inserted between every character.
     """
-    Erstatter alle forekomster av old_ns med new_ns i subject, predicate og object.
-    Returnerer antall endrede triples.
-    """
+    if not old_namespace:
+        raise ValueError("old_namespace cannot be an empty string")
+    
     to_add = [] 
     to_remove = [] 
     
     for s, p, o in graph: 
-        new_s = URIRef(str(s).replace(old_ns, new_ns)) if isinstance(s, URIRef) and str(s).startswith(old_ns) else s 
-        new_p = URIRef(str(p).replace(old_ns, new_ns)) if isinstance(p, URIRef) and str(p).startswith(old_ns) else p 
-        new_o = URIRef(str(o).replace(old_ns, new_ns)) if isinstance(o, URIRef) and str(o).startswith(old_ns) else o 
+        new_s = URIRef(str(s).replace(old_namespace, new_namespace)) if isinstance(s, URIRef) and str(s).startswith(old_namespace) else s 
+        new_p = URIRef(str(p).replace(old_namespace, new_namespace)) if isinstance(p, URIRef) and str(p).startswith(old_namespace) else p 
+        new_o = URIRef(str(o).replace(old_namespace, new_namespace)) if isinstance(o, URIRef) and str(o).startswith(old_namespace) else o 
         
         if (new_s, new_p, new_o) != (s, p, o): 
             to_remove.append((s, p, o)) 
@@ -306,6 +301,21 @@ def update_namespace_in_graph(graph: Graph, old_ns: str, new_ns: str) -> None:
         
     for triple in to_add: 
         graph.add(triple)
+
+
+def ensure_correct_namespace_data(graph: Graph, prefix: str, correct_namespace: str) -> None:
+    current = _get_current_namespace_from_graph(graph, prefix)
+
+    if current is None:
+        raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
+
+    if current == correct_namespace:
+        return
+
+    logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {correct_namespace}.")
+    
+    graph.bind(prefix, Namespace(correct_namespace), replace=True)
+    update_namespace_in_graph(graph, current, correct_namespace)
 
 
 def inject_integer_type(schemaview: SchemaView) -> None: 

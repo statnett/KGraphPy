@@ -1,9 +1,9 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock #, patch
 import pytest
 from pytest import LogCaptureFixture
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition, SlotDefinition
-from typing import Callable, Any, Optional, Dict
+from typing import Callable, Any    #, Optional, Dict
 from cim_plugin.cimxml import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,

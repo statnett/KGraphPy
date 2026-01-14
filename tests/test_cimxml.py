@@ -1,5 +1,6 @@
 from cim_plugin.cimxml import (
     _get_current_namespace_from_graph,
+    update_namespace_in_graph,
     find_slots_with_range,
     detect_uri_collisions, 
     _clean_uri,
@@ -7,8 +8,8 @@ from cim_plugin.cimxml import (
 )
 import pytest
 from unittest.mock import patch, MagicMock, mock_open
-from pathlib import Path
-from rdflib import URIRef, Graph, Namespace
+# from pathlib import Path
+from rdflib import URIRef, Graph, Namespace, Literal, BNode
 import logging
 from pytest import LogCaptureFixture
 import textwrap
@@ -103,6 +104,190 @@ def test_get_current_namespace_from_graph_unicodeprefix(prefix: str, uri: str) -
 
     result = _get_current_namespace_from_graph(g, prefix)
     assert result == uri
+
+
+@pytest.mark.parametrize(
+    "triple, old_ns, new_ns, expected",
+    [
+        pytest.param(
+            (URIRef("http://old.com/a"), URIRef("x"), URIRef("y")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("http://new.com/a"), URIRef("x"), URIRef("y")),
+            id="Subject update"
+        ),
+        pytest.param(
+            (URIRef("s"), URIRef("http://old.com/p"), URIRef("o")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("s"), URIRef("http://new.com/p"), URIRef("o")),
+            id="Predicate update"
+        ),
+        pytest.param(
+            (URIRef("s"), URIRef("p"), URIRef("http://old.com/o")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("s"), URIRef("p"), URIRef("http://new.com/o")),
+            id="Object update"
+        ),
+        pytest.param(
+            (URIRef("s"), URIRef("p"), URIRef("o")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("s"), URIRef("p"), URIRef("o")),
+            id="Simple no update"
+        ),
+        pytest.param(
+            (URIRef("http://unrecognized.com/s"), URIRef("http://unrecognized.com/p"), URIRef("http://unrecognized.com/o")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("http://unrecognized.com/s"), URIRef("http://unrecognized.com/p"), URIRef("http://unrecognized.com/o")),
+            id="No update, all uris."
+        ),
+        pytest.param(
+            (BNode("s"), URIRef("http://old.com/p"), URIRef("o")),
+            "http://old.com/",
+            "http://new.com/",
+            (BNode("s"), URIRef("http://new.com/p"), URIRef("o")),
+            id="Subject is BNode"
+        ),
+        pytest.param(
+            (URIRef("s"), URIRef("http://old.com/p"), BNode("o")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("s"), URIRef("http://new.com/p"), BNode("o")),
+            id="Object is BNode"
+        ),
+        pytest.param(
+            (URIRef("s"), URIRef("http://old.com/p"), Literal("o")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("s"), URIRef("http://new.com/p"), Literal("o")),
+            id="Object is Literal"
+        ),
+        pytest.param(
+            (URIRef("http://old.comX/a"), URIRef("x"), URIRef("y")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("http://old.comX/a"), URIRef("x"), URIRef("y")),
+            id="Partial match -> No update"
+        ),
+        # This may cause problems!!
+        pytest.param(
+            (URIRef("http://old.com/a/http://old.com/b"), URIRef("x"), URIRef("y")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("http://new.com/a/http://new.com/b"), URIRef("x"), URIRef("y")),
+            id="Multiple occurence of same uri"
+        ),
+        pytest.param(
+            (URIRef("http://old.complex/foo/a"), URIRef("x"), URIRef("y")),
+            "http://old.com/",
+            "http://new.com/",
+            (URIRef("http://old.complex/foo/a"), URIRef("x"), URIRef("y")),
+            id="Uri is part of another uri -> No update"
+        ),
+        pytest.param(
+            (URIRef("http://old.com/a"), URIRef("x"), URIRef("y")),
+            "http://old.com/",
+            "",
+            (URIRef("a"), URIRef("x"), URIRef("y")),
+            id="New namespace empty"
+        ),
+    ]
+)
+def test_update_namespace_in_graph_singletriple(triple: tuple, old_ns: str, new_ns: str, expected: tuple) -> None:
+    g = Graph()
+    g.add(triple)
+
+    update_namespace_in_graph(g, old_ns, new_ns)
+    for s, p, o in g:
+        print(s, p, o)
+    assert len(g) == 1
+    assert expected in g
+
+
+def test_update_namespace_in_graph_mixedtriples() -> None:
+    old_ns = "http://old.com/"
+    new_ns = "http://new.com/"
+
+    g = Graph()
+    t1 = (URIRef("http://old.com/a"), URIRef("p"), URIRef("o"))
+    t2 = (URIRef("s"), URIRef("http://old.com/p"), URIRef("o"))
+    t3 = (URIRef("s"), URIRef("p"), URIRef("http://old.com/o"))
+    t4 = (URIRef("s"), URIRef("p"), URIRef("o"))  # unchanged
+
+    for t in (t1, t2, t3, t4):
+        g.add(t)
+
+    update_namespace_in_graph(g, old_ns, new_ns)
+
+    expected = {
+        (URIRef("http://new.com/a"), URIRef("p"), URIRef("o")),
+        (URIRef("s"), URIRef("http://new.com/p"), URIRef("o")),
+        (URIRef("s"), URIRef("p"), URIRef("http://new.com/o")),
+        t4,
+    }
+
+    assert len(g) == 4
+    for triple in expected:
+        assert triple in g
+
+
+def test_update_namespace_in_graph_multiplereplacements() -> None:
+    g = Graph()
+    old_ns = "http://old.com/"
+    new_ns = "http://new.com/"
+
+    triple = (URIRef("http://old.com/s"), URIRef("http://old.com/p"), URIRef("http://old.com/o"),)
+    g.add(triple)
+
+    update_namespace_in_graph(g, old_ns, new_ns)
+
+    expected = (URIRef("http://new.com/s"), URIRef("http://new.com/p"), URIRef("http://new.com/o"),)
+
+    assert len(g) == 1
+    assert expected in g
+    assert triple not in g
+
+
+def test_update_namespace_in_graph_duplicatesafterreplacement() -> None:
+    # This test shows what happends if replacements leads to two uris being made identical
+    g = Graph()
+    old_ns = "http://old.com/"
+    new_ns = "http://new.com/"
+
+    t1 = (URIRef("http://old.com/a"), URIRef("p"), URIRef("o"))
+    t2 = (URIRef("http://new.com/a"), URIRef("p"), URIRef("o"))
+    g.add(t1)
+    g.add(t2)
+
+    assert len(g) == 2  # Number of triples before replacement
+
+    update_namespace_in_graph(g, old_ns, new_ns)
+
+    expected = (URIRef("http://new.com/a"), URIRef("p"), URIRef("o"))
+
+    assert len(g) == 1  # Number of triples after replacement
+    assert expected in g
+
+
+def test_update_namespace_in_graph_emptygraph() -> None:
+    g = Graph()
+
+    update_namespace_in_graph(g, "http://old.com/", "http://new.com/")
+
+    assert len(g) == 0
+
+
+def test_update_namespace_in_graph() -> None:
+    g = Graph()
+    g.add((URIRef("a"), URIRef("x"), URIRef("y")))
+    assert len(g) == 1
+
+    with pytest.raises(ValueError, match="old_namespace cannot be an empty string"):
+        update_namespace_in_graph(g, "", "http://new.com/")
+
 
 # Unit tests find_slots_with_range
 @pytest.fixture
