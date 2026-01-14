@@ -42,8 +42,8 @@ class CIMXMLParser(Parser):
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
             self.schemaview = SchemaView(self.schema_path)
-            self.ensure_correct_namespace_model(prefix="cim", new_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
-            self.ensure_correct_namespace_model(prefix="eu", new_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
+            self.ensure_correct_namespace_model(prefix="cim", correct_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
+            self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
             self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.post_process(sink)
@@ -60,13 +60,18 @@ class CIMXMLParser(Parser):
         # normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
 
-    def ensure_correct_namespace_model(self, prefix: str, new_namespace: str) -> bool:
-        """
-        Sjekker om namespace for prefix allerede er riktig.
-        Hvis ikke, oppdaterer den og returnerer True.
-        Hvis alt allerede stemmer, returnerer den False.
-        """
 
+    def ensure_correct_namespace_model(self, prefix: str, correct_namespace: str):
+        """Ensure that the given prefix has correct namespace and update it if not.
+        
+        Parameters:
+            prefix (str): The prefix to check for correct namespace.
+            new_namespace (str): The correct namespace.
+
+        Raises:
+            ValueError: - If schemaview is not found.
+                        - If given prefix is not found in schemaview.
+        """
         if not self.schemaview:
             raise ValueError("Schemaview not found")
 
@@ -75,39 +80,26 @@ class CIMXMLParser(Parser):
         if current is None:
             raise ValueError(f"Prefix {prefix} not found in schemaview")
 
-        if current == new_namespace:
+        if current == correct_namespace:
             logger.info(f"Model has correct namespace for {prefix}.")
-            return False
+            return
 
-        logger.info(f"Wrong namespace detected for {prefix} in model. Correcting to {new_namespace}.")
-        update_namespace_in_model(self.schemaview, prefix, new_namespace)
-        return True
-    
+        logger.info(f"Wrong namespace detected for {prefix} in model. Correcting to {correct_namespace}.")
+        update_namespace_in_model(self.schemaview, prefix, correct_namespace)
+        
 
     def ensure_correct_namespace_data(self, graph: Graph, prefix: str, new_namespace: str) -> None:
-        """
-        Oppdaterer namespace for et prefix i grafen.
-        - Henter gammel namespace automatisk
-        - Oppdaterer prefix-binding
-        - Oppdaterer alle triples som bruker gammel namespace
-        Returnerer antall endrede triples.
-        """
-
         old_ns = _get_current_namespace_from_graph(graph, prefix)
 
         if old_ns is None:
             raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
 
         if old_ns == new_namespace:
-            # Ingenting å gjøre
             return
 
         logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {new_namespace}.")
         
-        # Oppdater binding
         graph.bind(prefix, Namespace(new_namespace), replace=True)
-
-        # Oppdater triples
         update_namespace_in_graph(graph, old_ns, new_namespace)
 
 

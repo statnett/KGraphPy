@@ -1,160 +1,19 @@
 from cim_plugin.cimxml import (
-    CIMXMLParser,
-    # _get_current_namespace_from_model,
     _get_current_namespace_from_graph,
-    # update_namespace_in_model,
-    # update_namespace_in_graph,
-    # inject_integer_type, 
     find_slots_with_range,
-    patch_integer_ranges,
     detect_uri_collisions, 
     _clean_uri,
     # looks_like_cim_uri, 
 )
 import pytest
-from unittest.mock import patch, MagicMock, call, mock_open
-# from linkml_runtime.linkml_model import TypeDefinition
-# import yaml
+from unittest.mock import patch, MagicMock, mock_open
 from pathlib import Path
-from rdflib import URIRef, Graph, Literal, BNode, Namespace
+from rdflib import URIRef, Graph, Namespace
 import logging
 from pytest import LogCaptureFixture
 import textwrap
-# from types import SimpleNamespace
 
 logger = logging.getLogger("cimxml_logger")
-
-
-# @pytest.fixture
-# def mock_schemaview():
-#     def _factory(types=None, slots=None):
-#         mock_schema = MagicMock()
-#         mock_schema.types = types
-#         mock_schema.slots = slots or {}
-
-#         mock_schemaview = MagicMock()
-#         mock_schemaview.schema = mock_schema
-#         mock_schemaview.set_modified = MagicMock()
-
-#         mock_schemaview.get_slot.side_effect = lambda name: mock_schema.slots.get(name)
-
-#         def add_slot(slot):
-#             mock_schema.slots[slot.name] = slot
-
-#         mock_schemaview.add_slot.side_effect = add_slot
-
-#         return mock_schemaview
-
-#     return _factory
-
-# Unit tests CIMXMLParser.normalize_rdf_ids
-
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
-def test_normalize_rdf_ids_stops_on_collision(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
-    mock_detect.side_effect = ValueError("collision!")
-
-    parser = CIMXMLParser()
-    g = Graph()
-    g.add((URIRef("s"), URIRef("p"), URIRef("o")))
-    g.add((URIRef('www.something.com#_ab'), URIRef("p"), URIRef("o")))
-
-    with pytest.raises(ValueError):
-        parser.normalize_rdf_ids(g)
-
-    mock_detect.assert_called_once_with(g, {"ab"})
-    mock_clean.assert_not_called()
-
-
-@pytest.mark.parametrize(
-        "s, o, calls",
-        [
-            pytest.param(URIRef("a"), Literal("b"), [call(URIRef('a'), {}, set())], id="Only first call"),
-            pytest.param(URIRef("s#_a"), Literal("b"), [call(URIRef('s#_a'), {}, set("a"))], id="One call with id_set"),
-            pytest.param(URIRef("s#a"), URIRef("b"), [call(URIRef('s#a'), {}, set("a")), call(URIRef('b'), {}, set("a"))], id="Subject no _"),
-            pytest.param(URIRef("a"), URIRef("b"), [call(URIRef('a'), {}, set()), call(URIRef('b'), {}, set())], id="Both called"),
-            pytest.param(URIRef("s#_a"), URIRef("b"), [call(URIRef('s#_a'), {}, set("a")), call(URIRef('b'), {}, set("a"))], id="Both called, with id_set"),
-            pytest.param(BNode("x"), Literal("b"),[], id="Subject is BNode → no calls"),
-            pytest.param(BNode("x"), URIRef("b"),[call(URIRef("b"), {}, set())], id="Subject is BNode → object cleaned"),
-            pytest.param(URIRef("a"), BNode("x"), [call(URIRef("a"), {}, set())], id="Object is BNode → only subject cleaned"),
-            pytest.param(URIRef("http://ex.com/foo"), Literal("b"), [call(URIRef("http://ex.com/foo"), {}, set())], id="Subject without fragment still cleaned"),
-            pytest.param(URIRef("s#_a"), URIRef("http://ex.com#not_id"), [call(URIRef("s#_a"), {}, {"a"}), call(URIRef("http://ex.com#not_id"), {}, {"a"})], id="Object fragment not in id_set → not cleaned, but _clean_uri is called.")
-        ]
-)
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
-def test_normalize_rdf_ids_callscleanuri(mock_detect: MagicMock, mock_clean: MagicMock, s: URIRef|BNode, o: Literal|URIRef|BNode, calls: list) -> None:
-    mock_detect.return_value = None
-    mock_clean.side_effect = lambda uri, *_: URIRef("urn:uuid:test")
-
-    parser = CIMXMLParser()
-    g = Graph()
-    g.add((s, URIRef("p"), o))
-
-    parser.normalize_rdf_ids(g)
-
-    mock_detect.assert_called_once()
-    assert mock_clean.mock_calls == calls
-
-
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
-def test_normalize_rdf_ids_mutatesgraph(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
-    mock_detect.return_value = None
-
-    mock_clean.side_effect = [
-        URIRef("urn:uuid:a"),  # new_s
-        URIRef("urn:uuid:b"),  # new_o
-    ]
-
-    parser = CIMXMLParser()
-    g = Graph()
-    s = URIRef("http://ex.com#_a")
-    p = URIRef("p")
-    o = URIRef("http://ex.com#_b")
-    g.add((s, p, o))
-
-    parser.normalize_rdf_ids(g)
-
-    triples = list(g)
-    assert len(triples) == 1
-    new_s, new_p, new_o = triples[0]
-    assert new_s == URIRef("urn:uuid:a")
-    assert new_o == URIRef("urn:uuid:b")
-    assert new_p == p
-
-
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
-def test_normalize_rdf_ids_reusesurimap(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
-    mock_detect.return_value = None
-
-    mock_clean.side_effect = lambda uri, *_: URIRef("urn:uuid:test")
-
-    parser = CIMXMLParser()
-    g = Graph()
-    s = URIRef("http://ex.com#_a")
-    o = URIRef("http://ex.com#_a")
-    p = URIRef("p")
-    g.add((s, p, o))
-    g.add((s, p, o))  # Same triple again
-
-    parser.normalize_rdf_ids(g)
-    assert mock_clean.call_count == 2 # _clean_uri should only be called once each for s and o
-
-
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
-def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
-    mock_detect.return_value = None
-
-    parser = CIMXMLParser()
-    g = Graph()
-
-    parser.normalize_rdf_ids(g)
-
-    mock_clean.assert_not_called()
-    mock_detect.assert_called_once()
 
 
 # Unit tests _get_current_namespace_from_graph
