@@ -1,29 +1,63 @@
+from unittest.mock import MagicMock, patch
 import pytest
+from pytest import LogCaptureFixture
 from linkml_runtime import SchemaView
-from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition
+from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition, SlotDefinition
 from typing import Callable, Any, Optional, Dict
 from cim_plugin.cimxml import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,
     inject_integer_type,
+    patch_integer_ranges
 )
 import copy
 from collections import defaultdict
+from dataclasses import dataclass
 
 
 # There are numerous type: ignore in this file. Where not otherwise stated, this is to silence pylance 
 # about schemaview.schema.prefixes and .types. Pylance complains because linkML are using too wide type hints.
 
+# @pytest.fixture
+# def make_schemaview() -> Callable[..., SchemaView]:
+#     """Make a sample SchemaView."""
+#     def _factory(prefixes=None, types=None, slots=None) -> SchemaView:
+#         schema = SchemaDefinition(
+#             id="test",
+#             name="test",
+#             types=types,
+#             slots=slots,
+#             prefixes=prefixes,
+#         )
+#         return SchemaView(schema)
+
+#     return _factory
+
+
 @pytest.fixture
 def make_schemaview() -> Callable[..., SchemaView]:
-    """Make a sample SchemaView."""
-    def _factory(prefixes=None, types=None) -> SchemaView:
+    """
+    Factory for creating SchemaView objects that mimic real LinkML schemas.
+    Supports both global slots and class-local attributes.
+    """
+    def _factory(
+        *,
+        prefixes=None,
+        types=None,
+        slots=None,
+        classes=None
+    ) -> SchemaView:
+
+        # Build SchemaDefinition in the same structure as real LinkML YAML
         schema = SchemaDefinition(
             id="test",
             name="test",
-            types=types,
             prefixes=prefixes,
+            types=types,
+            slots=slots,        # global slots (optional)
+            classes=classes,    # class definitions with attributes (optional)
         )
+
         return SchemaView(schema)
 
     return _factory
@@ -292,6 +326,183 @@ def test_inject_integer_type_supportsdictsubclasses(make_schemaview: Callable[..
     schemaview = make_schemaview(types=defaultdict(dict))
     inject_integer_type(schemaview)
     assert "integer" in schemaview.schema.types # type: ignore
+
+
+@dataclass
+class PatchMocks:
+    """Collecting mocks for all functions used by patch_integer_ranges."""
+    find_slots: MagicMock
+    add_slot: MagicMock
+    set_modified: MagicMock
+    calls: list
+
+@pytest.fixture
+def mock_patch_integer_ranges(monkeypatch: pytest.MonkeyPatch) -> PatchMocks:
+    """Patching all functions used by patch_integer_ranges."""
+
+    mocks = PatchMocks(find_slots=MagicMock(), add_slot=MagicMock(), set_modified=MagicMock(), calls=[])
+    monkeypatch.setattr("cim_plugin.cimxml.find_slots_with_range", mocks.find_slots)
+    monkeypatch.setattr(SchemaView, "add_slot", mocks.add_slot)
+    monkeypatch.setattr(SchemaView, "set_modified", mocks.set_modified)
+    
+    mocks.calls = []
+    mocks.find_slots.side_effect = lambda *a, **kw: (mocks.calls.append("find_slots_with_range"), mocks.find_slots.return_value)[1]
+    mocks.add_slot.side_effect = lambda *a, **kw: mocks.calls.append("add_slot")
+    mocks.set_modified.side_effect = lambda *a, **kw: mocks.calls.append("set_modified")
+
+    return mocks
+
+# Unit tests patch_integer_ranges
+def test_patch_integer_ranges_basic(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    mock_patch_integer_ranges.find_slots.return_value = {"endDate"}
+    
+    slots = [{"endDate": SlotDefinition(name="endDate", range="string")},
+             {"startDate": SlotDefinition(name="startDate", range="Date")}]
+    sv = make_schemaview(slots=slots)
+    
+    patch_integer_ranges(sv, "schema.yaml")
+
+    assert sv.schema.slots["endDate"].range == "integer" # type: ignore
+    assert sv.schema.slots["startDate"].range == "Date" # type: ignore
+    mock_patch_integer_ranges.find_slots.assert_called_once_with("schema.yaml", "integer")
+    mock_patch_integer_ranges.add_slot.assert_called_once_with(sv.schema.slots["endDate"])  # type: ignore
+    mock_patch_integer_ranges.set_modified.assert_called_once()
+
+def test_patch_integer_ranges_multiple(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    mock_patch_integer_ranges.find_slots.return_value = {"endDate", "startDate"}
+
+    slots = [{"endDate": SlotDefinition(name="endDate", range="string")},
+             {"startDate": SlotDefinition(name="startDate", range="string")},]
+    sv = make_schemaview(slots=slots)
+
+    patch_integer_ranges(sv, "schema.yaml")
+
+    assert sv.schema.slots["endDate"].range == "integer"    # type: ignore
+    assert sv.schema.slots["startDate"].range == "integer"  # type: ignore
+    assert mock_patch_integer_ranges.add_slot.call_count == 2
+    mock_patch_integer_ranges.set_modified.assert_called_once()
+
+
+def test_patch_integer_ranges_noslotstochange(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks, caplog: LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    mock_patch_integer_ranges.find_slots.return_value = {}
+    slots = [{"endDate": SlotDefinition(name="endDate", range="string")},
+             {"startDate": SlotDefinition(name="startDate", range="Date")}]
+    sv = make_schemaview(slots=slots)
+    patch_integer_ranges(sv, "schema.yaml")
+
+    assert sv.schema.slots["endDate"].range == "string" # type: ignore
+    assert sv.schema.slots["startDate"].range == "Date" # type: ignore
+    mock_patch_integer_ranges.add_slot.assert_not_called()
+    mock_patch_integer_ranges.set_modified.assert_not_called()
+    assert "No attributes with range=integer found. No changes made." in caplog.text 
+
+
+def test_patch_integer_ranges_slotnotinschema(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    mock_patch_integer_ranges.find_slots.return_value = {"middleDate"}
+    slots = [{"endDate": SlotDefinition(name="endDate", range="string")},
+             {"startDate": SlotDefinition(name="startDate", range="Date")}]
+    sv = make_schemaview(slots=slots)
+    with pytest.raises(ValueError) as exc_info:
+        patch_integer_ranges(sv, "schema.yaml")
+
+    assert sv.schema.slots["endDate"].range == "string" # type: ignore
+    assert sv.schema.slots["startDate"].range == "Date" # type: ignore
+    mock_patch_integer_ranges.add_slot.assert_not_called()
+    mock_patch_integer_ranges.set_modified.assert_not_called()
+    assert "middleDate not found in schemaview" in str(exc_info.value) 
+
+
+def test_patch_integer_ranges_missingattributes(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    mock_patch_integer_ranges.find_slots.return_value = {"middleDate"}
+    sv = make_schemaview(slots={})
+    with pytest.raises(ValueError) as exc_info:
+        patch_integer_ranges(sv, "schema.yaml")
+
+    mock_patch_integer_ranges.add_slot.assert_not_called()
+    mock_patch_integer_ranges.set_modified.assert_not_called()
+    assert "middleDate not found in schemaview" in str(exc_info.value) 
+
+def test_patch_integer_ranges_find_slots_input_not_mutated(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    slots_set = {"endDate"}
+    mock_patch_integer_ranges.find_slots.return_value = slots_set
+
+    sv = make_schemaview(slots=[{"endDate": SlotDefinition(name="endDate", range="string")}])
+    patch_integer_ranges(sv, "schema.yaml")
+
+    assert slots_set == {"endDate"}  # Not modified
+
+
+def test_patch_integer_ranges_rangealreadyinteger(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    mock_patch_integer_ranges.find_slots.return_value = {"endDate"}
+
+    slots = [{"endDate": SlotDefinition(name="endDate", range="integer")}]
+    sv = make_schemaview(slots=slots)
+
+    patch_integer_ranges(sv, "schema.yaml")
+
+    mock_patch_integer_ranges.add_slot.assert_not_called()
+    mock_patch_integer_ranges.set_modified.assert_not_called()
+
+
+def test_patch_integer_ranges_call_order(make_schemaview, mock_patch_integer_ranges):
+    mock_patch_integer_ranges.find_slots.return_value = {"endDate", "startDate"}
+
+    slots = [{"endDate": SlotDefinition(name="endDate", range="string")},
+             {"startDate": SlotDefinition(name="startDate", range="string")}]
+    sv = make_schemaview(slots=slots)
+
+    patch_integer_ranges(sv, "schema.yaml")
+
+    # Checking that calls are in correct order
+    assert mock_patch_integer_ranges.calls == [
+        "find_slots_with_range", 
+        "add_slot",
+        "add_slot", 
+        "set_modified"
+    ]
+
+
+def test_patch_integer_ranges_noslotsadded(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    mock_patch_integer_ranges.find_slots.return_value = {"endDate"}
+    
+    slots = [{"endDate": SlotDefinition(name="endDate", range="string")}]
+    sv = make_schemaview(slots=slots)
+    
+    assert sv.schema is not None
+    assert isinstance(sv.schema.slots, dict)
+    
+    slot_before = sv.schema.slots["endDate"] 
+    before_count = len(sv.schema.slots)
+    patch_integer_ranges(sv, "schema.yaml")
+    slot_after = sv.schema.slots["endDate"] 
+    after_count = len(sv.schema.slots)
+    
+    # Showing that the slot is changed, not added
+    assert before_count == after_count
+    assert slot_before is slot_after 
+    assert sv.schema.slots["endDate"].range == "integer" # type: ignore
+
+def test_patch_integer_ranges_class_attributes(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
+    # This test ensures the function works with the exact structure used by cim linkML
+    mock_patch_integer_ranges.find_slots.return_value = {"endDate"}
+    schema_dict = {
+            "MyClass": {
+                "attributes": {
+                    "endDate": {"range": "string"},
+                    "startDate": {"range": "Date"},
+                }
+            }
+        }
+
+    sv = make_schemaview(classes=schema_dict)
+
+    patch_integer_ranges(sv, "schema.yaml")
+
+    slot = sv.get_slot("endDate")
+    assert slot.range == "integer"
+    mock_patch_integer_ranges.add_slot.assert_called_once()
+    mock_patch_integer_ranges.set_modified.assert_called_once()
 
 if __name__ == "__main__":
     pytest.main()

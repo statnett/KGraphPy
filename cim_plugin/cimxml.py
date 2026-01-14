@@ -3,12 +3,13 @@ from rdflib.parser import Parser, InputSource
 from rdflib.plugins.parsers.rdfxml import RDFXMLParser
 from rdflib import URIRef, Literal, RDF, Namespace, Graph
 from rdflib.namespace import XSD
-from linkml_runtime.utils.schemaview import SchemaView
+# from linkml_runtime import SchemaView # type: ignore
+from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition    # type: ignore
 import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Optional, Dict, Any
+from typing import Mapping, Optional #List
 
 # from asyncio import graph
 
@@ -339,25 +340,24 @@ def inject_integer_type(schemaview: SchemaView) -> None:
         schemaview.set_modified()
 
 
-def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
-    """Find the slots which contain range: integer in raw yaml, and patch them in the schemaview.
-    
+def find_slots_with_range(schema_path: str, datatype: str) -> set[str]:
+    """Find all slot names in a linkML whose attribute definition has a given range datatype.
+
     Parameters:
-        schemaview (SchemaView): The schemaview which is to be patched.
-        schema_path (str): Path to the file with the raw yaml linkML data.
+        schema_path (str): Path to the raw LinkML YAML file.
+        datatype (str): The datatype to search for (e.g. "integer").
 
     Raises:
-        ValueError: - If slot is not a dict in the raw yaml.
-                    - If slot is not found in the schemaview.
+        ValueError: If an attribute definition is not a dict.
+
+    Returns:
+        List[str]: A list of slot names that use the given datatype.
     """
     with open(schema_path) as f:
         raw = yaml.safe_load(f)
 
-    # Consider refactoring the integer_attrs collection into a separate function
-    integer_attrs = []
+    matching_slots = set()
 
-    # Find all class attribute slots which had integer as range before import into schemaview, by examining the raw file
-    # These were reassigned as string because integer was not a type in the linkML model
     for cls_name, cls in raw.get("classes", {}).items():
         if not cls:
             continue
@@ -365,25 +365,50 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
         attrs = cls.get("attributes") or {}
         for slot_name, slot_def in attrs.items():
             if not isinstance(slot_def, dict):
-                raise ValueError(f"{slot_name} in {cls_name} have unexpected structure. Attributes should be dict.")
-            
-            if slot_def and slot_def.get("range") == "integer":
-                integer_attrs.append(slot_name)
+                raise ValueError(
+                    f"{slot_name} in class {cls_name} has unexpected structure. "
+                    "Attributes must be dictionaries."
+                )
 
-    if not integer_attrs: 
-        logger.info("No attributes with range=integer found. No changes made to schemaview.") 
+            if slot_def.get("range") == datatype:
+                matching_slots.add(slot_name)
+
+    return matching_slots
+
+
+def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
+    """Patch slots in schemaview which contain range: integer in raw yaml.
+    
+    Parameters:
+        schemaview (SchemaView): The schemaview which is to be patched.
+        schema_path (str): Path to the file with the raw yaml linkML data.
+
+    Raises:
+        ValueError: - If schemaview has no slots.
+                    - If specific slot is not found in the schemaview.
+    """
+    integer_slots = find_slots_with_range(schema_path, "integer")
+
+    if not integer_slots:
+        logger.info("No attributes with range=integer found. No changes made.")
         return
-
-    # Reassign integer to the ranges of these class attribute slots
-    for slot_name in integer_attrs:
-        slot = schemaview.get_slot(slot_name)
-        if slot:
-            slot.range = "integer"
-            schemaview.add_slot(slot)
-        else:
+    
+    if schemaview.schema is None or not isinstance(schemaview.schema.slots, dict): 
+        raise ValueError("SchemaView has no slots") 
+    
+    changed = False 
+    for slot_name in integer_slots: 
+        original_slot = schemaview.get_slot(slot_name) 
+        if original_slot is None: 
             raise ValueError(f"{slot_name} not found in schemaview")
-
-    schemaview.set_modified()
+        
+        if original_slot.range != "integer": 
+            original_slot.range = "integer" 
+            schemaview.add_slot(original_slot) 
+            changed = True 
+            
+    if changed: 
+        schemaview.set_modified()
 
 
 def detect_uri_collisions(graph: Graph, id_set: set[str]) -> None:
