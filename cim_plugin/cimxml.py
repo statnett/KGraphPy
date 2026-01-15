@@ -62,7 +62,7 @@ class CIMXMLParser(Parser):
 
 
     def ensure_correct_namespace_model(self, prefix: str, correct_namespace: str):
-        """Ensure that the given prefix has correct namespace and update it if not.
+        """Ensure that the given prefix has correct namespace in schemaview and update it if not.
         
         Parameters:
             prefix (str): The prefix to check for correct namespace.
@@ -89,21 +89,30 @@ class CIMXMLParser(Parser):
         
 
     def patch_missing_datatypes_in_model(self) -> None:
+        """Patch a linkML schemaview with a missing datatype.
+
+        Currently patches integer.
+
+        Raises:
+            TypeError: If schemaview.schema.types is not a dict.
+        """
         if self.schema_path and self.schemaview and self.schemaview.schema:
+
             types = self.schemaview.schema.types
-            if isinstance(types, dict):
-                if "integer" in types:
-                    return
+            if not isinstance(types, dict):
+                raise TypeError(f"Expected types to be dict, got {type(types)}")
             
-                try:
-                    t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
-                    types["integer"] = t 
-                    self.schemaview.set_modified() 
-                    # inject_integer_type(self.schemaview)    # Add integer to linkML model primitive types
-                    patch_integer_ranges(self.schemaview, self.schema_path) # Reassign datatypes to integer (were automatically assigned to string when loaded)
-                except ValueError as e:
-                    logger.error(e)
-                    raise
+            if "integer" in types:
+                return
+        
+            try:
+                t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
+                types["integer"] = t 
+                self.schemaview.set_modified() 
+                patch_integer_ranges(self.schemaview, self.schema_path) # Reassign datatypes to integer (were automatically assigned to string when loaded)
+            except ValueError as e:
+                logger.error(e)
+                raise
 
     # def fix_rdf_ids(self, graph: Graph, by: str = "urn:uuid") -> None:
     #     if by == "urn:uuid":

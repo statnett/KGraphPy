@@ -401,7 +401,7 @@ def test_ensure_correct_namespace_graph_nswrongtype(mock_get: MagicMock, mock_up
 
 @patch("cim_plugin.cimxml.update_namespace_in_graph")
 @patch("cim_plugin.cimxml._get_current_namespace_from_graph")
-def test_ensure_correct_namespace_graph_multiplefunctioncalls(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
+def test_ensure_correct_namespace_graph_idempotence(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.side_effect = ["www.example.com/", "www.new.org/"]
     g = make_graph_with_prefixes
 
