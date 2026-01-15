@@ -44,7 +44,7 @@ def test_ensure_correct_namespace_model_noschemaview(mock_get: MagicMock, mock_u
 )
 @patch("cim_plugin.cimxml.update_namespace_in_model")
 @patch("cim_plugin.cimxml._get_current_namespace_from_model")
-def testensure_correct_namespace_model_namespacehandling(mock_get: MagicMock, mock_update: MagicMock, instance: CIMXMLParser, current: str, new_ns: str, update: bool, caplog: LogCaptureFixture) -> None:
+def test_ensure_correct_namespace_model_namespacehandling(mock_get: MagicMock, mock_update: MagicMock, instance: CIMXMLParser, current: str, new_ns: str, update: bool, caplog: LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     mock_get.return_value = current
 

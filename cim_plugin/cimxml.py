@@ -54,8 +54,8 @@ class CIMXMLParser(Parser):
         logger.info("Running post-process")
         self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
         self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
-        ensure_correct_namespace_data(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
-        ensure_correct_namespace_data(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
+        ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
+        ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
         # canonical_namespace = detect_cim_namespace(self.schemaview)
         # normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
@@ -303,19 +303,36 @@ def update_namespace_in_graph(graph: Graph, old_namespace: str, new_namespace: s
         graph.add(triple)
 
 
-def ensure_correct_namespace_data(graph: Graph, prefix: str, correct_namespace: str) -> None:
+def ensure_correct_namespace_graph(graph: Graph, prefix: str, correct_namespace: str) -> None:
+    """Ensure that graph has correct namespace for given prefix, and correct if not.
+    
+    Parameters:
+        graph (Graph): The graph to check/correct.
+        prefix (str): The prefix to check the namespace for.
+        correct_namespace (str): The namespace the prefix should have.
+
+    Raises:
+        ValueError: - If correct_namespace is an empty string.
+                    - If the prefix is not found in the graph.
+    """
+    stripped_namespace = correct_namespace.strip()
+
+    if not stripped_namespace:
+        raise ValueError("Namespace cannot be an empty string.")
+    
     current = _get_current_namespace_from_graph(graph, prefix)
 
     if current is None:
         raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
 
-    if current == correct_namespace:
+    if current == stripped_namespace:
+        logger.info(f"Graph has correct namespace for {prefix}.")
         return
 
-    logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {correct_namespace}.")
+    logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {stripped_namespace}.")
     
-    graph.bind(prefix, Namespace(correct_namespace), replace=True)
-    update_namespace_in_graph(graph, current, correct_namespace)
+    graph.bind(prefix, Namespace(stripped_namespace), replace=True)
+    update_namespace_in_graph(graph, current, stripped_namespace)
 
 
 def inject_integer_type(schemaview: SchemaView) -> None: 

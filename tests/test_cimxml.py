@@ -1,6 +1,7 @@
 from cim_plugin.cimxml import (
     _get_current_namespace_from_graph,
     update_namespace_in_graph,
+    ensure_correct_namespace_graph,
     find_slots_with_range,
     detect_uri_collisions, 
     _clean_uri,
@@ -287,6 +288,133 @@ def test_update_namespace_in_graph() -> None:
 
     with pytest.raises(ValueError, match="old_namespace cannot be an empty string"):
         update_namespace_in_graph(g, "", "http://new.com/")
+
+
+@pytest.fixture
+def make_graph_with_prefixes() -> Graph:
+    g = Graph()
+    g.bind("ex", Namespace("www.example.com/"))
+    g.bind("same", Namespace("www.same.com/"))
+    g.bind("ws", Namespace(" www.whitespace.com/ "))
+    g.add((URIRef("www.example.com/a"), URIRef("www.same.com/b"), URIRef(" www.whitespace.com/ c")))
+
+    return g
+
+# Unit tests ensure_correct_namespace_graph
+@pytest.mark.parametrize(
+    "prefix, current, new_ns, update",
+    [
+        pytest.param("ex", "www.example.com/", "www.newexample.com/", True, id="Current namespace not correct -> update"),
+        pytest.param("same", "www.same.com/", "www.same.com/", False, id="Current namespace correct -> no update"),
+        pytest.param("ws", " www.whitespace.com/ ", "www.whitespace.com/", True, id="Current namespace has whitespace -> update"),
+        pytest.param("ex", "www.example.com/", " www.newexample.com/ ", True, id="New namespace has whitespace -> update"),
+    ]
+)
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_namespacehandling(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph, prefix: str, current: str, new_ns: str, update: bool, caplog: LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    mock_get.return_value = current
+    g = make_graph_with_prefixes
+
+    ensure_correct_namespace_graph(g, prefix, new_ns)
+
+    mock_get.assert_called_once_with(g, prefix)
+    bound_ns = g.namespace_manager.store.namespace(prefix)
+    if update:
+        mock_update.assert_called_once_with(g, current, new_ns.strip())
+        assert bound_ns == URIRef(new_ns.strip())
+        assert f"Wrong namespace detected for {prefix} in graph. Correcting to {new_ns.strip()}." in caplog.text
+    else:
+        mock_update.assert_not_called()
+        assert bound_ns == URIRef(current)
+        assert f"Graph has correct namespace for {prefix}." in caplog.text
+
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_currentisnone(mock_get: MagicMock, mock_update: MagicMock) -> None:
+    mock_get.return_value = None
+    g = Graph()
+    with pytest.raises(ValueError, match="No namespace is called by this prefix: 'ex'."):
+        ensure_correct_namespace_graph(g, "ex", "www.example.com")
+
+    mock_get.assert_called_once()
+    mock_update.assert_not_called()
+
+
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_newisonlywhitespace(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
+    mock_get.return_value = "www.example.com/"
+    g = make_graph_with_prefixes
+
+    with pytest.raises(ValueError, match="Namespace cannot be an empty string."):
+        ensure_correct_namespace_graph(g, "ex", " ")
+
+    mock_get.assert_not_called()
+    mock_update.assert_not_called()
+    assert g.namespace_manager.store.namespace("ex") == URIRef("www.example.com/")
+
+
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_nocorruptionofnewns(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
+    mock_get.return_value = "www.example.com/"
+    g = make_graph_with_prefixes
+
+    ensure_correct_namespace_graph(g, "ex", " www.new.org/ ")
+
+    mock_update.assert_called_once_with(g, "www.example.com/", "www.new.org/")
+    assert g.namespace_manager.store.namespace("ex") == URIRef("www.new.org/")
+
+
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_bindcalledcorrectly(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
+    mock_get.return_value = "www.example.com/"
+    g = make_graph_with_prefixes
+    new_ns = " www.new.org/ "
+
+    with patch.object(g, "bind") as mock_bind:
+        ensure_correct_namespace_graph(g, "ex", new_ns)
+        mock_bind.assert_called_once_with("ex", Namespace(new_ns.strip()), replace=True)
+
+    mock_update.assert_called_once_with(g, "www.example.com/", "www.new.org/")
+
+
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_nswrongtype(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
+    # This test documents what happends if _get_current_namespace_from_graph brings back a namespace with wrong datatype.
+    # This should never happen, though, as rdflib does not allow int as namespace.
+    mock_get.return_value = 123
+    g = make_graph_with_prefixes
+    # Pylance ignored to check wrong datatypes
+    g.bind("wrong", Namespace(123)) # type: ignore
+    new_ns = "www.new.org/"
+    assert g.namespace_manager.store.namespace("wrong") == URIRef("123")
+
+    ensure_correct_namespace_graph(g, "wrong", new_ns)
+    mock_update.assert_called_once_with(g, 123, "www.new.org/")
+    assert g.namespace_manager.store.namespace("wrong") == URIRef("www.new.org/")
+
+
+@patch("cim_plugin.cimxml.update_namespace_in_graph")
+@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+def test_ensure_correct_namespace_graph_multiplefunctioncalls(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
+    mock_get.side_effect = ["www.example.com/", "www.new.org/"]
+    g = make_graph_with_prefixes
+
+    ensure_correct_namespace_graph(g, "ex", "www.new.org/")
+    assert mock_get.call_count == 1
+    mock_update.assert_called_once_with(g, "www.example.com/", "www.new.org/")
+    assert g.namespace_manager.store.namespace("ex") == URIRef("www.new.org/")
+
+    # Second call
+    ensure_correct_namespace_graph(g, "ex", "www.new.org/")
+    assert mock_get.call_count == 2 # This one will now have been called twice
+    assert mock_update.call_count == 1 # Should not be called the second time as the namespace has already been corrected
+    assert g.namespace_manager.store.namespace("ex") == URIRef("www.new.org/")
 
 
 # Unit tests find_slots_with_range
