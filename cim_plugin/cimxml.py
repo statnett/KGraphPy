@@ -9,7 +9,7 @@ import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Mapping, Optional #List
+from typing import Mapping, Optional, cast #List
 
 # from asyncio import graph
 
@@ -612,45 +612,55 @@ def create_typed_literal(value, datatype_uri, schemaview):
     return Literal(value, datatype=URIRef(datatype_uri))
 
 
-def _build_slot_index(schemaview):
+def slots_equal(slot1, slot2) -> bool:
+    """
+    Return True if two SlotDefinition objects contain the same
+    meaningful values (same keys and same values).
+    """
+    # Convert to dicts
+    d1 = {k: v for k, v in slot1.__dict__.items() if not k.startswith("_")}
+    d2 = {k: v for k, v in slot2.__dict__.items() if not k.startswith("_")}
+
+    return d1 == d2
+
+
+def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
+    """Build an index of classes and slots from a SchemaView.
+    
+    Parameters:
+        schemaview (SchemaView): The schemaview to build the index from.
+
+    Returns:
+        tuple[dict, dict]: The slot index and the class index in that order.
+    """
     slot_index = {}
 
-    # 1. Globale slots (hvis noen finnes)
-    for name, slot in schemaview.all_slots().items():
-        if slot.slot_uri:
-            expanded = schemaview.expand_curie(slot.slot_uri)
-            slot_index[expanded] = slot
-
-    # 2. Class-lokale attributes (CIM bruker nesten bare disse)
     for cls_name, cls in schemaview.all_classes().items():
-        if not cls.attributes:
+        if not isinstance(cls.attributes, dict):
             continue
 
         for slot_name, slot in cls.attributes.items():
-            if slot.slot_uri:
-                expanded = schemaview.expand_curie(slot.slot_uri)
+            slot = cast(SlotDefinition, slot)
+            if not slot.slot_uri:
+                continue
+
+            expanded = schemaview.expand_curie(slot.slot_uri)
+
+            if expanded not in slot_index:
                 slot_index[expanded] = slot
+                continue
 
-    # 3. Class index (som før)
+            existing = slot_index[expanded]
+
+            if slots_equal(existing, slot):
+                continue
+
+            logger.warning(f"Slot for URI '{expanded}' is overwritten by class slot '{slot_name}'.")
+            slot_index[expanded] = slot
+
     class_index = {name: cls for name, cls in schemaview.all_classes().items()}
-
     return slot_index, class_index
 
-# def _build_slot_index(schemaview):
-#     slot_index = {}
-
-#     # Slots
-#     for name, slot in schemaview.all_slots().items():
-#         if slot.slot_uri:
-#             expanded = schemaview.expand_curie(slot.slot_uri)
-#             slot_index[expanded] = slot
-
-#     # Classes (for å kunne slå opp range-klasser)
-#     class_index = {}
-#     for name, cls in schemaview.all_classes().items():
-#         class_index[name] = cls
-
-#     return slot_index, class_index
 
 
 # def get_cim_base(schemaview):
@@ -787,4 +797,7 @@ def _build_slot_index(schemaview):
 
 if __name__ == "__main__":
     print("cimxml plugin for rdflib")
-
+    # filepath = "../CoreEquipment.linkml.yaml"
+    # sv = SchemaView(filepath)
+    # slots, classes = _build_slot_index(sv)
+    # print(classes)

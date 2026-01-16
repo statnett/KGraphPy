@@ -1,19 +1,22 @@
-from unittest.mock import MagicMock #, patch
+from unittest.mock import MagicMock, patch, call
 import pytest
 from pytest import LogCaptureFixture
 from linkml_runtime import SchemaView
-from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition, SlotDefinition
+from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition, SlotDefinition, ClassDefinition
 from typing import Callable, Any    #, Optional, Dict
 from cim_plugin.cimxml import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,
     inject_integer_type,
-    patch_integer_ranges
+    patch_integer_ranges,
+    _build_slot_index
 )
 import copy
 from collections import defaultdict
 from dataclasses import dataclass
+import logging
 
+logger = logging.getLogger("cimxml_logger")
 
 # There are numerous type: ignore in this file. Where not otherwise stated, this is to silence pylance 
 # about schemaview.schema.prefixes and .types. Pylance complains because linkML are using too wide type hints.
@@ -503,6 +506,252 @@ def test_patch_integer_ranges_class_attributes(make_schemaview: Callable[..., Sc
     assert slot.range == "integer"
     mock_patch_integer_ranges.add_slot.assert_called_once()
     mock_patch_integer_ranges.set_modified.assert_called_once()
+
+
+@pytest.fixture
+def set_prefixes() -> dict:
+    return {"ex": {"prefix_prefix": "ex", "prefix_reference": "http://example.org/"}}
+
+# Unit tests _build_slot_index
+def test_build_slot_index_emptyschema(make_schemaview: Callable[..., SchemaView]) -> None:
+    sv = make_schemaview()
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert slot_index == {}
+    assert class_index == {}
+
+
+def test_build_slot_index_globalslots(make_schemaview: Callable[..., SchemaView], set_prefixes: dict) -> None:
+    # Documents what happends when global slots are not used in a class
+    slots = {"s1": SlotDefinition(name="s1", slot_uri="ex:s1"),}
+    classes = {"C": ClassDefinition(name="C", attributes=None)}
+
+    sv = make_schemaview(slots=slots, classes=classes, prefixes=set_prefixes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert slot_index == {} # Global slots are not collected when not used by a class
+    assert "C" in class_index
+
+def test_build_slot_index_noclasses(make_schemaview: Callable[..., SchemaView], set_prefixes: dict) -> None:
+    # Documents what happends when global slots are not used in a class
+    slots = {"s1": SlotDefinition(name="s1", slot_uri="ex:s1"),}
+
+    sv = make_schemaview(slots=slots, prefixes=set_prefixes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert slot_index == {}
+    assert class_index == {}
+
+def test_build_slot_index_classattributeslots(make_schemaview: Callable[..., SchemaView], set_prefixes: dict) -> None:
+    classes = {
+        "C": ClassDefinition(
+            name="C",
+            attributes={
+                "a1": SlotDefinition(name="a1", slot_uri="ex:a1"),
+                "a2": SlotDefinition(name="a2", slot_uri="ex:a2"),
+            },
+        )
+    }
+
+    sv = make_schemaview(classes=classes, prefixes=set_prefixes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert len(slot_index) == 2
+    assert "http://example.org/a1" in slot_index
+    assert "http://example.org/a2" in slot_index
+    assert "C" in class_index
+    assert class_index["C"].name == "C"
+
+
+def test_build_slot_index_overwriting(make_schemaview: Callable[..., SchemaView], set_prefixes: dict) -> None:
+    # This test documents that global slot is normalized with class slot when the uri is the same
+    # Metadata in the global slot is overwritten by the class attribute slot
+    # This is done by linkML, not by _build_slot_index.
+    slots = {
+        "s1": SlotDefinition(
+            name="s1",
+            slot_uri="ex:prop",
+            range="string",
+            required=True,
+            multivalued=False,
+        )
+    }
+
+    classes = {
+        "C": ClassDefinition(
+            name="C",
+            attributes={
+                "a1": SlotDefinition(
+                    name="a1",
+                    slot_uri="ex:prop",
+                    range="integer",
+                    required=False,
+                    multivalued=True,
+                )
+            }
+        )
+    }
+
+    sv = make_schemaview(prefixes=set_prefixes, slots=slots, classes=classes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    expanded = "http://example.org/prop"
+
+    assert expanded in slot_index
+    slot = slot_index[expanded]
+
+    assert slot.range == "integer"
+    assert slot.required is False
+    assert slot.multivalued is True
+    assert "C" in class_index
+
+
+def test_build_slot_index_classwithoutattributes(make_schemaview: Callable[..., SchemaView]) -> None:
+    classes = {
+        "C1": ClassDefinition(name="C1", attributes=None),
+        "C2": ClassDefinition(name="C2", attributes={}),  # empty dict
+    }
+
+    sv = make_schemaview(classes=classes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert slot_index == {}
+    assert set(class_index.keys()) == {"C1", "C2"}
+    # The classes are stored with standards
+    assert class_index["C1"] == ClassDefinition(name='C1', from_schema='test')
+    assert class_index["C2"] == ClassDefinition(name='C2', from_schema='test')
+
+def test_build_slot_index_duplicatedclassslots(make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: LogCaptureFixture) -> None:
+    # Documents what happends if two slots have the same slot_uri with different metadata.
+    classes = {
+        "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}),
+        "B": ClassDefinition(name="B", attributes={"b1": SlotDefinition(name="b1", slot_uri="ex:a1", range="integer")})
+    }
+
+    sv = make_schemaview(classes=classes, prefixes=set_prefixes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    slot = slot_index["http://example.org/a1"]
+    assert len(slot_index) == 1
+    assert "B" in class_index
+    assert "C" in class_index
+    assert slot.name == "b1"
+    assert slot.range == "integer"
+    assert caplog.records[0].message == "Slot for URI 'http://example.org/a1' is overwritten by class slot 'b1'."
+
+
+def test_build_slot_index_unexpandablecuries(make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: LogCaptureFixture) -> None:
+    # Documents what happends to curies that cannot be expanded
+    classes = {
+        "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1")}),
+        "B": ClassDefinition(name="B", attributes={"b1": SlotDefinition(name="b1", slot_uri="foo:bar")})
+    }
+
+    sv = make_schemaview(classes=classes, prefixes=set_prefixes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert len(slot_index) == 2
+    assert "http://example.org/a1" in slot_index
+    assert "foo:bar" in slot_index
+    assert slot_index["foo:bar"].name == "b1"
+    
+@pytest.mark.parametrize(
+        "prefix, map, expecteduri",
+        [
+            pytest.param("ex", {}, "ex:a1", id="No prefix map"),
+            pytest.param("schema.org", {"schema.org": {"prefix_prefix": "schema.org", "prefix_reference": "http://fullschema.org/"}}, "http://fullschema.org/a1", id="Prefix with ."),
+        ]
+)
+def test_build_slot_index_unusualprefixes(prefix: str, map: dict, expecteduri:str, make_schemaview: Callable[..., SchemaView]) -> None:
+    classes = {
+        "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri=f"{prefix}:a1")}),
+    }
+    sv = make_schemaview(classes=classes, prefixes=map)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert "C" in class_index
+    assert slot_index[expecteduri].name == "a1"
+
+
+def test_build_slot_index_identicalslots(make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: LogCaptureFixture) -> None:
+    # Documents that when there are identical slots in different classes, only the first is kept
+    classes = {
+        "C": ClassDefinition(
+            name="C",
+            attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}
+        ),
+        "D": ClassDefinition(
+            name="D",
+            attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}
+        ),
+    }
+
+    sv = make_schemaview(classes=classes, prefixes=set_prefixes)
+
+    with caplog.at_level(logging.WARNING):
+        slot_index, class_index = _build_slot_index(sv)
+
+    assert len(slot_index) == 1
+    assert "http://example.org/a1" in slot_index
+    assert caplog.text == ""  # No warnings because slots are identical
+
+
+def test_build_slot_index_noslot_uri(make_schemaview: Callable[..., SchemaView]) -> None:
+    classes = {
+        "C": ClassDefinition(name="C", attributes={
+            "a1": SlotDefinition(name="a1", slot_uri=None),
+            "a2": SlotDefinition(name="a2"),  # slot_uri missing
+            },
+        )
+    }
+
+    sv = make_schemaview(classes=classes)
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert slot_index == {}
+    assert "C" in class_index
+
+
+def test_build_slot_index_multipleoverwrites(make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: LogCaptureFixture) -> None:
+    classes = {
+        "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}),
+        "D": ClassDefinition(name="D", attributes={"d1": SlotDefinition(name="d1", slot_uri="ex:a1", range="integer")}),
+        "E": ClassDefinition(name="E", attributes={"e1": SlotDefinition(name="e1", slot_uri="ex:a1", range="float")}),
+    }
+
+    sv = make_schemaview(classes=classes, prefixes=set_prefixes)
+
+    slot_index, class_index = _build_slot_index(sv)
+
+    assert slot_index["http://example.org/a1"].range == "float"
+    assert len([r for r in caplog.records if "overwritten" in r.message]) == 2
+
+
+@patch("cim_plugin.cimxml.slots_equal")
+def test_build_slot_index_callinghelperfunction(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: LogCaptureFixture) -> None:
+    classes = {
+        "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}),
+        "D": ClassDefinition(name="D", attributes={"d1": SlotDefinition(name="d1", slot_uri="ex:a1", range="integer")}),
+        "E": ClassDefinition(name="E", attributes={"d1": SlotDefinition(name="d1", slot_uri="ex:a1", range="integer")}),
+    }
+    mock_patch.side_effect = [False, True]
+
+    sv = make_schemaview(classes=classes, prefixes=set_prefixes)    
+    slot_index, class_index = _build_slot_index(sv)
+
+    calls = [
+        call(SlotDefinition(name='a1', from_schema='test', slot_uri='ex:a1', range='string'), 
+             SlotDefinition(name='d1', from_schema='test', slot_uri='ex:a1', range='integer')),
+        call(SlotDefinition(name='d1', from_schema='test', slot_uri='ex:a1', range='integer'), 
+             SlotDefinition(name='d1', from_schema='test', slot_uri='ex:a1', range='integer'))
+            ]
+    mock_patch.assert_has_calls(calls)
+    assert slot_index["http://example.org/a1"].range == "integer"
+    assert len([r for r in caplog.records if "overwritten" in r.message]) == 1
+    class_list = ["C", "D", "E"]
+    assert all(c in class_index for c in class_list)
+    
+
 
 if __name__ == "__main__":
     pytest.main()

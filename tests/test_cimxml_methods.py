@@ -7,6 +7,9 @@ from typing import Callable
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import TypeDefinition
 from rdflib import URIRef, Graph, Literal, BNode
+import logging
+
+logger = logging.getLogger("cimxml_logger")
 
 @pytest.fixture
 def cimxmlinstance_w_prefixes(make_schemaview):
