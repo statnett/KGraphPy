@@ -612,12 +612,19 @@ def create_typed_literal(value, datatype_uri, schemaview):
     return Literal(value, datatype=URIRef(datatype_uri))
 
 
-def slots_equal(slot1, slot2) -> bool:
+def slots_equal(slot1: SlotDefinition, slot2: SlotDefinition) -> bool:
+    """Show whether two SlotDefinition objects contain the same keys and values.
+
+    Internal attributes are ignored (starts with _).
+
+    Parameters:
+        slot1 (SlotDefinition): First slot.
+        slot2 (SlotDefinition): Second slot.
+    
+    Returns:
+        bool: True if slot1 and slot2 are the identical.
+
     """
-    Return True if two SlotDefinition objects contain the same
-    meaningful values (same keys and same values).
-    """
-    # Convert to dicts
     d1 = {k: v for k, v in slot1.__dict__.items() if not k.startswith("_")}
     d2 = {k: v for k, v in slot2.__dict__.items() if not k.startswith("_")}
 

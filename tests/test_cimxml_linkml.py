@@ -9,6 +9,7 @@ from cim_plugin.cimxml import (
     update_namespace_in_model,
     inject_integer_type,
     patch_integer_ranges,
+    slots_equal,
     _build_slot_index
 )
 import copy
@@ -507,6 +508,85 @@ def test_patch_integer_ranges_class_attributes(make_schemaview: Callable[..., Sc
     mock_patch_integer_ranges.add_slot.assert_called_once()
     mock_patch_integer_ranges.set_modified.assert_called_once()
 
+# Unit tests slots_equal
+
+@pytest.mark.parametrize(
+    "attrs1, attrs2, expected",
+    [
+        pytest.param({"name": "age", "range": "integer"}, {"name": "age", "range": "integer"}, True, id="Identical simple attributes"),
+        pytest.param({"name": "age", "range": "integer"}, {"name": "age", "range": "string"}, False, id="Different values"),
+        pytest.param({"name": "age"}, {"name": "age", "description": "Age of person"}, False, id="One has extra attribute"),
+        pytest.param({"name": "age", "range": "123"}, {"name": "age", "range": 123}, True, id="Different datatypes"),
+        pytest.param({"name": "age", "multivalued": True}, {"name": "age", "multivalued": "True"}, True, id="Different datatypes, boolean"),
+        pytest.param({"name": "age", "range": "integer"}, {"range": "integer", "name": "age"}, True, id="Same keys but different order"),
+        pytest.param({"name": "age"}, {"name": "age", "description": None}, True, id="Attribute None vs. missing attribute"),
+        pytest.param({"name": "age"}, {"name": "age", "description": ""}, False, id="Attribute empty vs. missing attribute"),
+        pytest.param({"name": "age", "description": ["B", "A"]}, {"name": "age", "description": ["A", "B"]}, False, id="Attributes lists with different orders"),
+        pytest.param({"name": "age", "description": {"Name": "B", "Type": "A"}}, {"name": "age", "description": {"Type": "A", "Name": "B"}}, False, id="Attributes dicts with different orders"),
+        pytest.param({"name": "age", "description": ["A", "B"]}, {"name": "age", "description": ("A", "B")}, False, id="Attributes lists vs. tuples"),
+        # pytest.param({"name": "right", "multivalued": False}, {"name": "wrong"}, False, id="Default values"),
+        # pytest.param({"name": "age", "range": "integer"}, {"name": "age", "range": "integer"}, True, id="Attributes"),
+    ],
+)
+def test_slots_equal_basic(attrs1: dict, attrs2: dict, expected: bool) -> None:
+    slot1 = SlotDefinition(**attrs1)
+    slot2 = SlotDefinition(**attrs2)
+    assert slots_equal(slot1, slot2) is expected
+
+
+def test_slots_equal_oneprivateattributes() -> None:
+    slot1 = SlotDefinition(name="height")
+    slot2 = SlotDefinition(name="height")
+    slot1._internal = "secret"
+
+    assert slots_equal(slot1, slot2) is True
+
+
+def test_slots_equal_privateattributes() -> None:
+    slot1 = SlotDefinition(name="height")
+    slot2 = SlotDefinition(name="height")
+    slot1._internal = "secret"
+    slot2._internal = "different_secret"
+
+    assert slots_equal(slot1, slot2) is True
+
+
+def test_slots_equal_emptyslots() -> None:
+    slot1 = SlotDefinition("field")
+    slot2 = SlotDefinition("field")
+    # To force the SlotDefinitions to be empty.
+    del slot1.name
+    del slot2.name
+    assert slots_equal(slot1, slot2) is True
+
+
+def test_slots_equal_explicitvsimplicitdefaults() -> None:
+    s1 = SlotDefinition(name="age") # multivalued default is False
+    s2 = SlotDefinition(name="age", multivalued=False)
+
+    assert slots_equal(s1, s2) is (s1.__dict__ == s2.__dict__)
+
+
+def test_slots_equal_mutationchangesresult() -> None:
+    s1 = SlotDefinition(name="x")
+    s2 = SlotDefinition(name="x")
+
+    assert slots_equal(s1, s2)
+
+    s1.description = "A slot"
+
+    assert not slots_equal(s1, s2)
+
+def test_slots_equal_dynamicattributes() -> None: 
+    s1 = SlotDefinition(name="x") 
+    s2 = SlotDefinition(name="x") 
+    s1.new_field = "value" 
+    
+    assert not slots_equal(s1, s2)
+
+    s2.new_field = "value" 
+    
+    assert slots_equal(s1, s2)
 
 @pytest.fixture
 def set_prefixes() -> dict:
