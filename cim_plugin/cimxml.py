@@ -1,17 +1,13 @@
-from rdflib.plugin import register
 from rdflib.parser import Parser, InputSource
 from rdflib.plugins.parsers.rdfxml import RDFXMLParser
 from rdflib import URIRef, Literal, RDF, Namespace, Graph
 from rdflib.namespace import XSD
-# from linkml_runtime import SchemaView # type: ignore
-from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition    # type: ignore
+from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
 import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Mapping, Optional, cast #List
-
-# from asyncio import graph
+from typing import Optional, cast
 
 logger = logging.getLogger('cimxml_logger')
 
