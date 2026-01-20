@@ -3,39 +3,27 @@ import pytest
 from pytest import LogCaptureFixture
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition, SlotDefinition, ClassDefinition
+from linkml_runtime.loaders import yaml_loader
 from typing import Callable, Any    #, Optional, Dict
+import copy
+from collections import defaultdict
+from dataclasses import dataclass
+import logging
+
 from cim_plugin.cimxml import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,
     inject_integer_type,
     patch_integer_ranges,
     slots_equal,
-    _build_slot_index
+    _build_slot_index,
+    _resolve_type
 )
-import copy
-from collections import defaultdict
-from dataclasses import dataclass
-import logging
 
 logger = logging.getLogger("cimxml_logger")
 
 # There are numerous type: ignore in this file. Where not otherwise stated, this is to silence pylance 
 # about schemaview.schema.prefixes and .types. Pylance complains because linkML are using too wide type hints.
-
-# @pytest.fixture
-# def make_schemaview() -> Callable[..., SchemaView]:
-#     """Make a sample SchemaView."""
-#     def _factory(prefixes=None, types=None, slots=None) -> SchemaView:
-#         schema = SchemaDefinition(
-#             id="test",
-#             name="test",
-#             types=types,
-#             slots=slots,
-#             prefixes=prefixes,
-#         )
-#         return SchemaView(schema)
-
-#     return _factory
 
 
 @pytest.fixture
@@ -44,25 +32,20 @@ def make_schemaview() -> Callable[..., SchemaView]:
     Factory for creating SchemaView objects that mimic real LinkML schemas.
     Supports both global slots and class-local attributes.
     """
-    def _factory(
-        *,
-        prefixes=None,
-        types=None,
-        slots=None,
-        classes=None
-    ) -> SchemaView:
 
+    def _factory(*, prefixes=None, types=None, slots=None, classes=None) -> SchemaView:
         # Build SchemaDefinition in the same structure as real LinkML YAML
         schema = SchemaDefinition(
             id="test",
             name="test",
+            imports=["linkml:types"],
             prefixes=prefixes,
             types=types,
             slots=slots,        # global slots (optional)
             classes=classes,    # class definitions with attributes (optional)
         )
 
-        return SchemaView(schema)
+        return SchemaView(schema=schema)
 
     return _factory
 
@@ -524,8 +507,6 @@ def test_patch_integer_ranges_class_attributes(make_schemaview: Callable[..., Sc
         pytest.param({"name": "age", "description": ["B", "A"]}, {"name": "age", "description": ["A", "B"]}, False, id="Attributes lists with different orders"),
         pytest.param({"name": "age", "description": {"Name": "B", "Type": "A"}}, {"name": "age", "description": {"Type": "A", "Name": "B"}}, False, id="Attributes dicts with different orders"),
         pytest.param({"name": "age", "description": ["A", "B"]}, {"name": "age", "description": ("A", "B")}, False, id="Attributes lists vs. tuples"),
-        # pytest.param({"name": "right", "multivalued": False}, {"name": "wrong"}, False, id="Default values"),
-        # pytest.param({"name": "age", "range": "integer"}, {"name": "age", "range": "integer"}, True, id="Attributes"),
     ],
 )
 def test_slots_equal_basic(attrs1: dict, attrs2: dict, expected: bool) -> None:
@@ -831,6 +812,150 @@ def test_build_slot_index_callinghelperfunction(mock_patch: MagicMock, make_sche
     class_list = ["C", "D", "E"]
     assert all(c in class_index for c in class_list)
     
+
+# Unit tests _resolve_type
+
+@pytest.mark.parametrize(
+    "type_name, base, expected",
+    [
+        pytest.param("string", None, "xsd:string", id="Primitive type: string"),
+        pytest.param("boolean", None, "xsd:boolean", id="Primitive type: boolean"),
+        pytest.param("integer", None, "xsd:integer", id="Primitive type: integer"),
+        pytest.param("MyString", "string", "xsd:string", id="Class type: string"),
+        pytest.param("FlagType", "boolean", "xsd:boolean", id="Class type: boolean"),
+        pytest.param("NonExistent", None, "NonExistent", id="Type not found, returns itself"),
+        pytest.param("String", None, "String", id="Case sensitivity, returns itself")
+    ]
+)
+def test_resolve_type_basic(make_schemaview: Callable[..., SchemaView], type_name: str, base: str|None, expected: str) -> None:
+    if not base:
+        sv = make_schemaview()
+    else:
+        sv = make_schemaview(types={type_name: TypeDefinition(name=type_name, base=base)})
+    
+    assert _resolve_type(sv, type_name) == expected
+
+@pytest.mark.parametrize(
+        "type_name, types, expected",
+        [
+            pytest.param(
+                "MyType", 
+                {"MyType": TypeDefinition(name="MyType", uri="http://example.org/MyType", base="string")}, 
+                "http://example.org/MyType", 
+                id="Uri preferred over base"),
+            pytest.param(
+                "A",
+                {"A": TypeDefinition(name="A", base="B"), "B": TypeDefinition(name="B", base="C"), "C": TypeDefinition(name="C", base="string")},
+                "xsd:string",
+                id="Recursive chain"
+            ),
+            pytest.param("Foo", {"Foo": TypeDefinition(name="Foo")}, "Foo", id="No base, no uri"),
+            pytest.param(
+                "Child", 
+                {"Base": TypeDefinition(name="Base", uri="http://example.org/Base"), "Child": TypeDefinition(name="Child", uri="http://example.org/Child", base="Base")},
+                "http://example.org/Child",
+                id="Uri overrides base uri"
+            ),
+            pytest.param("string", {"string": TypeDefinition(name="string", uri="http://example.org/CustomString")}, "http://example.org/CustomString", id="Override of primitive")
+        ]
+)
+def test_resolve_type_various(make_schemaview: Callable[..., SchemaView], type_name: str, types: dict, expected: str) -> None:
+    sv = make_schemaview(types=types)
+    assert _resolve_type(sv, type_name=type_name) == expected
+
+
+def test_resolve_type_circularinheritance(make_schemaview: Callable[..., SchemaView]) -> None:
+    sv = make_schemaview(
+        types={
+            "A": TypeDefinition(name="A", base="B"),
+            "B": TypeDefinition(name="B", base="A"),
+        }
+    )
+    with pytest.raises(RecursionError):
+        _resolve_type(sv, "A")
+
+
+
+# def test_resolve_type_classrangeclass(make_schemaview, set_prefixes) -> None:
+#     classes = {
+#         "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="D")}),
+#         "D": ClassDefinition(name="D", attributes={"d1": SlotDefinition(name="d1", slot_uri="ex:d1", range="E")}),
+#         "E": ClassDefinition(name="E", attributes={"e1": SlotDefinition(name="e1", slot_uri="ex:e1", range="integer")})
+#     }
+#     sv = make_schemaview(classes=classes, prefixes=set_prefixes)
+#     result = _resolve_type(sv, "D")
+#     assert result == "integer"
+
+# @pytest.mark.parametrize(
+#     "slot_def, expected",
+#     [
+#         # Direct primitive
+#         (SlotDefinition(name="s1", range="string"), "xsd:string"),
+
+#         # Direct custom type
+#         (SlotDefinition(name="s2", range="MyInt"), "xsd:integer"),
+#     ]
+# )
+# def test_resolve_datatype_direct(make_schemaview, slot_def, expected):
+#     sv = make_schemaview(
+#         types={
+#             "MyInt": TypeDefinition(name="MyInt", base="integer")
+#         },
+#         slots={slot_def.name: slot_def}
+#     )
+#     slot = sv.get_slot(slot_def.name)
+#     assert resolve_datatype_from_slot(sv, slot) == expected
+
+
+# def test_resolve_datatype_via_class_attribute_primitive(make_schemaview):
+#     sv = make_schemaview(
+#         classes={
+#             "Measurement": ClassDefinition(
+#                 name="Measurement",
+#                 attributes={
+#                     "value": SlotDefinition(name="value", range="float")
+#                 }
+#             )
+#         },
+#         slots={
+#             "height": SlotDefinition(name="height", range="Measurement")
+#         }
+#     )
+
+#     slot = sv.get_slot("height")
+#     assert resolve_datatype_from_slot(sv, slot) == "xsd:float"
+
+
+# def test_resolve_datatype_via_class_attribute_custom_type(make_schemaview):
+#     sv = make_schemaview(
+#         types={
+#             "MyBool": TypeDefinition(name="MyBool", base="boolean")
+#         },
+#         classes={
+#             "FlagWrapper": ClassDefinition(
+#                 name="FlagWrapper",
+#                 attributes={
+#                     "flag": SlotDefinition(name="flag", range="MyBool")
+#                 }
+#             )
+#         },
+#         slots={
+#             "isActive": SlotDefinition(name="isActive", range="FlagWrapper")
+#         }
+#     )
+
+#     slot = sv.get_slot("isActive")
+#     assert resolve_datatype_from_slot(sv, slot) == "xsd:boolean"
+
+
+# def test_resolve_datatype_unknown_falls_back(make_schemaview):
+#     sv = make_schemaview(
+#         slots={
+#             "mystery": SlotDefinition(name="mystery", range="UnknownType")
+#         }
+#     )
+#     slot = sv.get_slot("mystery")
+#     assert resolve_datatype_from_slot(sv, slot) == "UnknownType"
 
 
 if __name__ == "__main__":

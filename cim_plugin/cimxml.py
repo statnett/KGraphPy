@@ -44,7 +44,7 @@ class CIMXMLParser(Parser):
             self.schemaview = SchemaView(self.schema_path)
             self.ensure_correct_namespace_model(prefix="cim", correct_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
             self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
-            self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
+            # self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.post_process(sink)
         else:
@@ -103,6 +103,7 @@ class CIMXMLParser(Parser):
                 raise TypeError(f"Expected types to be dict, got {type(types)}")
             
             if "integer" in types:
+                logger.info("Integer is present in SchemaView.")
                 return
         
             try:
@@ -554,24 +555,89 @@ PRIMITIVE_MAP = {
     "boolean": "http://www.w3.org/2001/XMLSchema#boolean",
 }
 
+# def resolve_datatype_from_slot(sv, slot):
+#     rng = slot.range
+
+#     if rng in PRIMITIVE_MAP:
+#         return PRIMITIVE_MAP[rng]
+
+#     if rng in sv.schema.types:
+#         t = sv.get_type(rng)
+#         return t.uri or PRIMITIVE_MAP.get(t.base) or t.base
+
+#     if rng in sv.all_classes():
+#         cls = sv.get_class(rng)
+#         for s in cls.slots:
+#             sub_slot = sv.get_slot(s)
+#             if sub_slot.range in PRIMITIVE_MAP:
+#                 return PRIMITIVE_MAP[sub_slot.range]
+
+#     return None
+
+
+# def _resolve_type(schemaview: SchemaView, type_name: str) -> str:
+#         """Return the XSD URI or base type for any type, including primitives."""
+#         t = schemaview.get_type(type_name)
+#         print(t)
+#         if t is None:
+#             return type_name
+#         print(t.uri)
+#         if t.uri:
+#             return t.uri 
+#         print(t.base)
+#         if t.base:
+#             base = schemaview.get_type(t.base)
+#             return base.uri or base.base or t.base 
+        
+#         return type_name
+
+
+def _resolve_type(schemaview: SchemaView, type_name: str) -> str:
+    """Resolve a LinkML type name to its canonical datatype.
+    
+    Works for both declared types and built-in primitives.
+    
+    Parameters:
+        schemaview (SchemaView): The SchemaView to get the datatype from.
+        type_name (str): Name of type.
+
+    Returns:
+        str: The datatype, either as a uri or base name. Last resort returns type_name.
+    """
+    t = schemaview.get_type(type_name)
+    if t is None:
+        return type_name
+
+    if t.uri:
+        return t.uri
+
+    if t.base:
+        return _resolve_type(schemaview, t.base)
+
+    return type_name
+
+
 def resolve_datatype_from_slot(sv, slot):
+    
     rng = slot.range
+    if not rng:
+        return None
 
-    if rng in PRIMITIVE_MAP:
-        return PRIMITIVE_MAP[rng]
+    # Case 1: range is a declared type or a primitive
+    try:
+        return _resolve_type(sv, rng)
+    except KeyError:
+        pass  # not a type, maybe a class
 
-    if rng in sv.schema.types:
-        t = sv.get_type(rng)
-        return t.uri or PRIMITIVE_MAP.get(t.base) or t.base
-
+    # Case 2: range is a class → inspect its attributes
     if rng in sv.all_classes():
         cls = sv.get_class(rng)
-        for s in cls.slots:
-            sub_slot = sv.get_slot(s)
-            if sub_slot.range in PRIMITIVE_MAP:
-                return PRIMITIVE_MAP[sub_slot.range]
+        for attr_name, attr in (cls.attributes or {}).items():
+            if attr.range:
+                return _resolve_type(sv, attr.range)
 
-    return None
+    # Fallback: return the raw range
+    return rng
 
 # def resolve_range_datatype(schemaview, range_name):
 #     """
@@ -804,7 +870,12 @@ def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
 
 if __name__ == "__main__":
     print("cimxml plugin for rdflib")
-    # filepath = "../CoreEquipment.linkml.yaml"
-    # sv = SchemaView(filepath)
+    filepath = "../CoreEquipment.linkml.yaml"
+    sv = SchemaView(filepath)
+    slot = sv.get_slot("isInfiniteDuration")
+    print(slot.range)
+    rng = resolve_datatype_from_slot(sv, slot)
+    print(rng)
+    print(sv.get_type("integer").uri)
     # slots, classes = _build_slot_index(sv)
     # print(classes)

@@ -97,13 +97,13 @@ def main():
     # for pfx, ns in g.namespace_manager.namespaces():
     #     print(pfx, ns)
     # print("cim:")
-    # count = 0
-    # for s, p, o in in_cim:
-    #     # if not isinstance(o, Literal):
-    #     print(s, p, o)
-            # count += 1
-            # if count == 5:
-            #     break
+    count = 0
+    for s, p, o in in_cim:
+        if isinstance(o, Literal):
+            print(s, p, o, o.datatype)
+            count += 1
+            if count == 5:
+                break
     
     # print("trig:")
     # count = 0
