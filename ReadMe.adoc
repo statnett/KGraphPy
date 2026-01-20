@@ -1,0 +1,85 @@
+= KGraphPy – Knowledge Graph DataOps for Python
+v0.1.0-alpha, 2025-03-03
+:toc:
+:toclevels: 2
+
+== Overview
+
+**KGraphPy** is a Python library for working with **knowledge graphs on top of RDFLib**.
+
+It provides **DataOps-oriented extensions** for standards-based graph data, with a particular focus on **CIM / CGMES–style model exchange**, change management, and dataset packaging.  
+KGraphPy is designed to complement RDFLib by adding practical capabilities needed in real-world data and model pipelines, while remaining fully compatible with RDFLib’s APIs and ecosystem.
+
+KGraphPy is intended to serve as a foundational building block for higher-level **DataOps and ModelOps workflows**, including validation, verification, analytics, and human-in-the-loop correction.
+
+== Scope and Focus
+
+KGraphPy focuses on:
+
+- Working with **RDF-based knowledge graphs** in Python
+- Supporting **standards-based data exchange**, with CIM / CGMES as the primary initial focus
+- Providing **interchange, packaging, and change-management support** commonly required in operational environments
+- Integrating cleanly with schema, validation, and analytics tooling
+
+While CIM / CGMES is the primary driver, KGraphPy is designed to be reusable across other standards and profiles, including IEC 61850, BIM/IFC, GeoSPARQL-based datasets, EU SEMIC profiles, and Industrial Data Ontology (IDO).
+
+== Core Capabilities
+
+KGraphPy builds directly on RDFLib and provides:
+
+- In-memory knowledge graph handling (and supported backends via RDFLib)
+- Parsing and serialisation of RDF in multiple syntaxes (RDF/XML, Turtle, TriG, JSON-LD, etc.)
+- SPARQL 1.1 querying over local graphs and remote endpoints via RDFLib stores
+- Seamless integration with schema and validation tooling such as *pySHACL* and *LinkML*
+
+== Interoperability and DataOps Extensions
+
+KGraphPy adds practical DataOps-oriented extensions, including:
+
+- **CIMXML support**  
+  Handling of CIM RDF/XML conventions used in IEC CIM / CGMES exchanges
+
+- **CIMXML header support**  
+  Explicit handling of metadata and header graphs as defined in CGMES packaging
+
+- **DifferenceSet support**  
+  - Creation, parsing, and application of CIM DifferenceSets  
+  - Comparison of model versions (base vs. changed state)  
+  - Incremental exchange and change-oriented DataOps workflows
+
+- **Dataset-level metadata support**  
+  Support for modern **DCAT-3–style dataset headers**, enabling explicit dataset metadata graphs
+
+- **Compressed artefact handling**  
+  Read/write support for compressed packages (e.g. ZIP), including common *profile instance set bundle* layouts
+
+- **Future-ready packaging**  
+  Designed to accommodate evolving CIM exchange formats, including JSON-LD and packaging
+
+== Relationship to Other Libraries
+
+KGraphPy is intentionally lightweight and composable:
+
+- **RDFLib** provides the core RDF graph engine and SPARQL capabilities
+- **LinkML** can be used to define schemas, profiles, and generate typed Python artefacts
+
+KGraphPy does not replace RDFLib; it **extends it with operational and standards-oriented capabilities**.
+
+== Licensing
+
+KGraphPy is released under the **Apache License, Version 2.0**.
+
+This allows free use, modification, and redistribution in open-source, research, and commercial contexts, subject to the terms of the license.
+
+== Accreditation
+
+KGraphPy is built **on top of RDFLib**, and we explicitly acknowledge the RDFLib project and its contributors for providing the foundational RDF graph capabilities that make this library possible.
+
+- RDFLib project: https://github.com/RDFLib/rdflib
+
+In addition, we acknowledge and accredit:
+
+- link:https://cimug.ucaiug.org/[UCA CIMug]  
+- The teams responsible for the development of **Common Information Model (CIM) for Electricity**, which define the information models, application profile and exchange format that are suppored by  KGraphPy’s interoperability features.
+
+KGraphPy builds on this work but remains an independent, open-source Python library.
