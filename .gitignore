@@ -1,4 +1,12 @@
 */__pycache__/*
 /__pycache__/*
+.pytest_cache/
 *.log
 .vscode/
+.venv
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+*.egg-info/

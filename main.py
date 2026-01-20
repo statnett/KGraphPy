@@ -12,10 +12,10 @@ dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
 
 register(
-    "cimxml",          # formatnavn du ønsker
+    "cimxml",          # formatname
     Parser,            # plugin-type
-    "cim_plugin.cimxml",          # modulnavn (eller modulsti)
-    "CIMXMLParser"     # klassenavn
+    "cim_plugin.cimxml",          # module path
+    "CIMXMLParser"     # name of class
 )
 from rdflib.plugin import plugins
 
@@ -45,10 +45,8 @@ def normalize_strings(g):
     new = Graph() 
     for s, p, o in g: 
         if isinstance(o, Literal): 
-            # Hvis literal er uten datatype → sett xsd:string 
             if o.datatype is None: 
                 o = Literal(o, datatype=XSD.string) 
-            # Hvis literal har xsd:string → behold # Hvis literal har annen datatype → behold 
         new.add((s, p, o)) 
     return new
 
