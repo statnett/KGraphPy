@@ -588,7 +588,7 @@ PRIMITIVE_MAP = {
 #         return type_name
 
 
-def _resolve_type(schemaview: SchemaView, type_name: str) -> str:
+def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:
     """Resolve a LinkML type name to its canonical datatype.
     
     Works for both declared types and built-in primitives.
@@ -602,7 +602,7 @@ def _resolve_type(schemaview: SchemaView, type_name: str) -> str:
     """
     t = schemaview.get_type(type_name)
     if t is None:
-        return type_name
+        return None
 
     if t.uri:
         return t.uri
@@ -613,51 +613,53 @@ def _resolve_type(schemaview: SchemaView, type_name: str) -> str:
     return type_name
 
 
-def resolve_datatype_from_slot(sv, slot):
+def resolve_datatype_from_slot(schemaview: SchemaView, slot: SlotDefinition) -> str|None:
+    """Resolve primitive datatype by collecting range from linkML slots.
     
+    If range is a custom type, the primitive type of the custom type will be returned.
+
+    This function should only be used on predicates whos object are literals.
+    If the object is a URI, the return could be erronous.
+
+    Parameters:
+        schemaview (SchemaView): The linkML SchemaView to collect the datatype from.
+        slot (SlotDefinition): The slot which contains the datatype range.
+
+    Returns:
+        str: The datatype if found.
+        None: If range is nonexistent or a class.
+    """
     rng = slot.range
     if not rng:
         return None
 
-    # Case 1: range is a declared type or a primitive
-    try:
-        return _resolve_type(sv, rng)
-    except KeyError:
-        pass  # not a type, maybe a class
+    # Case 1: range is a declared type or primitive
+    resolved = _resolve_type(schemaview, rng)
+    if resolved:
+        return resolved
 
-    # Case 2: range is a class → inspect its attributes
-    if rng in sv.all_classes():
-        cls = sv.get_class(rng)
-        for attr_name, attr in (cls.attributes or {}).items():
-            if attr.range:
-                return _resolve_type(sv, attr.range)
+    # Case 2: range is an enum
+    if rng in schemaview.all_enums():
+        enum = schemaview.get_enum(rng)
 
-    # Fallback: return the raw range
+        # If any permissible value has a meaning (URI), then enum values are URIs
+        has_meaning = any(
+            pv.meaning for pv in (enum.permissible_values or {}).values()   # type: ignore
+        )
+
+        if has_meaning:
+            # Enum values will appear as URIs, not literals
+            logger.warning(f"Literal encountered for enum {rng} with meaning. Literal enums should not have meaning. Is object a URI?")
+
+        return "xsd:string"
+    
+    # Case 3: range is a class → literals should never appear 
+    if rng in schemaview.all_classes(): 
+        logger.warning( f"slot.range '{rng}' is a class. Is object a URI?" ) 
+        return None
+
     return rng
 
-# def resolve_range_datatype(schemaview, range_name):
-#     """
-#     Returnerer RDF-datatype for en LinkML-range.
-#     Prioritet:
-#       1. CIM-annotert datatype (annotations["uri"])
-#       2. LinkML-type sin uri (xsd:float osv.)
-#     """
-
-#     t = schemaview.get_type(range_name)
-#     if not t:
-#         return None
-
-#     # 1. CIM-type (fra annotations)
-#     if t.annotations:
-#         ann = t.annotations.get("uri")
-#         if ann and ann.value:
-#             return schemaview.expand_curie(ann.value)
-
-#     # 2. XSD-type (fra type.uri)
-#     if t.uri:
-#         return schemaview.expand_curie(t.uri)
-
-#     return None
 
 def create_typed_literal(value, datatype_uri, schemaview):
     # 1. Expand CURIE if needed

@@ -2,7 +2,15 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 from pytest import LogCaptureFixture
 from linkml_runtime import SchemaView
-from linkml_runtime.linkml_model.meta import SchemaDefinition, Prefix, TypeDefinition, SlotDefinition, ClassDefinition
+from linkml_runtime.linkml_model.meta import (
+    SchemaDefinition, 
+    Prefix, 
+    TypeDefinition, 
+    SlotDefinition, 
+    ClassDefinition,
+    EnumDefinition,
+    PermissibleValue
+)
 from linkml_runtime.loaders import yaml_loader
 from typing import Callable, Any    #, Optional, Dict
 import copy
@@ -17,23 +25,21 @@ from cim_plugin.cimxml import (
     patch_integer_ranges,
     slots_equal,
     _build_slot_index,
-    _resolve_type
+    _resolve_type,
+    resolve_datatype_from_slot
 )
 
 logger = logging.getLogger("cimxml_logger")
 
 # There are numerous type: ignore in this file. Where not otherwise stated, this is to silence pylance 
-# about schemaview.schema.prefixes and .types. Pylance complains because linkML are using too wide type hints.
+# about schemaview.schema. Pylance complains because linkML are using too wide type hints.
 
 
 @pytest.fixture
 def make_schemaview() -> Callable[..., SchemaView]:
-    """
-    Factory for creating SchemaView objects that mimic real LinkML schemas.
-    Supports both global slots and class-local attributes.
-    """
+    """Factory for creating SchemaView objects that mimic real LinkML schemas."""
 
-    def _factory(*, prefixes=None, types=None, slots=None, classes=None) -> SchemaView:
+    def _factory(*, prefixes=None, types=None, slots=None, classes=None, enums=None) -> SchemaView:
         # Build SchemaDefinition in the same structure as real LinkML YAML
         schema = SchemaDefinition(
             id="test",
@@ -41,8 +47,9 @@ def make_schemaview() -> Callable[..., SchemaView]:
             imports=["linkml:types"],
             prefixes=prefixes,
             types=types,
-            slots=slots,        # global slots (optional)
-            classes=classes,    # class definitions with attributes (optional)
+            slots=slots,
+            classes=classes,
+            enums=enums
         )
 
         return SchemaView(schema=schema)
@@ -821,10 +828,10 @@ def test_build_slot_index_callinghelperfunction(mock_patch: MagicMock, make_sche
         pytest.param("string", None, "xsd:string", id="Primitive type: string"),
         pytest.param("boolean", None, "xsd:boolean", id="Primitive type: boolean"),
         pytest.param("integer", None, "xsd:integer", id="Primitive type: integer"),
-        pytest.param("MyString", "string", "xsd:string", id="Class type: string"),
-        pytest.param("FlagType", "boolean", "xsd:boolean", id="Class type: boolean"),
-        pytest.param("NonExistent", None, "NonExistent", id="Type not found, returns itself"),
-        pytest.param("String", None, "String", id="Case sensitivity, returns itself")
+        pytest.param("MyString", "string", "xsd:string", id="Custom type: string"),
+        pytest.param("FlagType", "boolean", "xsd:boolean", id="Custom type: boolean"),
+        pytest.param("NonExistent", None, None, id="Type not found, returns None"),
+        pytest.param("String", None, None, id="Case sensitivity, returns None")
     ]
 )
 def test_resolve_type_basic(make_schemaview: Callable[..., SchemaView], type_name: str, base: str|None, expected: str) -> None:
@@ -843,6 +850,11 @@ def test_resolve_type_basic(make_schemaview: Callable[..., SchemaView], type_nam
                 {"MyType": TypeDefinition(name="MyType", uri="http://example.org/MyType", base="string")}, 
                 "http://example.org/MyType", 
                 id="Uri preferred over base"),
+            pytest.param(
+                "MyType", 
+                {"MyType": TypeDefinition(name="MyType", uri="http://example.org/MyType")}, 
+                "http://example.org/MyType", 
+                id="Uri, but no base"),
             pytest.param(
                 "A",
                 {"A": TypeDefinition(name="A", base="B"), "B": TypeDefinition(name="B", base="C"), "C": TypeDefinition(name="C", base="string")},
@@ -875,88 +887,119 @@ def test_resolve_type_circularinheritance(make_schemaview: Callable[..., SchemaV
         _resolve_type(sv, "A")
 
 
+# Unit tests resolve_datatype_from_slot
 
-# def test_resolve_type_classrangeclass(make_schemaview, set_prefixes) -> None:
-#     classes = {
-#         "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="D")}),
-#         "D": ClassDefinition(name="D", attributes={"d1": SlotDefinition(name="d1", slot_uri="ex:d1", range="E")}),
-#         "E": ClassDefinition(name="E", attributes={"e1": SlotDefinition(name="e1", slot_uri="ex:e1", range="integer")})
-#     }
-#     sv = make_schemaview(classes=classes, prefixes=set_prefixes)
-#     result = _resolve_type(sv, "D")
-#     assert result == "integer"
-
-# @pytest.mark.parametrize(
-#     "slot_def, expected",
-#     [
-#         # Direct primitive
-#         (SlotDefinition(name="s1", range="string"), "xsd:string"),
-
-#         # Direct custom type
-#         (SlotDefinition(name="s2", range="MyInt"), "xsd:integer"),
-#     ]
-# )
-# def test_resolve_datatype_direct(make_schemaview, slot_def, expected):
-#     sv = make_schemaview(
-#         types={
-#             "MyInt": TypeDefinition(name="MyInt", base="integer")
-#         },
-#         slots={slot_def.name: slot_def}
-#     )
-#     slot = sv.get_slot(slot_def.name)
-#     assert resolve_datatype_from_slot(sv, slot) == expected
+@pytest.mark.parametrize(
+    "slot_def, expected",
+    [
+        pytest.param(SlotDefinition(name="s1", range="string"), "xsd:string", id="Primitive datatype"),
+        pytest.param(SlotDefinition(name="s2", range="MyInt"), "xsd:integer", id="Custom datatype"),
+    ]
+)
+def test_resolve_datatype_from_slot_direct(make_schemaview: Callable[..., SchemaView], slot_def: SlotDefinition, expected: str) -> None:
+    sv = make_schemaview(
+        types={
+            "MyInt": TypeDefinition(name="MyInt", base="integer")
+        },
+        slots={slot_def.name: slot_def}
+    )
+    slot = sv.get_slot(slot_def.name)
+    assert resolve_datatype_from_slot(sv, slot) == expected
 
 
-# def test_resolve_datatype_via_class_attribute_primitive(make_schemaview):
-#     sv = make_schemaview(
-#         classes={
-#             "Measurement": ClassDefinition(
-#                 name="Measurement",
-#                 attributes={
-#                     "value": SlotDefinition(name="value", range="float")
-#                 }
-#             )
-#         },
-#         slots={
-#             "height": SlotDefinition(name="height", range="Measurement")
-#         }
-#     )
-
-#     slot = sv.get_slot("height")
-#     assert resolve_datatype_from_slot(sv, slot) == "xsd:float"
+def test_resolve_datatype_from_slot_enumwithmeaning(make_schemaview: Callable[..., SchemaView]) -> None:
+    enums = {"FuelType": EnumDefinition(
+        name="FuelType", 
+        enum_uri="http://iec.ch/TC57/CIM100#FuelType", 
+        permissible_values={ "coal": PermissibleValue(text="coal", meaning="cim:FuelType.coal") } 
+    )}
+    slots = {"fuel": SlotDefinition(name="fuel", range="FuelType")}
+    sv = make_schemaview(slots=slots, enums=enums)
+    slot = sv.get_slot("fuel")
+    assert resolve_datatype_from_slot(sv, slot) == "xsd:string"
 
 
-# def test_resolve_datatype_via_class_attribute_custom_type(make_schemaview):
-#     sv = make_schemaview(
-#         types={
-#             "MyBool": TypeDefinition(name="MyBool", base="boolean")
-#         },
-#         classes={
-#             "FlagWrapper": ClassDefinition(
-#                 name="FlagWrapper",
-#                 attributes={
-#                     "flag": SlotDefinition(name="flag", range="MyBool")
-#                 }
-#             )
-#         },
-#         slots={
-#             "isActive": SlotDefinition(name="isActive", range="FlagWrapper")
-#         }
-#     )
-
-#     slot = sv.get_slot("isActive")
-#     assert resolve_datatype_from_slot(sv, slot) == "xsd:boolean"
+def test_resolve_datatype_from_slot_enumnomeaning(make_schemaview: Callable[..., SchemaView]) -> None:
+    enums = {"ColorEnum": EnumDefinition(
+        name="ColorEnum", 
+        permissible_values={ "red": PermissibleValue(text="red"), "blue": PermissibleValue(text="blue")}
+    )}
+    slots = {"color": SlotDefinition(name="color", range="ColorEnum")}
+    sv = make_schemaview(slots=slots, enums=enums)
+    slot = sv.get_slot("color")
+    assert resolve_datatype_from_slot(sv, slot) == "xsd:string"
 
 
-# def test_resolve_datatype_unknown_falls_back(make_schemaview):
-#     sv = make_schemaview(
-#         slots={
-#             "mystery": SlotDefinition(name="mystery", range="UnknownType")
-#         }
-#     )
-#     slot = sv.get_slot("mystery")
-#     assert resolve_datatype_from_slot(sv, slot) == "UnknownType"
+def test_resolve_datatype_from_slot_mixedpermissibles(make_schemaview: Callable[..., SchemaView], caplog: LogCaptureFixture) -> None:
+    enums = {"MixedEnum": EnumDefinition(
+        name="MixedEnum", 
+        permissible_values={"a": PermissibleValue(text="a", meaning="ex:A"), "b": PermissibleValue(text="b")}
+    )}
+    slots = {"s1": SlotDefinition(name="s1", range="MixedEnum")}
+    sv = make_schemaview(slots=slots, enums=enums)
+    slot = sv.get_slot("s1")
+    result = resolve_datatype_from_slot(sv, slot) 
+    assert result == "xsd:string"
+    assert "Literal encountered for enum MixedEnum with meaning." in caplog.text
 
+def test_resolve_datatype_from_slot_enumnopermissibles(make_schemaview: Callable[..., SchemaView]) -> None:
+    enums = {"ColorEnum": EnumDefinition(name="ColorEnum")}
+    slots = {"color": SlotDefinition(name="color", range="ColorEnum")}
+    sv = make_schemaview(slots=slots, enums=enums)
+    slot = sv.get_slot("color")
+    assert resolve_datatype_from_slot(sv, slot) == "xsd:string"
+
+
+def test_resolve_datatype_from_slot_unknowntype(make_schemaview: Callable[..., SchemaView]) -> None:
+    sv = make_schemaview(
+        slots={
+            "mystery": SlotDefinition(name="mystery", range="UnknownType")
+        }
+    )
+    slot = sv.get_slot("mystery")
+    assert resolve_datatype_from_slot(sv, slot) == "UnknownType"
+
+
+def test_resolve_datatype_from_slot_norange(make_schemaview: Callable[..., SchemaView]) -> None:
+    sv = make_schemaview(slots={"mystery": SlotDefinition(name="mystery")})
+    slot = sv.get_slot("mystery")
+    assert resolve_datatype_from_slot(sv, slot) == None
+
+
+@patch("cim_plugin.cimxml._resolve_type")
+def test_resolve_datatype_from_slot_funccalledonce(mock_resolve: MagicMock, make_schemaview: Callable[..., SchemaView]) -> None:
+    mock_resolve.return_value = "xsd:integer"
+    sv = make_schemaview(
+        slots={"s1": SlotDefinition(name="s1", range="integer")}
+    )
+    slot = sv.get_slot("s1")
+    assert resolve_datatype_from_slot(sv, slot) == "xsd:integer"
+    mock_resolve.assert_called_once_with(sv, "integer")
+    assert mock_resolve.call_count == 1
+
+
+@patch("cim_plugin.cimxml._resolve_type")
+def test_resolve_datatype_from_slot_funcerror(mock_resolve: MagicMock, make_schemaview: Callable[..., SchemaView]) -> None:
+    mock_resolve.side_effect = RecursionError
+    sv = make_schemaview(
+        slots={"s1": SlotDefinition(name="s1", range="integer")}
+    )
+    slot = sv.get_slot("s1")
+
+    with pytest.raises(RecursionError):
+        resolve_datatype_from_slot(sv, slot)
+
+
+def test_resolve_datatype_from_slot_classrange(make_schemaview: Callable[..., SchemaView], caplog: LogCaptureFixture) -> None:
+    classes = {"Person": ClassDefinition(name="Person")}
+    slots = {"friend": SlotDefinition(name="friend", range="Person")}
+    sv = make_schemaview(slots=slots, classes=classes)
+
+    slot = sv.get_slot("friend")
+
+    result = resolve_datatype_from_slot(sv, slot)
+    assert result is None
+    assert "slot.range 'Person' is a class" in caplog.text
 
 if __name__ == "__main__":
     pytest.main()
