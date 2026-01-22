@@ -9,10 +9,12 @@ from linkml_runtime.linkml_model.meta import (
     SlotDefinition, 
     ClassDefinition,
     EnumDefinition,
-    PermissibleValue
+    PermissibleValue,
 )
-from linkml_runtime.loaders import yaml_loader
 from typing import Callable, Any    #, Optional, Dict
+from rdflib import Literal, URIRef
+from rdflib.namespace import XSD
+from datetime import date, datetime
 import copy
 from collections import defaultdict
 from dataclasses import dataclass
@@ -26,7 +28,9 @@ from cim_plugin.cimxml import (
     slots_equal,
     _build_slot_index,
     _resolve_type,
-    resolve_datatype_from_slot
+    resolve_datatype_from_slot,
+    create_typed_literal,
+    LiteralCastingError
 )
 
 logger = logging.getLogger("cimxml_logger")
@@ -1000,6 +1004,66 @@ def test_resolve_datatype_from_slot_classrange(make_schemaview: Callable[..., Sc
     result = resolve_datatype_from_slot(sv, slot)
     assert result is None
     assert "slot.range 'Person' is a class" in caplog.text
+
+
+# Unit tests create_typed_literal  # adjust import
+
+@pytest.mark.parametrize(
+    "value, datatype, exp_val, exp_type",
+    [
+        pytest.param("42", "xsd:integer", 42, str(XSD.integer), id="Integer"),
+        pytest.param("3.14", "xsd:float", 3.14, str(XSD.float), id="Float"),
+        pytest.param("true", "xsd:boolean", True, str(XSD.boolean), id="Boolean True"),
+        pytest.param("1", "xsd:boolean", True, str(XSD.boolean), id="Numeric boolean True"),
+        pytest.param("false", "xsd:boolean", False, str(XSD.boolean), id="Boolean False"),
+        pytest.param("2024-01-01", "xsd:date", date(2024, 1, 1), str(XSD.date), id="Date as string"),
+        pytest.param(date(2024, 1, 1), "xsd:date", date(2024, 1, 1), str(XSD.date), id="Date as datetime.date"),
+        pytest.param("2024-01-01T12:30:00", "xsd:dateTime", datetime(2024, 1, 1, 12, 30), str(XSD.dateTime), id="Datetime as string"),
+        pytest.param(datetime(2024, 1, 1, 12, 30), "xsd:dateTime", datetime(2024, 1, 1, 12, 30), str(XSD.dateTime), id="Datetime as datetime.datetime"),
+        pytest.param("42", str(XSD.integer), 42, str(XSD.integer), id="Already expanded uri"),
+        pytest.param("hello", "", "hello", 'None', id="Datatype empty string"),
+        pytest.param("hello", None, "hello", "None", id="Datatype None"),
+        pytest.param(Literal("42", datatype=XSD.integer), "xsd:integer", 42, str(XSD.integer), id="Value already Literal"),
+        pytest.param("42", URIRef(str(XSD.integer)), 42, str(XSD.integer), id="Datatype as URIRef"),
+        # For all below: Value set to None by rdflib because datatype is unavailable
+        pytest.param("42", "XSD:INTEGER", None, "http://www.w3.org/2001/XMLSchema#INTEGER", id="Uppercase CURIE"),  # Passes because linkML normalizes prefixes during lookup in internal maps
+        pytest.param("hello", "xsd:unknown", None, "http://www.w3.org/2001/XMLSchema#unknown", id="Unknown datatype"),
+        pytest.param("hello", "http://example.org/CustomType", None, "http://example.org/CustomType", id="Custom URI datatype"),
+        pytest.param("hello", "foo:bar", None, "foo:bar", id="Unknown prefix CURIE"),
+        pytest.param("42", " xsd:integer ", None, " xsd:integer ", id="Datatype with whitespace"),  
+    ]
+)
+def test_create_typed_literal_basic(make_schemaview: Callable[..., SchemaView], value: Any, datatype: str|None, exp_val: Any, exp_type: str|None) -> None:
+    sv = make_schemaview(prefixes={"xsd": "http://www.w3.org/2001/XMLSchema#"})
+    
+    # Pylance silenced to test incorrect datatypes
+    lit = create_typed_literal(value, datatype, sv) # type: ignore
+    
+    assert isinstance(lit, Literal)
+    assert lit.value == exp_val
+    assert str(lit.datatype) == exp_type
+
+@pytest.mark.parametrize(
+    "value, datatype, exp_val",
+    [
+        pytest.param("abc", "xsd:integer", "abc", id="Invalid integer lexical form"),
+        pytest.param("not-a-float", "xsd:float", "not-a-float", id="Invalid float lexical form"),
+        pytest.param("yes", "xsd:boolean", "yes", id="Invalid boolean lexical form"),
+    ]
+)
+def test_create_typed_literal_errors(make_schemaview: Callable[..., SchemaView], value: Any, datatype: str|None, exp_val: str, caplog: LogCaptureFixture) -> None:
+    sv = make_schemaview(prefixes={"xsd": "http://www.w3.org/2001/XMLSchema#"})
+
+    with pytest.raises(LiteralCastingError):
+        # Pylance silenced to test incorrect datatypes
+        create_typed_literal(value, datatype, sv)   # type: ignore
+
+    # lit = create_typed_literal(value, datatype, sv)
+    # assert isinstance(lit, Literal)
+    # assert lit.value == exp_val
+    # assert str(lit.datatype) == 'None'
+    # assert "Failed to cast" in caplog.text
+
 
 if __name__ == "__main__":
     pytest.main()

@@ -7,7 +7,9 @@ import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Optional, cast
+from typing import Optional, cast, Any
+from datetime import datetime, date
+from urllib.parse import urlparse
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -185,6 +187,8 @@ class CIMXMLParser(Parser):
                     logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
                     continue
 
+
+                # new_literal = create_typed_literal(o.value, datatype_uri)
                 new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
 
                 triples_to_remove.append((s, p, o))
@@ -533,60 +537,6 @@ def _extract_uuid_from_urn(urn: str) -> uuid.UUID:
     
     return uuid.UUID(urn[len("urn:uuid:"):])
 
-# PRIMITIVE_MAP = {
-#     "integer": "xsd:integer",
-#     "int": "xsd:integer",
-#     "float": "xsd:float",
-#     "double": "xsd:double",
-#     "string": "xsd:string",
-#     "boolean": "xsd:boolean",
-# }
-
-PRIMITIVE_MAP = {
-    "integer": "http://www.w3.org/2001/XMLSchema#integer",
-    "int": "http://www.w3.org/2001/XMLSchema#integer",
-    "float": "http://www.w3.org/2001/XMLSchema#float",
-    "double": "http://www.w3.org/2001/XMLSchema#double",
-    "string": "http://www.w3.org/2001/XMLSchema#string",
-    "boolean": "http://www.w3.org/2001/XMLSchema#boolean",
-}
-
-# def resolve_datatype_from_slot(sv, slot):
-#     rng = slot.range
-
-#     if rng in PRIMITIVE_MAP:
-#         return PRIMITIVE_MAP[rng]
-
-#     if rng in sv.schema.types:
-#         t = sv.get_type(rng)
-#         return t.uri or PRIMITIVE_MAP.get(t.base) or t.base
-
-#     if rng in sv.all_classes():
-#         cls = sv.get_class(rng)
-#         for s in cls.slots:
-#             sub_slot = sv.get_slot(s)
-#             if sub_slot.range in PRIMITIVE_MAP:
-#                 return PRIMITIVE_MAP[sub_slot.range]
-
-#     return None
-
-
-# def _resolve_type(schemaview: SchemaView, type_name: str) -> str:
-#         """Return the XSD URI or base type for any type, including primitives."""
-#         t = schemaview.get_type(type_name)
-#         print(t)
-#         if t is None:
-#             return type_name
-#         print(t.uri)
-#         if t.uri:
-#             return t.uri 
-#         print(t.base)
-#         if t.base:
-#             base = schemaview.get_type(t.base)
-#             return base.uri or base.base or t.base 
-        
-#         return type_name
-
 
 def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:
     """Resolve a LinkML type name to its canonical datatype.
@@ -661,19 +611,92 @@ def resolve_datatype_from_slot(schemaview: SchemaView, slot: SlotDefinition) -> 
     return rng
 
 
-def create_typed_literal(value, datatype_uri, schemaview):
-    # 1. Expand CURIE if needed
-    if ":" in datatype_uri and not datatype_uri.startswith("http"):
+def cast_bool(value: str) -> bool:
+    """Cast string value to boolean.
+    
+    Parameters:
+        value (str): The value to be cast.
+    
+    Raises:
+        ValueError: If input does not match true or false.
+    """
+    s = str(value).lower()
+    if s in ("true", "1"):
+        return True
+    if s in ("false", "0"):
+        return False
+    raise ValueError(f"Invalid boolean lexical form: {value}")
+
+
+CASTERS = {
+    str(XSD.integer): int,
+    str(XSD.float): float,
+    str(XSD.boolean): cast_bool,
+    str(XSD.date): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
+    str(XSD.dateTime): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
+}
+
+class LiteralCastingError(Exception):
+    """Error when casting datatype of a Literal."""
+    pass
+
+def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) -> Literal:
+    """Cast Literal to correct format based on datatype uri.
+    
+    Parameters:
+        value (str): The value to be cast.
+        datatype_uri (str): The datatype in format "prefix:datatype".
+    
+    Raises:
+        LiteralCastingError: If the casting fails.
+
+    Returns:
+        Literal with the new value format and datatype set.
+    """
+    if datatype_uri and ":" in datatype_uri and not datatype_uri.startswith("http"):
         datatype_uri = schemaview.expand_curie(datatype_uri)
 
-    # 2. Cast lexical form based on datatype
-    if datatype_uri == str(XSD.float):
-        value = float(value)
-    elif datatype_uri == str(XSD.integer):
-        value = int(value)
-    # legg til flere hvis du trenger
+    caster = CASTERS.get(datatype_uri)
+    if caster:
+        try:
+            value = caster(value)
+        except (ValueError, TypeError):
+            raise LiteralCastingError(f"{value}, {datatype_uri}")
 
-    return Literal(value, datatype=URIRef(datatype_uri))
+    # RDFLib will set .value = None for unknown datatypes
+    return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
+
+
+# def create_typed_literal(value, datatype_uri, schemaview):
+#     if datatype_uri is not None: 
+#         datatype_uri = str(datatype_uri)
+    
+#     if datatype_uri and ":" in datatype_uri and not datatype_uri.startswith("http"):
+#         datatype_uri = schemaview.expand_curie(datatype_uri)
+
+#     caster = CASTERS.get(datatype_uri)
+#     if caster:
+#         try:
+#             value = caster(value)
+#         except (ValueError, TypeError) as e:
+#             logger.warning(f"Failed to cast {value} to datatype {datatype_uri}: {e}")
+#             return Literal(value)
+        
+#     return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
+
+
+# def create_typed_literal(value: Any, datatype_uri: str, schemaview: SchemaView) -> Literal:
+#     # 1. Expand CURIE if needed
+#     if ":" in datatype_uri and not datatype_uri.startswith("http"):
+#         datatype_uri = schemaview.expand_curie(datatype_uri)
+
+#     # 2. Cast lexical form based on datatype
+#     if datatype_uri == str(XSD.float):
+#         value = float(value)
+#     elif datatype_uri == str(XSD.integer):
+#         value = int(value)
+
+#     return Literal(value, datatype=URIRef(datatype_uri))
 
 
 def slots_equal(slot1: SlotDefinition, slot2: SlotDefinition) -> bool:
@@ -866,14 +889,50 @@ def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
 #         "entsoe" in u
 #     )
 
+
+def make_dicts(schemaview):
+    PRIMITIVES = {
+        t.name for t in schemaview.schema.types.values()
+        if isinstance(t, TypeDefinition) and t.base is None
+    }
+    CASTERS = {
+        "integer": int,
+        "float": float,
+        "boolean": lambda v: str(v).lower() in ("true", "1"),
+        "date": lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
+        "datetime": lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
+    }
+    return PRIMITIVES, CASTERS
+
+def resolve_primitive(tname, schemaview, primitives):
+    seen = set()
+    while True:
+        if tname in primitives:
+            return tname
+        if tname in seen:
+            raise ValueError(f"Cyclic type definition: {tname}")
+        seen.add(tname)
+        tname = schemaview.get_type(tname).base
+
+
+
+def build_caster_map(schemaview, primitives, casters):
+    caster_map = {}
+    for tname, tdef in schemaview.all_types().items():
+        if not tdef.uri:
+            continue
+        dt_uri = URIRef(schemaview.expand_curie(tdef.uri))
+        primitive = resolve_primitive(tname, schemaview, primitives)
+        caster = casters.get(primitive)
+        if caster:
+            caster_map[dt_uri] = caster
+    return caster_map
+
+
 if __name__ == "__main__":
     print("cimxml plugin for rdflib")
     filepath = "../CoreEquipment.linkml.yaml"
     sv = SchemaView(filepath)
-    slot = sv.get_slot("isInfiniteDuration")
-    print(slot.range)
-    rng = resolve_datatype_from_slot(sv, slot)
-    print(rng)
-    print(sv.get_type("integer").uri)
-    # slots, classes = _build_slot_index(sv)
-    # print(classes)
+    primitives, casters = make_dicts(sv)
+    map = build_caster_map(sv, primitives, casters)
+    print(map)

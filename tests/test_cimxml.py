@@ -5,6 +5,7 @@ from cim_plugin.cimxml import (
     find_slots_with_range,
     detect_uri_collisions, 
     _clean_uri,
+    cast_bool
     # looks_like_cim_uri, 
 )
 import pytest
@@ -617,7 +618,6 @@ def test_detect_uri_collisionemptyfragments() -> None:
                      id="Just _ fragment → cleaned"),
         pytest.param(URIRef("http://example.com#__id1"), {"id1"}, URIRef("urn:uuid:id1"),
                      id="Fragment with 2+ _ → cleaned"),
-
     ]
 )
 def test_clean_uri_basic(uri: URIRef, id_set: set[str], expected: URIRef) -> None:
@@ -687,6 +687,34 @@ def test_clean_uri_multipleurissamefragments() -> None:
     assert cleaned1 == URIRef("urn:uuid:abc")
     assert len(uri_map) == 2
     assert set(uri_map.values()) == {cleaned1}
+
+
+# Unit tests cast_bool
+@pytest.mark.parametrize(
+    "input, output",
+    [
+        pytest.param("true", True, id="Input 'true'"),
+        pytest.param("1", True, id="Input '1'"),
+        pytest.param("false", False, id="Input 'false'"),
+        pytest.param("0", False, id="Input '0'"),
+        pytest.param("gibberish", None, id="Nonsense"),
+        pytest.param("123", None, id="Numeric nonsense"),
+        pytest.param(True, True, id="Input boolean True"),
+        pytest.param(False, False, id="Input boolean False"),
+        pytest.param("True", True, id="Upper case True"),
+        pytest.param("FALSE", False, id="Upper case False"),
+        pytest.param(1, True, id="Integer"),
+        pytest.param(123, None, id="Wrong integer")
+    ]
+)
+def test_cast_bool_various(input: str|bool, output: bool) -> None:
+    if output is None:
+        with pytest.raises(ValueError, match="Invalid boolean lexical form"):
+            cast_bool(input)
+    else:
+        # Pylance silenced to test incorrect input type
+        assert cast_bool(input) == output   # type: ignore
+
 
 # Unit tests looks_like_cim_uri
 

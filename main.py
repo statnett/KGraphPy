@@ -66,26 +66,26 @@ def main():
     # g_normalized = normalize_strings(g_normalized)
     # count = 0
     # for s, p, o in g:
-    #     print(s, "->", p, "->", o)
-    #     if isinstance(o, Literal) and "integer" in o.datatype:
+    #     # print(s, "->", p, "->", o)
+    #     if isinstance(o, Literal): # and "integer" in o.datatype:
     #         print(s, "->", p, "->", o)
     #         print(o.datatype)
 
     #     count += 1
-    #     if count == 10:
+    #     if count == 2:
     #         break
     #         # print(f"Subject '{s}', predicate '{p}' and Object '{o}' with datatype: {o.datatype}")
 
     # check_plugin_registered("cimxml")
     g_test = g
     t_test = t_normalized
-    # print(f"CIMXML: {len(g_test)}")
-    # for item in list(g_test.triples((URIRef('urn:uuid:43e27a15-0192-4c01-bec3-413f770618c7'), None, None))):
-    #     print(item)
+    print(f"CIMXML: {len(g_test)}")
+    for item in list(g_test.triples((URIRef('urn:uuid:f1769d28-9aeb-11e5-91da-b8763fd99c5f'), URIRef('https://cim.ucaiug.io/ns#Equipment.normallyInService'), None))):
+        print(item)
 
-    # print(f"Trig: {len(t_test)}")
-    # for item in list(t_test.triples((URIRef('urn:uuid:43e27a15-0192-4c01-bec3-413f770618c7'), None, None))):
-    #     print(item)
+    print(f"Trig: {len(t_test)}")
+    for item in list(t_test.triples((URIRef('urn:uuid:f1769d28-9aeb-11e5-91da-b8763fd99c5f'), URIRef('https://cim.ucaiug.io/ns#Equipment.normallyInService'), None))):
+        print(item)
 
     isoC = to_isomorphic(g_test)
     isoT = to_isomorphic(t_test)
@@ -94,7 +94,7 @@ def main():
     print(f"In cim: {len(in_cim)}, in trig: {len(in_trig)}")
     # for pfx, ns in g.namespace_manager.namespaces():
     #     print(pfx, ns)
-    # print("cim:")
+    print("cim:")
     count = 0
     for s, p, o in in_cim:
         if isinstance(o, Literal):
@@ -103,14 +103,14 @@ def main():
             if count == 5:
                 break
     
-    # print("trig:")
-    # count = 0
-    # for s, p, o in in_trig:
-    #     # if not isinstance(o, Literal):
-    #     print(s, p, o)
-            # count += 1
-            # if count == 5:
-            #     break
+    print("trig:")
+    count = 0
+    for s, p, o in in_trig:
+        if not isinstance(o, Literal):
+            print(s, p, o)
+            count += 1
+            if count == 5:
+                break
 
 if __name__ == "__main__":
     main()
