@@ -5,6 +5,7 @@ from cim_plugin.cimxml import (
     find_slots_with_range,
     detect_uri_collisions, 
     _clean_uri,
+    cast_float,
     cast_bool
     # looks_like_cim_uri, 
 )
@@ -15,6 +16,7 @@ from rdflib import URIRef, Graph, Namespace, Literal, BNode
 import logging
 from pytest import LogCaptureFixture
 import textwrap
+from typing import Any
 
 logger = logging.getLogger("cimxml_logger")
 
@@ -714,6 +716,30 @@ def test_cast_bool_various(input: str|bool, output: bool) -> None:
     else:
         # Pylance silenced to test incorrect input type
         assert cast_bool(input) == output   # type: ignore
+
+
+
+# Unit tests cast_float
+@pytest.mark.parametrize(
+    "input, output",
+    [
+        pytest.param("1", 1.0, id="Input '1'"),
+        pytest.param("0.5", 0.5, id="Input '0.5'"),
+        pytest.param("0,5", 0.5, id="Comma error"),
+        pytest.param("1,567.89", None, id="Comma as thousand mark"),
+        pytest.param("123", 123.0, id="Hundreds"),
+        pytest.param(True, None, id="Input boolean True"),
+        pytest.param("Hey", None, id="Invalid float string"),
+        pytest.param(123, 123.0, id="Integer input")
+    ]
+)
+def test_cast_float_various(input: Any, output: float|None) -> None:
+    if output is None:
+        with pytest.raises(ValueError, match="Invalid float"):
+            cast_float(input)
+    else:
+        # Pylance silenced to test incorrect input type
+        assert cast_float(input) == output   # type: ignore
 
 
 # Unit tests looks_like_cim_uri

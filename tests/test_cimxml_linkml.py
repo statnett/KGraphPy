@@ -1020,6 +1020,7 @@ def test_resolve_datatype_from_slot_classrange(make_schemaview: Callable[..., Sc
         pytest.param(date(2024, 1, 1), "xsd:date", date(2024, 1, 1), str(XSD.date), id="Date as datetime.date"),
         pytest.param("2024-01-01T12:30:00", "xsd:dateTime", datetime(2024, 1, 1, 12, 30), str(XSD.dateTime), id="Datetime as string"),
         pytest.param(datetime(2024, 1, 1, 12, 30), "xsd:dateTime", datetime(2024, 1, 1, 12, 30), str(XSD.dateTime), id="Datetime as datetime.datetime"),
+        pytest.param("3,14", "xsd:float", 3.14, str(XSD.float), id="Float with comma as separator"),
         pytest.param("42", str(XSD.integer), 42, str(XSD.integer), id="Already expanded uri"),
         pytest.param("hello", "", "hello", 'None', id="Datatype empty string"),
         pytest.param("hello", None, "hello", "None", id="Datatype None"),
@@ -1049,6 +1050,7 @@ def test_create_typed_literal_basic(make_schemaview: Callable[..., SchemaView], 
         pytest.param("abc", "xsd:integer", "abc", id="Invalid integer lexical form"),
         pytest.param("not-a-float", "xsd:float", "not-a-float", id="Invalid float lexical form"),
         pytest.param("yes", "xsd:boolean", "yes", id="Invalid boolean lexical form"),
+        pytest.param("3,14.15", "xsd:float", "3,14.15", id="Invalid float with comma as separator"),
     ]
 )
 def test_create_typed_literal_errors(make_schemaview: Callable[..., SchemaView], value: Any, datatype: str|None, exp_val: str, caplog: LogCaptureFixture) -> None:

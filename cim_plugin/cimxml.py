@@ -19,6 +19,12 @@ DCAT = Namespace("http://www.w3.org/ns/dcat#")
 CIM = Namespace("https://cim.ucaiug.io/ns#")
 EU = Namespace("https://cim.ucaiug.io/ns/eu#")
 
+
+class LiteralCastingError(Exception):
+    """Error when casting datatype of a Literal."""
+    pass
+
+
 class CIMXMLParser(Parser):
     name = "cimxml"
     format = "cimxml"
@@ -54,8 +60,6 @@ class CIMXMLParser(Parser):
         self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
         ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
         ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
-        # canonical_namespace = detect_cim_namespace(self.schemaview)
-        # normalize_cim_uris(graph, canonical_ns=canonical_namespace)     # Fix when cim namespace in instance data differ from model     
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
 
 
@@ -172,6 +176,7 @@ class CIMXMLParser(Parser):
         triples_to_remove = []
 
         unfound_predicates = set()
+        casting_errors = []
 
         for s, p, o in graph:
             if isinstance(o, Literal) and o.datatype is None:
@@ -187,17 +192,23 @@ class CIMXMLParser(Parser):
                     logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
                     continue
 
-
-                # new_literal = create_typed_literal(o.value, datatype_uri)
-                new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
+                try:
+                    new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
+                except LiteralCastingError as e:
+                    casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
+                    new_literal = o
 
                 triples_to_remove.append((s, p, o))
                 triples_to_add.append((s, p, new_literal))
+
+        if casting_errors:
+            logger.error("\n".join(casting_errors))
 
         for t in triples_to_remove:
             graph.remove(t)
         for t in triples_to_add:
             graph.add(t)
+
         logger.info(f"Did not find these predicates in model: {unfound_predicates}")
         logger.info(f"Enriching done. Added datatypes to {len(triples_to_add)} triples.")
         return graph
@@ -611,6 +622,28 @@ def resolve_datatype_from_slot(schemaview: SchemaView, slot: SlotDefinition) -> 
     return rng
 
 
+def cast_float(value: str) -> float:
+    """Cast string value to float.
+
+    Corrects the common error of using , as decimal point (3,14 -> 3.14).
+    
+    Parameters:
+        value (str): The value to be cast.
+    
+    Raises:
+        ValueError: If input is not possible to cast.
+    """
+    s = str(value).strip()
+
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")
+
+    try:
+        return float(s)
+    except ValueError:
+        raise ValueError(f"Invalid float: {value}")
+
+
 def cast_bool(value: str) -> bool:
     """Cast string value to boolean.
     
@@ -630,15 +663,12 @@ def cast_bool(value: str) -> bool:
 
 CASTERS = {
     str(XSD.integer): int,
-    str(XSD.float): float,
+    str(XSD.float): cast_float,
     str(XSD.boolean): cast_bool,
     str(XSD.date): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
     str(XSD.dateTime): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
 }
 
-class LiteralCastingError(Exception):
-    """Error when casting datatype of a Literal."""
-    pass
 
 def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) -> Literal:
     """Cast Literal to correct format based on datatype uri.
