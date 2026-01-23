@@ -166,52 +166,107 @@ class CIMXMLParser(Parser):
                     graph.add((s, p, new_o))
 
     def enrich_literal_datatypes(self, graph: Graph) -> Graph:
+        """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
+        
+        - Cast value to correct format and log error when that is not possible.
+        - Tag with the full URI of the primitive datatype.
+
+        Parameters:
+            graph (Graph): The graph to enrich.
+
+        Returns:
+            Graph: The enriched graph.
+        """
         logger.info("Enriching literal datatypes")
 
-        if self.schemaview is None or self.slot_index is None:
+        if not self.schemaview or not self.slot_index:
             logger.error("Missing schemaview or slot_index. Enriching not possible.")
             return graph
 
-        triples_to_add = []
-        triples_to_remove = []
-
         unfound_predicates = set()
         casting_errors = []
+        updated_count = 0
 
-        for s, p, o in graph:
-            if isinstance(o, Literal) and o.datatype is None:
-                slot = self.slot_index.get(str(p))
+        for s, p, o in list(graph):
+            if not isinstance(o, Literal) or o.datatype is not None or o.language is not None:
+                continue
 
-                if not slot: # Collecting predicates not found in the model
-                    unfound_predicates.add(str(p))
-                    continue
+            slot = self.slot_index.get(str(p))
+            if not slot:
+                unfound_predicates.add(str(p))
+                continue
 
-                datatype_uri = resolve_datatype_from_slot(self.schemaview, slot)
+            datatype_uri = resolve_datatype_from_slot(self.schemaview, slot)
+            if not datatype_uri:
+                logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
+                continue
 
-                if not datatype_uri:
-                    logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
-                    continue
+            try:
+                new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
+            except LiteralCastingError as e:
+                casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
+                continue
 
-                try:
-                    new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
-                except LiteralCastingError as e:
-                    casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
-                    new_literal = o
-
-                triples_to_remove.append((s, p, o))
-                triples_to_add.append((s, p, new_literal))
+            graph.remove((s, p, o))
+            graph.add((s, p, new_literal))
+            updated_count += 1
 
         if casting_errors:
             logger.error("\n".join(casting_errors))
 
-        for t in triples_to_remove:
-            graph.remove(t)
-        for t in triples_to_add:
-            graph.add(t)
+        if unfound_predicates:
+            logger.info(f"Did not find these predicates in model: {unfound_predicates}")
+        logger.info(f"Enriching done. Added datatypes to {updated_count} triples.")
 
-        logger.info(f"Did not find these predicates in model: {unfound_predicates}")
-        logger.info(f"Enriching done. Added datatypes to {len(triples_to_add)} triples.")
         return graph
+
+    # def enrich_literal_datatypes(self, graph: Graph) -> Graph:
+    #     logger.info("Enriching literal datatypes")
+
+    #     if self.schemaview is None or self.slot_index is None:
+    #         logger.error("Missing schemaview or slot_index. Enriching not possible.")
+    #         return graph
+
+    #     triples_to_add = []
+    #     triples_to_remove = []
+
+    #     unfound_predicates = set()
+    #     casting_errors = []
+
+    #     for s, p, o in graph:
+    #         if isinstance(o, Literal) and o.datatype is None:
+    #             slot = self.slot_index.get(str(p))
+
+    #             if not slot: # Collecting predicates not found in the model
+    #                 unfound_predicates.add(str(p))
+    #                 continue
+
+    #             datatype_uri = resolve_datatype_from_slot(self.schemaview, slot)
+
+    #             if not datatype_uri:
+    #                 logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
+    #                 continue
+
+    #             try:
+    #                 new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
+    #             except LiteralCastingError as e:
+    #                 casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
+    #                 new_literal = o
+
+    #             triples_to_remove.append((s, p, o))
+    #             triples_to_add.append((s, p, new_literal))
+
+    #     if casting_errors:
+    #         logger.error("\n".join(casting_errors))
+
+    #     for t in triples_to_remove:
+    #         graph.remove(t)
+    #     for t in triples_to_add:
+    #         graph.add(t)
+
+    #     logger.info(f"Did not find these predicates in model: {unfound_predicates}")
+    #     logger.info(f"Enriching done. Added datatypes to {len(triples_to_add)} triples.")
+    #     return graph
 
 
 def _get_current_namespace_from_model(schemaview: SchemaView, prefix: str) -> Optional[str]:
@@ -963,6 +1018,5 @@ if __name__ == "__main__":
     print("cimxml plugin for rdflib")
     filepath = "../CoreEquipment.linkml.yaml"
     sv = SchemaView(filepath)
-    primitives, casters = make_dicts(sv)
-    map = build_caster_map(sv, primitives, casters)
-    print(map)
+    slots, classes = _build_slot_index(sv)
+    print(slots.get('http://iec.ch/TC57/CIM100#VsConverter.CapabilityCurve'))
