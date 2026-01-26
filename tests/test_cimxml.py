@@ -338,8 +338,11 @@ def test_ensure_correct_namespace_graph_namespacehandling(mock_get: MagicMock, m
 def test_ensure_correct_namespace_graph_currentisnone(mock_get: MagicMock, mock_update: MagicMock) -> None:
     mock_get.return_value = None
     g = Graph()
-    with pytest.raises(ValueError, match="No namespace is called by this prefix: 'ex'."):
+
+    with patch.object(g, "bind") as mock_bind:
+    # with pytest.raises(ValueError, match="No namespace is called by this prefix: 'ex'."):
         ensure_correct_namespace_graph(g, "ex", "www.example.com")
+        mock_bind.assert_not_called()
 
     mock_get.assert_called_once()
     mock_update.assert_not_called()

@@ -361,6 +361,26 @@ def test_normalize_rdf_ids_mutatesgraph(mock_detect: MagicMock, mock_clean: Magi
     assert new_p == p
 
 
+def test_normalize_rdf_ids_withoutmocking() -> None:
+    parser = CIMXMLParser()
+    g = Graph()
+
+    # Two triples sharing the same subject
+    s = URIRef("http://ex.com#_a")
+    p = URIRef("p")
+    o1 = URIRef("http://ex.com#_b")
+    o2 = URIRef("http://ex.com#_c")
+
+    g.add((s, p, o1))
+    g.add((s, p, o2))
+
+    parser.normalize_rdf_ids(g)
+
+    # If the bug exists, one triple will not be updated correctly
+    assert all(str(tr[0]) == "urn:uuid:a" for tr in g)
+    assert len(list(g)) == 2
+
+
 @patch("cim_plugin.cimxml._clean_uri")
 @patch("cim_plugin.cimxml.detect_uri_collisions")
 def test_normalize_rdf_ids_reusesurimap(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
@@ -477,7 +497,7 @@ def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_re
 def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock_resolve: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, caplog: LogCaptureFixture) -> None:
     logger.setLevel("INFO")
     g = Graph()
-    s, p, o = URIRef("s"), URIRef("unknown"), Literal("42")
+    s, p, o = URIRef("s"), URIRef("first_unknown"), Literal("42")
     s2, p2, o2 = URIRef("s2"), URIRef("also_unknown"), Literal("42")
     g.add((s, p, o))
     g.add((s2, p2, o2))
@@ -486,8 +506,9 @@ def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock
     inst.slot_index = {"p": DummySlot("p", "string")}
 
     result = inst.enrich_literal_datatypes(g)
-    assert list(result) == [(s, p, o), (s2, p2, o2)]
-    assert "Did not find these predicates in model: {'unknown', 'also_unknown'}" in caplog.text
+    assert sorted(result) == sorted([(s, p, o), (s2, p2, o2)])
+    assert "also_unknown" in caplog.text
+    assert "first_unknown" in caplog.text
     mock_resolve.assert_not_called()
     mock_create.assert_not_called()
 
@@ -555,10 +576,8 @@ def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_reso
     assert mock_resolve.call_count == 2
     assert mock_create.call_count == 2
     assert any("Error casting" in rec.message for rec in caplog.records)
-    assert (
-        "Error casting also_not_int for s2, p: bad cast\n"
-        "Error casting not_an_int for s, p: bad cast\n"  
-    ) in caplog.text
+    assert "Error casting also_not_int for s2, p: bad cast\n" in caplog.text
+    assert "Error casting not_an_int for s, p: bad cast\n"  in caplog.text
 
 
 def test_enrich_literal_datatypes_integrated(make_schemaview: Callable[..., SchemaView], caplog: LogCaptureFixture) -> None:

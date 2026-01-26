@@ -3,7 +3,6 @@ from rdflib.plugins.parsers.rdfxml import RDFXMLParser
 from rdflib import URIRef, Literal, RDF, Namespace, Graph
 from rdflib.namespace import XSD
 from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
-import uuid
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
@@ -14,8 +13,6 @@ from urllib.parse import urlparse
 logger = logging.getLogger('cimxml_logger')
 
 # Namespaces
-MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
-DCAT = Namespace("http://www.w3.org/ns/dcat#")
 CIM = Namespace("https://cim.ucaiug.io/ns#")
 EU = Namespace("https://cim.ucaiug.io/ns/eu#")
 
@@ -35,7 +32,7 @@ class CIMXMLParser(Parser):
         self.schemaview: SchemaView|None = None
         self.slot_index: dict|None = None
         self.class_index: dict|None = None
-        self.model_uuid: uuid.UUID|None = None
+        # self.model_uuid: uuid.UUID|None = None
         logger.info("CIMXMLParser loaded")
 
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
@@ -56,7 +53,7 @@ class CIMXMLParser(Parser):
         
     def post_process(self, graph: Graph) -> None:
         logger.info("Running post-process")
-        self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
+        # self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
         self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
         ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
         ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
@@ -399,7 +396,8 @@ def ensure_correct_namespace_graph(graph: Graph, prefix: str, correct_namespace:
     current = _get_current_namespace_from_graph(graph, prefix)
 
     if current is None:
-        raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
+        return
+        # raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
 
     if current == stripped_namespace:
         logger.info(f"Graph has correct namespace for {prefix}.")
@@ -578,30 +576,6 @@ def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef], id_set: set[str]) -> URI
         uri_map[uri_str] = URIRef(f"urn:uuid:{clean}") 
         
     return uri_map[uri_str]
-
-
-def find_model_uuid(graph: Graph) -> uuid.UUID: 
-    # Søk etter md:FullModel 
-    for s in graph.subjects(RDF.type, MD.FullModel): 
-        return _extract_uuid_from_urn(str(s)) 
-    
-    # Søk etter dcat:Dataset 
-    for s in graph.subjects(RDF.type, DCAT.Dataset): 
-        return _extract_uuid_from_urn(str(s)) 
-    
-    # Ingen global modell-ID funnet → raise error 
-    raise ValueError( 
-        "Fant verken md:FullModel eller dcat:Dataset i grafen. " 
-        "Kan ikke bestemme global modell-UUID." 
-    )
-
-
-def _extract_uuid_from_urn(urn: str) -> uuid.UUID: 
-    """ Tar en URI som 'urn:uuid:1234-...' og returnerer en uuid.UUID. """ 
-    if not urn.startswith("urn:uuid:"): 
-        raise ValueError(f"Ugyldig modell-URI: {urn}") 
-    
-    return uuid.UUID(urn[len("urn:uuid:"):])
 
 
 def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:
@@ -975,48 +949,9 @@ def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
 #     )
 
 
-def make_dicts(schemaview):
-    PRIMITIVES = {
-        t.name for t in schemaview.schema.types.values()
-        if isinstance(t, TypeDefinition) and t.base is None
-    }
-    CASTERS = {
-        "integer": int,
-        "float": float,
-        "boolean": lambda v: str(v).lower() in ("true", "1"),
-        "date": lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-        "datetime": lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-    }
-    return PRIMITIVES, CASTERS
-
-def resolve_primitive(tname, schemaview, primitives):
-    seen = set()
-    while True:
-        if tname in primitives:
-            return tname
-        if tname in seen:
-            raise ValueError(f"Cyclic type definition: {tname}")
-        seen.add(tname)
-        tname = schemaview.get_type(tname).base
-
-
-
-def build_caster_map(schemaview, primitives, casters):
-    caster_map = {}
-    for tname, tdef in schemaview.all_types().items():
-        if not tdef.uri:
-            continue
-        dt_uri = URIRef(schemaview.expand_curie(tdef.uri))
-        primitive = resolve_primitive(tname, schemaview, primitives)
-        caster = casters.get(primitive)
-        if caster:
-            caster_map[dt_uri] = caster
-    return caster_map
-
-
 if __name__ == "__main__":
     print("cimxml plugin for rdflib")
-    filepath = "../CoreEquipment.linkml.yaml"
-    sv = SchemaView(filepath)
-    slots, classes = _build_slot_index(sv)
-    print(slots.get('http://iec.ch/TC57/CIM100#VsConverter.CapabilityCurve'))
+    # filepath = "../CoreEquipment.linkml.yaml"
+    # sv = SchemaView(filepath)
+    # slots, classes = _build_slot_index(sv)
+    # print(slots.get('http://iec.ch/TC57/CIM100#VsConverter.CapabilityCurve'))
