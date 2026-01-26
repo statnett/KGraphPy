@@ -122,6 +122,8 @@ def main():
         count = 0
         for s, p, o in gr:
             print(s, p, o)
+            if isinstance(o, Literal):
+                print(o.datatype)
             count += 1
             if count == 5:
                 break
