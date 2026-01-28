@@ -1,14 +1,26 @@
+from pathlib import Path
 import pytest
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 import uuid
-from cim_plugin.utilities import _extract_uuid_from_urn, get_graph_uuid, MD, DCAT
-from rdflib import Graph, URIRef, Literal, BNode
+from cim_plugin.utilities import _extract_uuid_from_urn, get_graph_uuid, MD, DCAT, load_cimxml_graph, collect_cimxml_to_dataset
+from rdflib import Graph, URIRef, Literal, BNode, Dataset
 from rdflib.namespace import RDF, RDFS
-from typing import Callable
+from rdflib.exceptions import ParserError
+from rdflib.plugin import register
+from rdflib.parser import Parser
+from typing import Callable, Generator
+from cim_plugin.exceptions import CIMXMLParseError
+import cim_plugin.cimxml
+
 import logging
 
 logger = logging.getLogger('cimxml_logger')
 
+@pytest.fixture 
+def cimxml_plugin() -> Generator: 
+    register( "cimxml", Parser, "cim_plugin.cimxml", "CIMXMLParser" ) 
+    # yield so the test can run after registration 
+    yield
 
 # Unit tests get_graph_uuid
 
@@ -177,6 +189,288 @@ def test_extract_uuid_from_urn(input: str, expected: str|None, error_match: str|
     else:
         result = _extract_uuid_from_urn(input)
         assert result == uuid.UUID(expected)
+
+
+# Unit tests load_cimxml_graph
+
+@patch("cim_plugin.utilities.get_graph_uuid")
+@patch("cim_plugin.utilities.Graph")
+def test_load_cimxml_graph_success(mock_graph_cls: MagicMock, mock_get_uuid: MagicMock) -> None:
+    mock_graph = MagicMock(spec=Graph)
+    mock_graph_cls.return_value = mock_graph
+    mock_get_uuid.return_value = "12345678-1234-5678-1234-567812345678"
+
+    uuid, graph = load_cimxml_graph("dummy.xml")
+
+    mock_graph.parse.assert_called_once_with("dummy.xml", format="cimxml", schema_path=None)
+    mock_get_uuid.assert_called_once_with(mock_graph)
+    assert uuid == mock_get_uuid.return_value
+    assert graph is mock_graph
+
+
+@patch("cim_plugin.utilities.get_graph_uuid", return_value="uuid")
+@patch("cim_plugin.utilities.Graph")
+def test_load_cimxml_graph_schema_path(mock_graph_cls: MagicMock, mock_get_uuid: MagicMock) -> None:
+    mock_graph = mock_graph_cls.return_value
+    
+    uuid, graph = load_cimxml_graph("file.xml", schema_path="schema.xsd")
+
+    mock_graph.parse.assert_called_once_with("file.xml", format="cimxml", schema_path="schema.xsd")
+    mock_get_uuid.assert_called_once_with(mock_graph)
+    assert uuid == "uuid"
+    assert graph is mock_graph
+
+
+
+@pytest.mark.parametrize(
+        "exception", [
+            pytest.param(FileNotFoundError("missing"), id="FileNotFound"),
+            pytest.param(ParserError("bad rdf"), id="ParserError"),
+            pytest.param(ValueError("invalid"), id="ValueError"),
+            # Note: SAXParseException is not tested because constructing a valid Locator
+            # object requires implementing the full SAX interface. The other parsing errors
+            # already verify the exception-wrapping behavior.
+        ]
+)
+@patch("cim_plugin.utilities.get_graph_uuid")
+@patch("cim_plugin.utilities.Graph")
+def test_load_cimxml_graph_exceptions(mock_graph_cls: MagicMock, mock_get_uuid: MagicMock, exception: Exception) -> None:
+    mock_graph = mock_graph_cls.return_value
+    mock_graph.parse.side_effect = exception
+
+    with pytest.raises(CIMXMLParseError) as exc:
+        load_cimxml_graph("bad.xml")
+
+    assert "bad.xml" in str(exc.value)
+    mock_get_uuid.assert_not_called()
+
+
+# Unit tests collect_cimxml_to_dataset
+def test_collect_cimxml_to_dataset_emptylist() -> None:
+    ds = collect_cimxml_to_dataset([])
+
+    contexts = list(ds.graphs())
+    assert len(contexts) == 1
+
+    default_graph = ds.default_context
+    assert contexts[0].identifier == default_graph.identifier
+    assert len(default_graph) == 0
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_singlefile(mock_loader: MagicMock) -> None:
+    g = Graph()
+    g.add((URIRef("s"), URIRef("p"), URIRef("o")))
+    g.namespace_manager.bind("ex", "http://example.com/")
+
+    mock_loader.return_value = ("uuid1", g)
+
+    ds = collect_cimxml_to_dataset(["file1.xml"])
+
+    named = ds.graph(URIRef("urn:uuid:uuid1"))
+
+    assert len(named) == 1
+    assert (URIRef("s"), URIRef("p"), URIRef("o")) in named
+
+    assert ds.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
+    assert named.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
+    assert mock_loader.call_count == 1
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_multiplefiles(mock_loader: MagicMock) -> None:
+    g1 = Graph()
+    g1.add((URIRef("s1"), URIRef("p1"), URIRef("o1")))
+
+    g2 = Graph()
+    g2.add((URIRef("s2"), URIRef("p2"), URIRef("o2")))
+
+    mock_loader.side_effect = [("uuid1", g1), ("uuid2", g2),]
+
+    ds = collect_cimxml_to_dataset(["a.xml", "b.xml"])
+
+    g1_named = ds.graph(URIRef("urn:uuid:uuid1"))
+    g2_named = ds.graph(URIRef("urn:uuid:uuid2"))
+
+    assert (URIRef("s1"), URIRef("p1"), URIRef("o1")) in g1_named
+    assert (URIRef("s2"), URIRef("p2"), URIRef("o2")) in g2_named
+    assert mock_loader.call_count == 2
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_multiplenssameprefix(mock_loader: MagicMock) -> None:
+    # Two graphs with different namespaces to same prefix. First added wins in dataset. 
+    # Namespace changed for second graph.
+    g1 = Graph()
+    g1.bind("foo", "bar.com")
+    g1.add((URIRef("foo:s1"), URIRef("foo:p1"), URIRef("foo:o1")))
+
+    g2 = Graph()
+    g2.bind("foo", "foo.com")
+    g2.add((URIRef("foo:s2"), URIRef("foo:p2"), URIRef("foo:o2")))
+
+    mock_loader.side_effect = [("uuid1", g1), ("uuid2", g2),]
+
+    ds = collect_cimxml_to_dataset(["a.xml", "b.xml"])
+
+    g1_named = ds.graph(URIRef("urn:uuid:uuid1"))
+    g2_named = ds.graph(URIRef("urn:uuid:uuid2"))
+
+    assert (URIRef("foo:s1"), URIRef("foo:p1"), URIRef("foo:o1")) in g1_named
+    assert (URIRef("foo:s2"), URIRef("foo:p2"), URIRef("foo:o2")) in g2_named
+    assert mock_loader.call_count == 2
+    assert ds.namespace_manager.store.namespace("foo") == URIRef("bar.com")
+    assert g1_named.namespace_manager.store.namespace("foo") == URIRef("bar.com")
+    assert g2_named.namespace_manager.store.namespace("foo") == URIRef("bar.com")
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_multipleprefixsamens(mock_loader: MagicMock) -> None:
+    # Two graphs with same namespaces bound to different prefixes. Only one is kept; the last. 
+    # Namespace changed to None for first graph.
+    g1 = Graph()
+    g1.bind("foo", "bar.com")
+    g1.add((URIRef("foo:s1"), URIRef("foo:p1"), URIRef("foo:o1")))
+
+    g2 = Graph()
+    g2.bind("bar", "bar.com")
+    g2.add((URIRef("bar:s2"), URIRef("bar:p2"), URIRef("bar:o2")))
+
+    mock_loader.side_effect = [("uuid1", g1), ("uuid2", g2),]
+
+    ds = collect_cimxml_to_dataset(["a.xml", "b.xml"])
+
+    g1_named = ds.graph(URIRef("urn:uuid:uuid1"))
+    g2_named = ds.graph(URIRef("urn:uuid:uuid2"))
+
+    assert (URIRef("foo:s1"), URIRef("foo:p1"), URIRef("foo:o1")) in g1_named
+    assert (URIRef("bar:s2"), URIRef("bar:p2"), URIRef("bar:o2")) in g2_named
+    assert mock_loader.call_count == 2
+    assert ds.namespace_manager.store.namespace("bar") == URIRef("bar.com")
+    assert ds.namespace_manager.store.namespace("foo") == None
+    assert g1_named.namespace_manager.store.namespace("bar") == URIRef("bar.com")
+    assert g1_named.namespace_manager.store.namespace("foo") == None
+    assert g2_named.namespace_manager.store.namespace("bar") == URIRef("bar.com")
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_samefileinputtwice(mock_loader: MagicMock) -> None:
+    g1 = Graph()
+    g1.add((URIRef("s1"), URIRef("p1"), URIRef("o1")))
+
+    mock_loader.side_effect = [("uuid1", g1), ("uuid1", g1),]
+
+    ds = collect_cimxml_to_dataset(["a.xml", "a.xml"])
+
+    g1_named = ds.graph(URIRef("urn:uuid:uuid1"))
+
+    assert len(list(ds.graphs())) == 2  # 1 graph + default graph
+    assert len(g1_named) == 1   # No duplicate triples
+    assert (URIRef("s1"), URIRef("p1"), URIRef("o1")) in g1_named
+    assert mock_loader.call_count == 2
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_nonamespaces(mock_loader: MagicMock) -> None:
+    g1 = Graph()
+    g1.add((URIRef("s1"), URIRef("p1"), URIRef("o1")))
+
+    blank = Graph()
+
+    mock_loader.return_value = ("uuid1", g1)
+
+    ds = collect_cimxml_to_dataset(["a.xml"])
+
+    g1_named = ds.graph(URIRef("urn:uuid:uuid1"))
+
+    assert (URIRef("s1"), URIRef("p1"), URIRef("o1")) in g1_named
+    assert mock_loader.call_count == 1
+    # No user defined namespaces added
+    blank_ns = set(blank.namespaces())
+    ds_ns = set(ds.namespaces())
+    g1_ns = set(g1_named.namespaces())
+    assert ds_ns - blank_ns == set()
+    assert g1_ns - blank_ns == set()
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_nondata(mock_loader: MagicMock) -> None:
+    g1 = Graph()
+    g1.bind("ex", "http://example.com/")
+
+    mock_loader.return_value = ("uuid1", g1)
+
+    ds = collect_cimxml_to_dataset(["a.xml"])
+
+    g1_named = ds.graph(URIRef("urn:uuid:uuid1"))
+    assert len(g1_named) == 0
+    assert mock_loader.call_count == 1
+    assert ds.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
+    assert g1_named.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_failedfile(mock_loader: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+    good_graph = Graph()
+    good_graph.add((URIRef("s"), URIRef("p"), URIRef("o")))
+
+    mock_loader.side_effect = [
+        CIMXMLParseError("bad.xml", Exception("fail")),
+        ("uuid2", good_graph),
+    ]
+
+    with caplog.at_level("ERROR"):
+        ds = collect_cimxml_to_dataset(["bad.xml", "good.xml"])
+
+    named = ds.graph(URIRef("urn:uuid:uuid2"))
+    assert len(named) == 1
+    assert any("bad.xml" in msg for msg in caplog.messages)
+    assert len(list(ds.graphs())) == 2  # 1 named graph in addition to default graph
+    assert mock_loader.call_count == 2
+     
+
+@pytest.mark.parametrize(
+        "schema", [
+            pytest.param(None, id="No schema"), 
+            pytest.param("schema.yaml", id="Schema present")
+        ])
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: str|None) -> None:
+    g = Graph()
+    mock_loader.return_value = ("uuid1", g)
+
+    ds = collect_cimxml_to_dataset(["file.xml"], schema_path=schema)
+
+    mock_loader.assert_called_once_with("file.xml", schema)
+    named = ds.graph(URIRef("urn:uuid:uuid1"))
+    assert len(named) == 0
+
+
+def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: pytest.LogCaptureFixture, cimxml_plugin: None) -> None:
+    uuid = "12345678-1234-5678-1234-567812345678"
+    subject = f"urn:uuid:{uuid}"
+
+    xml = f"""<?xml version="1.0"?>
+        <rdf:RDF
+            xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            xmlns:md="{MD}">
+            <md:FullModel rdf:about="{subject}" />
+        </rdf:RDF>
+    """
+
+    file_path = tmp_path / "model.xml"
+    file_path.write_text(xml, encoding="utf-8")
+
+    with caplog.at_level("INFO"):
+        ds = collect_cimxml_to_dataset([str(file_path)], schema_path=None)
+
+    named = ds.graph(URIRef(f"urn:uuid:{uuid}"))
+    assert len(named) == 1
+    assert (URIRef(subject), RDF.type, MD.FullModel) in named
+    assert len(ds.default_context) == 0
+    assert any(
+        "Cannot perform post processing without the model" in msg
+        for msg in caplog.messages
+    )
+
 
 if __name__ == "__main__":
     pytest.main()

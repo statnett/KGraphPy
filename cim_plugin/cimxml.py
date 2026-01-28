@@ -1,25 +1,20 @@
 from rdflib.parser import Parser, InputSource
 from rdflib.plugins.parsers.rdfxml import RDFXMLParser
-from rdflib import URIRef, Literal, RDF, Namespace, Graph
+from rdflib import URIRef, Literal, Namespace, Graph
 from rdflib.namespace import XSD
 from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Optional, cast, Any
-from datetime import datetime, date
+from typing import Optional, cast   #, Any
 from urllib.parse import urlparse
+from cim_plugin.exceptions import LiteralCastingError
 
 logger = logging.getLogger('cimxml_logger')
 
 # Namespaces
 CIM = Namespace("https://cim.ucaiug.io/ns#")
 EU = Namespace("https://cim.ucaiug.io/ns/eu#")
-
-
-class LiteralCastingError(Exception):
-    """Error when casting datatype of a Literal."""
-    pass
 
 
 class CIMXMLParser(Parser):

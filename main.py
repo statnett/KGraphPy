@@ -8,7 +8,7 @@ import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
 from pathlib import Path
-from cim_plugin.utilities import combine_cimxml_to_dataset
+from cim_plugin.utilities import collect_cimxml_to_dataset
 
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
@@ -19,9 +19,9 @@ register(
     "cim_plugin.cimxml",          # module path
     "CIMXMLParser"     # name of class
 )
-from rdflib.plugin import plugins
 
 def check_plugin_registered(name: str) -> None:
+    from rdflib.plugin import plugins
     print("Registrerte parser-plugins:") 
     for p in plugins(None, Parser): 
         if name in p.name:
@@ -57,7 +57,7 @@ def main():
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_GL.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = combine_cimxml_to_dataset([file, file2], linkmlfile)
+    ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
 
     # g = Graph()
     # g.parse(file, format="cimxml", schema_path=linkmlfile)
@@ -128,7 +128,7 @@ def main():
             if count == 5:
                 break
 
-    print("Contexts in dataset:", list(ds.contexts()))
+    print("Contexts in dataset:", list(ds.graphs()))
 
     # output_file = Path.cwd().parent / "nordic44_grid_EQ_GL_trig_from_cimxml.trig"
     # ds.serialize(destination=str(output_file), format="trig")
