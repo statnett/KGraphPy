@@ -44,7 +44,7 @@ class CIMXMLParser(Parser):
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.post_process(sink)
         else:
-            logger.info("Cannot perform post processing without the model. Data parsed as RDF/XML.")
+            logger.error("Cannot perform post processing without the model. Data parsed as RDF/XML.")
         
     def post_process(self, graph: Graph) -> None:
         logger.info("Running post-process")

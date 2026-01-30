@@ -17,10 +17,10 @@ from rdflib.namespace import XSD
 from datetime import date, datetime
 import copy
 from collections import defaultdict
-from dataclasses import dataclass
+from tests.fixtures import make_schemaview, PatchMocks, mock_patch_integer_ranges, set_prefixes
 import logging
 
-from cim_plugin.cimxml import (
+from cim_plugin.cimxml_parser import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,
     inject_integer_type,
@@ -38,27 +38,6 @@ logger = logging.getLogger("cimxml_logger")
 # There are numerous type: ignore in this file. Where not otherwise stated, this is to silence pylance 
 # about schemaview.schema. Pylance complains because linkML are using too wide type hints.
 
-
-@pytest.fixture
-def make_schemaview() -> Callable[..., SchemaView]:
-    """Factory for creating SchemaView objects that mimic real LinkML schemas."""
-
-    def _factory(*, prefixes=None, types=None, slots=None, classes=None, enums=None) -> SchemaView:
-        # Build SchemaDefinition in the same structure as real LinkML YAML
-        schema = SchemaDefinition(
-            id="test",
-            name="test",
-            imports=["linkml:types"],
-            prefixes=prefixes,
-            types=types,
-            slots=slots,
-            classes=classes,
-            enums=enums
-        )
-
-        return SchemaView(schema=schema)
-
-    return _factory
 
 # Unit tests for _get_current_namespace_from_model
 @pytest.mark.parametrize(
@@ -326,30 +305,6 @@ def test_inject_integer_type_supportsdictsubclasses(make_schemaview: Callable[..
     assert "integer" in schemaview.schema.types # type: ignore
 
 
-@dataclass
-class PatchMocks:
-    """Collecting mocks for all functions used by patch_integer_ranges."""
-    find_slots: MagicMock
-    add_slot: MagicMock
-    set_modified: MagicMock
-    calls: list
-
-@pytest.fixture
-def mock_patch_integer_ranges(monkeypatch: pytest.MonkeyPatch) -> PatchMocks:
-    """Patching all functions used by patch_integer_ranges."""
-
-    mocks = PatchMocks(find_slots=MagicMock(), add_slot=MagicMock(), set_modified=MagicMock(), calls=[])
-    monkeypatch.setattr("cim_plugin.cimxml.find_slots_with_range", mocks.find_slots)
-    monkeypatch.setattr(SchemaView, "add_slot", mocks.add_slot)
-    monkeypatch.setattr(SchemaView, "set_modified", mocks.set_modified)
-    
-    mocks.calls = []
-    mocks.find_slots.side_effect = lambda *a, **kw: (mocks.calls.append("find_slots_with_range"), mocks.find_slots.return_value)[1]
-    mocks.add_slot.side_effect = lambda *a, **kw: mocks.calls.append("add_slot")
-    mocks.set_modified.side_effect = lambda *a, **kw: mocks.calls.append("set_modified")
-
-    return mocks
-
 # Unit tests patch_integer_ranges
 def test_patch_integer_ranges_basic(make_schemaview: Callable[..., SchemaView], mock_patch_integer_ranges: PatchMocks) -> None:
     mock_patch_integer_ranges.find_slots.return_value = {"endDate"}
@@ -580,9 +535,6 @@ def test_slots_equal_dynamicattributes() -> None:
     
     assert slots_equal(s1, s2)
 
-@pytest.fixture
-def set_prefixes() -> dict:
-    return {"ex": {"prefix_prefix": "ex", "prefix_reference": "http://example.org/"}}
 
 # Unit tests _build_slot_index
 def test_build_slot_index_emptyschema(make_schemaview: Callable[..., SchemaView]) -> None:
@@ -799,7 +751,7 @@ def test_build_slot_index_multipleoverwrites(make_schemaview: Callable[..., Sche
     assert len([r for r in caplog.records if "overwritten" in r.message]) == 2
 
 
-@patch("cim_plugin.cimxml.slots_equal")
+@patch("cim_plugin.cimxml_parser.slots_equal")
 def test_build_slot_index_callinghelperfunction(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: LogCaptureFixture) -> None:
     classes = {
         "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}),
@@ -970,7 +922,7 @@ def test_resolve_datatype_from_slot_norange(make_schemaview: Callable[..., Schem
     assert resolve_datatype_from_slot(sv, slot) == None
 
 
-@patch("cim_plugin.cimxml._resolve_type")
+@patch("cim_plugin.cimxml_parser._resolve_type")
 def test_resolve_datatype_from_slot_funccalledonce(mock_resolve: MagicMock, make_schemaview: Callable[..., SchemaView]) -> None:
     mock_resolve.return_value = "xsd:integer"
     sv = make_schemaview(
@@ -982,7 +934,7 @@ def test_resolve_datatype_from_slot_funccalledonce(mock_resolve: MagicMock, make
     assert mock_resolve.call_count == 1
 
 
-@patch("cim_plugin.cimxml._resolve_type")
+@patch("cim_plugin.cimxml_parser._resolve_type")
 def test_resolve_datatype_from_slot_funcerror(mock_resolve: MagicMock, make_schemaview: Callable[..., SchemaView]) -> None:
     mock_resolve.side_effect = RecursionError
     sv = make_schemaview(

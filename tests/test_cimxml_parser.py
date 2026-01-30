@@ -1,4 +1,4 @@
-from cim_plugin.cimxml import (
+from cim_plugin.cimxml_parser import (
     _get_current_namespace_from_graph,
     update_namespace_in_graph,
     ensure_correct_namespace_graph,
@@ -15,8 +15,10 @@ from unittest.mock import patch, MagicMock, mock_open
 from rdflib import URIRef, Graph, Namespace, Literal, BNode
 import logging
 from pytest import LogCaptureFixture
+from tests.fixtures import make_graph_with_prefixes, sample_yaml
 import textwrap
 from typing import Any
+
 
 logger = logging.getLogger("cimxml_logger")
 
@@ -293,16 +295,6 @@ def test_update_namespace_in_graph() -> None:
         update_namespace_in_graph(g, "", "http://new.com/")
 
 
-@pytest.fixture
-def make_graph_with_prefixes() -> Graph:
-    g = Graph()
-    g.bind("ex", Namespace("www.example.com/"))
-    g.bind("same", Namespace("www.same.com/"))
-    g.bind("ws", Namespace(" www.whitespace.com/ "))
-    g.add((URIRef("www.example.com/a"), URIRef("www.same.com/b"), URIRef(" www.whitespace.com/ c")))
-
-    return g
-
 # Unit tests ensure_correct_namespace_graph
 @pytest.mark.parametrize(
     "prefix, current, new_ns, update",
@@ -313,8 +305,8 @@ def make_graph_with_prefixes() -> Graph:
         pytest.param("ex", "www.example.com/", " www.newexample.com/ ", True, id="New namespace has whitespace -> update"),
     ]
 )
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_namespacehandling(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph, prefix: str, current: str, new_ns: str, update: bool, caplog: LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     mock_get.return_value = current
@@ -333,8 +325,8 @@ def test_ensure_correct_namespace_graph_namespacehandling(mock_get: MagicMock, m
         assert bound_ns == URIRef(current)
         assert f"Graph has correct namespace for {prefix}." in caplog.text
 
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_currentisnone(mock_get: MagicMock, mock_update: MagicMock) -> None:
     mock_get.return_value = None
     g = Graph()
@@ -348,8 +340,8 @@ def test_ensure_correct_namespace_graph_currentisnone(mock_get: MagicMock, mock_
     mock_update.assert_not_called()
 
 
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_newisonlywhitespace(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.return_value = "www.example.com/"
     g = make_graph_with_prefixes
@@ -362,8 +354,8 @@ def test_ensure_correct_namespace_graph_newisonlywhitespace(mock_get: MagicMock,
     assert g.namespace_manager.store.namespace("ex") == URIRef("www.example.com/")
 
 
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_nocorruptionofnewns(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.return_value = "www.example.com/"
     g = make_graph_with_prefixes
@@ -374,8 +366,8 @@ def test_ensure_correct_namespace_graph_nocorruptionofnewns(mock_get: MagicMock,
     assert g.namespace_manager.store.namespace("ex") == URIRef("www.new.org/")
 
 
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_bindcalledcorrectly(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.return_value = "www.example.com/"
     g = make_graph_with_prefixes
@@ -388,8 +380,8 @@ def test_ensure_correct_namespace_graph_bindcalledcorrectly(mock_get: MagicMock,
     mock_update.assert_called_once_with(g, "www.example.com/", "www.new.org/")
 
 
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_nswrongtype(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     # This test documents what happends if _get_current_namespace_from_graph brings back a namespace with wrong datatype.
     # This should never happen, though, as rdflib does not allow int as namespace.
@@ -405,8 +397,8 @@ def test_ensure_correct_namespace_graph_nswrongtype(mock_get: MagicMock, mock_up
     assert g.namespace_manager.store.namespace("wrong") == URIRef("www.new.org/")
 
 
-@patch("cim_plugin.cimxml.update_namespace_in_graph")
-@patch("cim_plugin.cimxml._get_current_namespace_from_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_idempotence(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.side_effect = ["www.example.com/", "www.new.org/"]
     g = make_graph_with_prefixes
@@ -424,33 +416,6 @@ def test_ensure_correct_namespace_graph_idempotence(mock_get: MagicMock, mock_up
 
 
 # Unit tests find_slots_with_range
-@pytest.fixture
-def sample_yaml() -> str: 
-    return textwrap.dedent("""
-    classes:
-        Season:
-            attributes:
-                endDate:
-                    range: integer
-                    description: 'Something here'                    
-                startDate: 
-                    range: Date
-                    description: 'Something there'
-        Foo:
-            attributes:
-                bar:
-                    range: string
-                tend:
-                    range: integer
-        Activity:
-            attributes:
-                Updates:
-                    range: Count
-        Software:
-            attributes:
-                Updates:
-                    range: Count
-    """)
 
 @pytest.mark.parametrize(
         "datatype, exp_result",

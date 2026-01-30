@@ -1,9 +1,8 @@
 from rdflib.graph import Graph, Dataset
-from rdflib.plugin import register
-from rdflib.parser import Parser
 from rdflib import URIRef, Literal, XSD
 from rdflib.compare import to_isomorphic, graph_diff
-import cim_plugin.cimxml
+import cim_plugin
+from rdflib.parser import Parser
 import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
@@ -13,17 +12,11 @@ from cim_plugin.utilities import collect_cimxml_to_dataset
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
 
-register(
-    "cimxml",          # formatname
-    Parser,            # plugin-type
-    "cim_plugin.cimxml",          # module path
-    "CIMXMLParser"     # name of class
-)
 
-def check_plugin_registered(name: str) -> None:
+def check_plugin_registered(name: str, type=Parser) -> None:
     from rdflib.plugin import plugins
-    print("Registrerte parser-plugins:") 
-    for p in plugins(None, Parser): 
+    print("Registrered plugins:") 
+    for p in plugins(None, type): 
         if name in p.name:
             print(" -", p.name, "=>", p.module_path, p.class_name)
 
@@ -53,35 +46,29 @@ def normalize_strings(g):
     return new
 
 def main():
+    # check_plugin_registered("cimxml", Parser)
     # file="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_GL.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
     ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
 
-    # g = Graph()
-    # g.parse(file, format="cimxml", schema_path=linkmlfile)
     # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
     # t = Dataset()
     # t.parse(tfile, format="trig")
     # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
-    # # g_normalized = rewrite_uri(g, "http://iec.ch/TC57/CIM100#", "https://cim.ucaiug.io/ns#")
-    # # g_normalized = rewrite_uri(g, "http://iec.ch/TC57/CIM100-EuropeanExtension/1/0#", "https://cim.ucaiug.io/ns/eu#")
     # t_normalized = normalize_strings(tgraph)
-    # # g_normalized = normalize_strings(g_normalized)
-    # # count = 0
-    # # for s, p, o in g:
-    # #     # print(s, "->", p, "->", o)
-    # #     if isinstance(o, Literal): # and "integer" in o.datatype:
-    # #         print(s, "->", p, "->", o)
-    # #         print(o.datatype)
+    g1 = list(ds.graphs())[0]
+    count = 0
+    for s, p, o in g1:
+        print(s, "->", p, "->", o)
+        if isinstance(o, Literal): # and "integer" in o.datatype:
+            print(o.datatype)
 
-    # #     count += 1
-    # #     if count == 2:
-    # #         break
-    # #         # print(f"Subject '{s}', predicate '{p}' and Object '{o}' with datatype: {o.datatype}")
+        count += 1
+        if count == 10:
+            break
 
-    # # check_plugin_registered("cimxml")
     # g_test = g
     # t_test = t_normalized
     # print(f"CIMXML: {len(g_test)}")
@@ -118,20 +105,10 @@ def main():
     #             break
 
 
-    for gr in ds.graphs():
-        count = 0
-        for s, p, o in gr:
-            print(s, p, o)
-            if isinstance(o, Literal):
-                print(o.datatype)
-            count += 1
-            if count == 5:
-                break
 
-    print("Contexts in dataset:", list(ds.graphs()))
 
-    # output_file = Path.cwd().parent / "nordic44_grid_EQ_GL_trig_from_cimxml.trig"
-    # ds.serialize(destination=str(output_file), format="trig")
+    # output_file = Path.cwd().parent / "Nordic44-HV_EQ_rdfxml.xml"
+    # tgraph.serialize(destination=str(output_file), format="xml")
 
 if __name__ == "__main__":
     main()

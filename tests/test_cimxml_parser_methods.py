@@ -1,27 +1,21 @@
 import pytest
 from unittest.mock import patch, MagicMock, call
-from cim_plugin.cimxml import CIMXMLParser, LiteralCastingError
-from tests.test_cimxml_linkml import make_schemaview
+from cim_plugin.cimxml_parser import CIMXMLParser, LiteralCastingError
 from pytest import LogCaptureFixture
 from typing import Callable
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import TypeDefinition, ClassDefinition, SlotDefinition
 from rdflib import URIRef, Graph, Literal, BNode
+from tests.fixtures import make_schemaview, cimxmlinstance_w_prefixes, make_cimxmlparser
 import logging
 
 logger = logging.getLogger("cimxml_logger")
 
-@pytest.fixture
-def cimxmlinstance_w_prefixes(make_schemaview):
-    """Create an instance with a real SchemaView."""
-    obj = CIMXMLParser()
-    obj.schemaview = make_schemaview(prefixes={"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}})
-    return obj
 
 # Unit tests .ensure_correct_namespace_model
 
-@patch("cim_plugin.cimxml.update_namespace_in_model")
-@patch("cim_plugin.cimxml._get_current_namespace_from_model")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_model")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_model")
 def test_ensure_correct_namespace_model_noschemaview(mock_get: MagicMock, mock_update: MagicMock) -> None:
     obj = CIMXMLParser()
     obj.schemaview = None
@@ -46,8 +40,8 @@ def test_ensure_correct_namespace_model_noschemaview(mock_get: MagicMock, mock_u
         pytest.param(" new_ns ", "new_ns", True, id="Current namespace same except with whitespace -> update"),
     ]
 )
-@patch("cim_plugin.cimxml.update_namespace_in_model")
-@patch("cim_plugin.cimxml._get_current_namespace_from_model")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_model")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_model")
 def test_ensure_correct_namespace_model_namespacehandling(mock_get: MagicMock, mock_update: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, current: str, new_ns: str, update: bool, caplog: LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     mock_get.return_value = current
@@ -62,8 +56,8 @@ def test_ensure_correct_namespace_model_namespacehandling(mock_get: MagicMock, m
         mock_update.assert_not_called()
         assert "Model has correct namespace for ex." in caplog.text
 
-@patch("cim_plugin.cimxml.update_namespace_in_model")
-@patch("cim_plugin.cimxml._get_current_namespace_from_model")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_model")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_model")
 def test_ensure_correct_namespace_model_prefixnotfound(mock_get: MagicMock, mock_update: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser) -> None:
     mock_get.return_value = None
 
@@ -73,8 +67,8 @@ def test_ensure_correct_namespace_model_prefixnotfound(mock_get: MagicMock, mock
     mock_get.assert_called_once()
     mock_update.assert_not_called()
 
-@patch("cim_plugin.cimxml.update_namespace_in_model")
-@patch("cim_plugin.cimxml._get_current_namespace_from_model")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_model")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_model")
 def test_ensure_correct_namespace_model_multipleprefixes(mock_get: MagicMock, mock_update: MagicMock, caplog: LogCaptureFixture, make_schemaview: Callable[..., SchemaView]) -> None:
     caplog.set_level("INFO")
     mock_get.return_value = "www.bar.org"
@@ -89,8 +83,8 @@ def test_ensure_correct_namespace_model_multipleprefixes(mock_get: MagicMock, mo
     assert "Wrong namespace detected for foo in model. Correcting to www.foo.org." in caplog.text
 
 
-@patch("cim_plugin.cimxml.update_namespace_in_model")
-@patch("cim_plugin.cimxml._get_current_namespace_from_model")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_model")
+@patch("cim_plugin.cimxml_parser._get_current_namespace_from_model")
 def test_ensure_correct_namespace_model_errorfromcall(mock_get: MagicMock, mock_update: MagicMock, caplog: LogCaptureFixture, make_schemaview: Callable[..., SchemaView]) -> None:
     caplog.set_level("INFO")
     mock_get.return_value = "www.bar.org"
@@ -106,14 +100,6 @@ def test_ensure_correct_namespace_model_errorfromcall(mock_get: MagicMock, mock_
     mock_update.assert_called_once_with(obj.schemaview, "foo", "www.foo.org")
     assert "Wrong namespace detected for foo in model. Correcting to www.foo.org." in caplog.text
 
-@pytest.fixture
-def make_cimxmlparser() -> Callable[..., CIMXMLParser]:
-    def _factory(schemaview: SchemaView) -> CIMXMLParser:
-        obj = CIMXMLParser()
-        obj.schema_path = "schema.yaml"
-        obj.schemaview = schemaview
-        return obj
-    return _factory
 
 # Unit tests .patch_missing_datatypes_in_model
 
@@ -125,7 +111,7 @@ def make_cimxmlparser() -> Callable[..., CIMXMLParser]:
         ("schema.yaml", MagicMock(schema=None)),
     ]
 )
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_prerequisitesmissing(mock_patch: MagicMock, schema_path: str|None, schemaview: MagicMock|None) -> None:
     obj = CIMXMLParser()
     obj.schema_path = schema_path
@@ -134,7 +120,7 @@ def test_patch_missing_datatypes_in_model_prerequisitesmissing(mock_patch: Magic
     obj.patch_missing_datatypes_in_model()
     mock_patch.assert_not_called()
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_integeralreadypresent(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     sv = make_schemaview(types={"integer": TypeDefinition(name="integer")})
     obj = make_cimxmlparser(schemaview=sv)
@@ -147,7 +133,7 @@ def test_patch_missing_datatypes_in_model_integeralreadypresent(mock_patch: Magi
     assert sv.schema.types is not None
     assert "integer" in sv.schema.types
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_addinteger(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     sv = make_schemaview(types={})
     obj = make_cimxmlparser(schemaview = sv)
@@ -163,7 +149,7 @@ def test_patch_missing_datatypes_in_model_addinteger(mock_patch: MagicMock, make
     assert t.uri == "http://www.w3.org/2001/XMLSchema#integer"
     mock_patch.assert_called_once_with(sv, "schema.yaml")
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_addinteger_setmodifiedcalled(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser], monkeypatch: pytest.MonkeyPatch) -> None:
     sv = make_schemaview(types={})
     obj = make_cimxmlparser(schemaview = sv)
@@ -182,19 +168,19 @@ def test_patch_missing_datatypes_in_model_addinteger_setmodifiedcalled(mock_patc
     mock_patch.assert_called_once_with(sv, "schema.yaml")
     assert mock_set_called == True
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_typedefinitioncallcheck(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     """Optional: verify TypeDefinition is constructed with correct args."""
     sv = make_schemaview(types={})
     obj = make_cimxmlparser(schemaview=sv)
 
-    with patch("cim_plugin.cimxml.TypeDefinition") as TD:
+    with patch("cim_plugin.cimxml_parser.TypeDefinition") as TD:
         obj.patch_missing_datatypes_in_model()
 
         TD.assert_called_once_with(name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer")
 
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_errorfromcalledfunksjon(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser], caplog: LogCaptureFixture) -> None:
     mock_patch.side_effect = ValueError("slot not found in schemaview")
     sv = make_schemaview(types={})
@@ -214,7 +200,7 @@ def test_patch_missing_datatypes_in_model_errorfromcalledfunksjon(mock_patch: Ma
         ([]),
     ]
 )
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_invalidtypes(mock_patch: MagicMock, types: str|list|None, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     # linkML always turns schemaview.schema.types into a dict. This test documents that. See below.
     sv = make_schemaview(types=types)
@@ -226,7 +212,7 @@ def test_patch_missing_datatypes_in_model_invalidtypes(mock_patch: MagicMock, ty
     assert isinstance(sv.schema.types, dict)
 
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_invalidtypes_forcedtoraise(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     # linkML always turns schemaview.schema.types into a dict. This test forces it None to test what happends if linkML fails to do that.
     sv = make_schemaview(types={})
@@ -241,7 +227,7 @@ def test_patch_missing_datatypes_in_model_invalidtypes_forcedtoraise(mock_patch:
     assert sv.schema.types is None
 
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_integerpresentbutwrong(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     # Pylance ignored to test wrong datatype
     sv = make_schemaview(types={"integer": TypeDefinition(name="integer", base=123)})   # type: ignore
@@ -254,7 +240,7 @@ def test_patch_missing_datatypes_in_model_integerpresentbutwrong(mock_patch: Mag
     assert "integer" in sv.schema.types
 
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_missingtypes(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     sv = make_schemaview(types=None)
     del sv.schema.types # type: ignore
@@ -267,7 +253,7 @@ def test_patch_missing_datatypes_in_model_missingtypes(mock_patch: MagicMock, ma
     assert "types" not in sv.schema
 
 
-@patch("cim_plugin.cimxml.patch_integer_ranges")
+@patch("cim_plugin.cimxml_parser.patch_integer_ranges")
 def test_patch_missing_datatypes_in_model_idempotence(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], make_cimxmlparser: Callable[..., CIMXMLParser]) -> None:
     sv = make_schemaview(types={})
     obj = make_cimxmlparser(schemaview = sv)
@@ -286,8 +272,8 @@ def test_patch_missing_datatypes_in_model_idempotence(mock_patch: MagicMock, mak
 
 # Unit tests .normalize_rdf_ids
 
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
+@patch("cim_plugin.cimxml_parser._clean_uri")
+@patch("cim_plugin.cimxml_parser.detect_uri_collisions")
 def test_normalize_rdf_ids_stops_on_collision(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
     mock_detect.side_effect = ValueError("collision!")
 
@@ -318,8 +304,8 @@ def test_normalize_rdf_ids_stops_on_collision(mock_detect: MagicMock, mock_clean
             pytest.param(URIRef("s#_a"), URIRef("http://ex.com#not_id"), [call(URIRef("s#_a"), {}, {"a"}), call(URIRef("http://ex.com#not_id"), {}, {"a"})], id="Object fragment not in id_set → not cleaned, but _clean_uri is called.")
         ]
 )
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
+@patch("cim_plugin.cimxml_parser._clean_uri")
+@patch("cim_plugin.cimxml_parser.detect_uri_collisions")
 def test_normalize_rdf_ids_callscleanuri(mock_detect: MagicMock, mock_clean: MagicMock, s: URIRef|BNode, o: Literal|URIRef|BNode, calls: list) -> None:
     mock_detect.return_value = None
     mock_clean.side_effect = lambda uri, *_: URIRef("urn:uuid:test")
@@ -334,8 +320,8 @@ def test_normalize_rdf_ids_callscleanuri(mock_detect: MagicMock, mock_clean: Mag
     assert mock_clean.mock_calls == calls
 
 
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
+@patch("cim_plugin.cimxml_parser._clean_uri")
+@patch("cim_plugin.cimxml_parser.detect_uri_collisions")
 def test_normalize_rdf_ids_mutatesgraph(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
     mock_detect.return_value = None
 
@@ -381,8 +367,8 @@ def test_normalize_rdf_ids_withoutmocking() -> None:
     assert len(list(g)) == 2
 
 
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
+@patch("cim_plugin.cimxml_parser._clean_uri")
+@patch("cim_plugin.cimxml_parser.detect_uri_collisions")
 def test_normalize_rdf_ids_reusesurimap(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
     mock_detect.return_value = None
 
@@ -400,8 +386,8 @@ def test_normalize_rdf_ids_reusesurimap(mock_detect: MagicMock, mock_clean: Magi
     assert mock_clean.call_count == 2 # _clean_uri should only be called once each for s and o
 
 
-@patch("cim_plugin.cimxml._clean_uri")
-@patch("cim_plugin.cimxml.detect_uri_collisions")
+@patch("cim_plugin.cimxml_parser._clean_uri")
+@patch("cim_plugin.cimxml_parser.detect_uri_collisions")
 def test_normalize_rdf_ids_emptygraph(mock_detect: MagicMock, mock_clean: MagicMock) -> None:
     mock_detect.return_value = None
 
@@ -425,8 +411,8 @@ class DummySlot:
     pytest.param(None, {"p": DummySlot("p", "string")}, id="Schemaview missing"),
     pytest.param("dummy", None, id="slot_index missing"),
 ])
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot")
-@patch("cim_plugin.cimxml.create_typed_literal")
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot")
+@patch("cim_plugin.cimxml_parser.create_typed_literal")
 def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, mock_resolve: MagicMock, schemaview: SchemaView|None, slot_index: dict|None, caplog: LogCaptureFixture) -> None:
     g = Graph()
     s, p, o = URIRef("s"), URIRef("p"), Literal("x")
@@ -444,8 +430,8 @@ def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, m
     mock_create.assert_not_called()
 
 
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
-@patch("cim_plugin.cimxml.create_typed_literal")
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
+@patch("cim_plugin.cimxml_parser.create_typed_literal")
 def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_resolve: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, caplog: LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     g = Graph()
@@ -470,8 +456,8 @@ def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_res
     pytest.param(BNode("x"), False, id="Blank node."),
     pytest.param(URIRef("x"), False, id="URI object")
 ])
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot")
-@patch("cim_plugin.cimxml.create_typed_literal")
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot")
+@patch("cim_plugin.cimxml_parser.create_typed_literal")
 def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_resolve: MagicMock, object: Literal|BNode|URIRef, resolved: bool, cimxmlinstance_w_prefixes: CIMXMLParser) -> None:
     mock_resolve.return_value = "xsd:string"
     mock_create.return_value = object
@@ -492,8 +478,8 @@ def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_re
         mock_create.assert_not_called()
         assert len(list(result)) == 1   # Size of graph is not affected
 
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot")
-@patch("cim_plugin.cimxml.create_typed_literal")
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot")
+@patch("cim_plugin.cimxml_parser.create_typed_literal")
 def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock_resolve: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, caplog: LogCaptureFixture) -> None:
     logger.setLevel("INFO")
     g = Graph()
@@ -512,8 +498,8 @@ def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock
     mock_resolve.assert_not_called()
     mock_create.assert_not_called()
 
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot", return_value=None)
-@patch("cim_plugin.cimxml.create_typed_literal")
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot", return_value=None)
+@patch("cim_plugin.cimxml_parser.create_typed_literal")
 def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, mock_resolve: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, caplog: LogCaptureFixture) -> None:
     logger.setLevel("INFO")
     g = Graph()
@@ -531,8 +517,8 @@ def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, moc
     assert "No datatype found for range: string, for p" in caplog.text
 
 
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
-@patch("cim_plugin.cimxml.create_typed_literal")
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
+@patch("cim_plugin.cimxml_parser.create_typed_literal")
 def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, mock_resolve: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, caplog: LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     g = Graph()
@@ -556,8 +542,8 @@ def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, m
     assert "Enriching done. Added datatypes to 1 triples." in caplog.text
 
 
-@patch("cim_plugin.cimxml.resolve_datatype_from_slot", return_value=URIRef("xsd:int"))
-@patch("cim_plugin.cimxml.create_typed_literal", side_effect=LiteralCastingError("bad cast"))
+@patch("cim_plugin.cimxml_parser.resolve_datatype_from_slot", return_value=URIRef("xsd:int"))
+@patch("cim_plugin.cimxml_parser.create_typed_literal", side_effect=LiteralCastingError("bad cast"))
 def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_resolve: MagicMock, cimxmlinstance_w_prefixes: CIMXMLParser, caplog: LogCaptureFixture) -> None:
     g = Graph()
     s, p, o = URIRef("s"), URIRef("p"), Literal("not_an_int")

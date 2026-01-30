@@ -3,34 +3,20 @@ import pytest
 from unittest.mock import MagicMock, Mock, patch
 import uuid
 from cim_plugin.utilities import _extract_uuid_from_urn, get_graph_uuid, MD, DCAT, load_cimxml_graph, collect_cimxml_to_dataset
-from rdflib import Graph, URIRef, Literal, BNode, Dataset
+from rdflib import Graph, URIRef, Literal, BNode
 from rdflib.namespace import RDF, RDFS
 from rdflib.exceptions import ParserError
-from rdflib.plugin import register
-from rdflib.parser import Parser
-from typing import Callable, Generator
+from typing import Callable
 from cim_plugin.exceptions import CIMXMLParseError
-import cim_plugin.cimxml
+from tests.fixtures import cimxml_plugin, mock_extract_uuid
+# import cim_plugin.cimxml_parser
 
 import logging
 
 logger = logging.getLogger('cimxml_logger')
 
-@pytest.fixture 
-def cimxml_plugin() -> Generator: 
-    register( "cimxml", Parser, "cim_plugin.cimxml", "CIMXMLParser" ) 
-    # yield so the test can run after registration 
-    yield
 
 # Unit tests get_graph_uuid
-
-@pytest.fixture 
-def mock_extract_uuid(monkeypatch: pytest.MonkeyPatch) -> Mock: 
-    mock = Mock() 
-    mock.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678") 
-    monkeypatch.setattr("cim_plugin.utilities._extract_uuid_from_urn", mock) 
-    return mock
-
 
 @pytest.mark.parametrize(
     "rdf_type",
@@ -252,7 +238,7 @@ def test_collect_cimxml_to_dataset_emptylist() -> None:
     contexts = list(ds.graphs())
     assert len(contexts) == 1
 
-    default_graph = ds.default_context
+    default_graph = ds.default_graph
     assert contexts[0].identifier == default_graph.identifier
     assert len(default_graph) == 0
 
@@ -465,7 +451,7 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: 
     named = ds.graph(URIRef(f"urn:uuid:{uuid}"))
     assert len(named) == 1
     assert (URIRef(subject), RDF.type, MD.FullModel) in named
-    assert len(ds.default_context) == 0
+    assert len(ds.default_graph) == 0
     assert any(
         "Cannot perform post processing without the model" in msg
         for msg in caplog.messages
