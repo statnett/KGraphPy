@@ -2,14 +2,20 @@ from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, Mock, patch
 import uuid
-from cim_plugin.utilities import _extract_uuid_from_urn, get_graph_uuid, MD, DCAT, load_cimxml_graph, collect_cimxml_to_dataset
 from rdflib import Graph, URIRef, Literal, BNode
-from rdflib.namespace import RDF, RDFS
+from rdflib.namespace import RDF, RDFS, DCAT
 from rdflib.exceptions import ParserError
 from typing import Callable
 from cim_plugin.exceptions import CIMXMLParseError
+from cim_plugin.namespaces import MD
 from tests.fixtures import cimxml_plugin, mock_extract_uuid
-# import cim_plugin.cimxml_parser
+from cim_plugin.utilities import (
+    _extract_uuid_from_urn, 
+    get_graph_uuid, 
+    load_cimxml_graph, 
+    collect_cimxml_to_dataset, 
+    extract_subjects_by_object_type,
+)
 
 import logging
 
@@ -456,6 +462,81 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: 
         "Cannot perform post processing without the model" in msg
         for msg in caplog.messages
     )
+
+
+@pytest.mark.parametrize(
+        "object_type, expected",
+        [
+            pytest.param([MD.FullModel], {URIRef("s2"), URIRef("s4")}, id="Multiple catches"),
+            pytest.param([DCAT.Dataset], {URIRef("s3")}, id="Single catch"),
+            pytest.param([URIRef("NotFound")], set(), id="Nothing found"),
+            pytest.param([MD.FullModel, DCAT.Dataset], {URIRef("s2"), URIRef("s3"), URIRef("s4")}, id="Catching more than one type"),
+            pytest.param([URIRef("o1")], set(), id="Not rdf:type"),
+            pytest.param([123, None, DCAT.Dataset], {URIRef("s3")}, id="Invalid input format"),
+            pytest.param([], set(), id="Empty input"),
+        ]
+)
+def test_extract_subjects_by_type_various(object_type: list[URIRef], expected: set[URIRef]) -> None:
+    g = Graph()
+    g.add((URIRef("s1"), URIRef("noise"), URIRef("o1")))
+    g.add((URIRef("s2"), RDF.type, MD.FullModel))
+    g.add((URIRef("s3"), RDF.type, DCAT.Dataset))
+    g.add((URIRef("s4"), RDF.type, MD.FullModel))
+
+    result = extract_subjects_by_object_type(g, object_type=object_type)
+    assert set(result) == expected
+
+
+@pytest.mark.parametrize(
+        "triples",
+        [
+            pytest.param(None, id="Empty graph"),
+            pytest.param((URIRef("s1"), URIRef("p"), URIRef("o")), id="No rdf:type in graph")
+        ]
+)
+def test_extract_subjects_by_object_type_emptyinput(triples: tuple[URIRef, URIRef, URIRef]) -> None:
+    g = Graph()
+    if triples:
+        g.add(triples)
+    result = extract_subjects_by_object_type(g, [MD.FullModel])
+    assert result == []
+
+
+@pytest.mark.parametrize(
+        "input, expected",
+        [
+            pytest.param([DCAT.Dataset], [URIRef("s1")], id="Catching one"),
+            pytest.param([DCAT.Dataset, MD.FullModel], [URIRef("s1"), URIRef("s1")], id="Catching both"),
+        ]
+)
+def test_extract_subjects_by_object_type_multipletypespersubject(input: list[URIRef], expected: list[URIRef]) -> None:
+    g = Graph()
+    g.add((URIRef("s1"), RDF.type, MD.FullModel))
+    g.add((URIRef("s1"), RDF.type, DCAT.Dataset))
+    result = extract_subjects_by_object_type(g, input)
+    assert result == expected
+
+
+def test_extract_subjects_by_object_type_performance():
+    g = Graph()
+    g.add((URIRef("s1"), RDF.type, MD.FullModel))
+    many_types = [URIRef(f"t{i}") for i in range(1000)] + [MD.FullModel]
+    result = extract_subjects_by_object_type(g, many_types)
+    assert result == [URIRef("s1")]
+
+
+def test_extract_subjects_by_object_type_blanksubjects():
+    b = BNode()
+    g = Graph()
+    g.add((b, RDF.type, MD.FullModel))
+    result = extract_subjects_by_object_type(g, [MD.FullModel])
+    assert result == [b]
+
+def test_extract_subjects_by_object_type_literalsubject():
+    g = Graph()
+    g.add((Literal("s1"), RDF.type, MD.FullModel))
+    result = extract_subjects_by_object_type(g, [MD.FullModel])
+    assert result == [Literal("s1")]
 
 
 if __name__ == "__main__":

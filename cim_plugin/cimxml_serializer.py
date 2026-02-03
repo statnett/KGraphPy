@@ -1,3 +1,4 @@
+import uuid
 from rdflib.serializer import Serializer
 from rdflib.graph import Graph
 from rdflib.term import URIRef, Identifier, Literal, Node
@@ -5,7 +6,8 @@ from rdflib.namespace import RDF, DCAT
 from xml.sax.saxutils import quoteattr, escape
 import logging
 from typing import IO, Any, Generator, Tuple, Dict, Optional
-from cim_plugin.utilities import extract_subject_by_object_type, group_subjects_by_type, MD
+from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn
+from cim_plugin.namespaces import MD
 
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
 
@@ -54,17 +56,24 @@ class CIMXMLSerializer(Serializer):
         write("    >\n")
 
         # Write metadata header
-        meta = extract_subject_by_object_type(self.store, METADATA_OBJECTS)
+        meta = extract_subjects_by_object_type(self.store, METADATA_OBJECTS)
+        if len(meta) > 1:
+            logger.error("Multiple metadata headers detected.")
+        
         if meta:
-            self.subject(meta, depth=1)
-            write("\n")
+            self.subject(meta[0], depth=1)
+        else:
+            logger.error("No metadata header detected.")
+
+        write("\n")
 
         # Sort by class and write triples by subject
-        groups = group_subjects_by_type(self.store, skip_subject=meta)
+        groups = group_subjects_by_type(self.store, skip_subjects=meta)
         sorted_types = sorted(groups.keys())
 
         for t in sorted_types:
-            for s in sorted(groups[t], key=lambda uri: str(uri)):
+            # for s in sorted(groups[t], key=lambda uri: str(uri)):
+            for s in sorted(groups[t], key=_subject_sort_key):
                 self.subject(s, depth=1)
         # Write triples by subject
         # for subject in self.store.subjects():
@@ -84,7 +93,7 @@ class CIMXMLSerializer(Serializer):
         
         if not isinstance(subject, URIRef):
             logger.error(f"Invalid subject (not a URIRef): {subject}.")
-            write(f"{indent}<Error rdf:about=\"INVALID_SUBJECT\">\n") 
+            write(f"{indent}<Error rdf:about={subject}>\n") 
             write(f"{indent} <message>Subject is not a URIRef: {subject}</message>\n") 
             write(f"{indent}</Error>\n") 
             return
@@ -132,6 +141,19 @@ class CIMXMLSerializer(Serializer):
             if isinstance(obj, URIRef):
                 relativized_obj = quoteattr(self.relativize(obj))
                 write(f"{indent}<{qname} rdf:resource={relativized_obj}/>\n")
+
+
+def _subject_sort_key(uri: str) -> tuple[int, uuid.UUID|str]:
+    """
+    Sort CIM subjects by UUID extracted from their URN.
+    Falls back to the full URI string if not a UUID URN.
+    """
+    s = str(uri)
+    try:
+        return (0, _extract_uuid_from_urn(s))
+    except ValueError:
+        # Non-UUID subjects go last, sorted by full URI
+        return (1, s)
 
 if __name__ == "__main__":
     print("Serializer class")

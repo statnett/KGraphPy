@@ -110,27 +110,37 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
     return ds
 
 
-def extract_subject_by_object_type(graph: Graph, object_type: list[URIRef]) -> Node|None: 
+def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> list[Node]: 
+    """Extract subjects with predicate rdf:type and matching specified objects.
+
+    Parameters:
+        graph (Graph): Target for subject extraction.
+        object_type (list[URIRef]): The object URIRefs to match. 
+
+    Returns:
+        list[Node]: The subjects from the matching triples.
+    """
+    subject_list = []
     for s, p, o in graph.triples((None, RDF.type, None)): 
         if o in object_type: 
-            return s 
-    return None
+            subject_list.append(s) 
+    return subject_list
 
 
-def group_subjects_by_type(graph, skip_subject=None):
+def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[str, list[URIRef]]:
     groups: dict[str, list[URIRef]] = {}
 
     nm = graph.namespace_manager
 
     for s in graph.subjects():
-        if s == skip_subject:
+        if s in skip_subjects:
             continue
 
         t = next(graph.objects(s, RDF.type), None)
         if t is None:
             t_qname = "ErrorMissingType"
         else:
-            t_qname = nm.normalizeUri(t)
+            t_qname = nm.normalizeUri(str(t))
 
         groups.setdefault(t_qname, []).append(s)
 
