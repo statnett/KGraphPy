@@ -1,14 +1,13 @@
 import uuid
-from rdflib import Graph, RDF, Namespace, Dataset, URIRef
+from rdflib import Graph, Dataset, URIRef, Node
+from rdflib.namespace import RDF, DCAT
 from rdflib.exceptions import ParserError
 import logging
 from xml.sax import SAXParseException
 from cim_plugin.exceptions import CIMXMLParseError
+from cim_plugin.namespaces import MD
 
 logger = logging.getLogger('cimxml_logger')
-
-MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
-DCAT = Namespace("http://www.w3.org/ns/dcat#")
 
 
 def get_graph_uuid(graph: Graph) -> uuid.UUID:
@@ -109,6 +108,34 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
             named.add(triple)
 
     return ds
+
+
+def extract_subject_by_object_type(graph: Graph, object_type: list[URIRef]) -> Node|None: 
+    for s, p, o in graph.triples((None, RDF.type, None)): 
+        if o in object_type: 
+            return s 
+    return None
+
+
+def group_subjects_by_type(graph, skip_subject=None):
+    groups: dict[str, list[URIRef]] = {}
+
+    nm = graph.namespace_manager
+
+    for s in graph.subjects():
+        if s == skip_subject:
+            continue
+
+        t = next(graph.objects(s, RDF.type), None)
+        if t is None:
+            t_qname = "ErrorMissingType"
+        else:
+            t_qname = nm.normalizeUri(t)
+
+        groups.setdefault(t_qname, []).append(s)
+
+    return groups
+
 
 if __name__ == "__main__":
     print("utilities for cimxml parser")

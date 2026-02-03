@@ -1,20 +1,30 @@
+import rdflib
 from rdflib.graph import Graph, Dataset
 from rdflib import URIRef, Literal, XSD
 from rdflib.compare import to_isomorphic, graph_diff
 import cim_plugin
-from rdflib.parser import Parser
 import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
 from pathlib import Path
 from cim_plugin.utilities import collect_cimxml_to_dataset
+from cim_plugin.cimxml_serializer import CIMXMLSerializer
 
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
 
 
-def check_plugin_registered(name: str, type=Parser) -> None:
+def check_plugin_registered(name: str, plugin_type="Parser") -> None:
     from rdflib.plugin import plugins
+    if plugin_type == "Parser":
+        from rdflib.parser import Parser
+        type = Parser
+    elif plugin_type == "Serializer":
+        from rdflib.serializer import Serializer
+        type = Serializer
+    else:
+        raise ValueError(f"Plugin '{plugin_type}' not found")
+
     print("Registrered plugins:") 
     for p in plugins(None, type): 
         if name in p.name:
@@ -46,10 +56,12 @@ def normalize_strings(g):
     return new
 
 def main():
-    # check_plugin_registered("cimxml", Parser)
-    # file="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
+    # check_plugin_registered("cimxml", "Serializer")
+    file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
-    file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_GL.xml"
+    # g = Graph()
+    # g.parse(file, "xml")
+    # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_GL.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
     ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
 
@@ -58,16 +70,34 @@ def main():
     # t.parse(tfile, format="trig")
     # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     # t_normalized = normalize_strings(tgraph)
-    g1 = list(ds.graphs())[0]
-    count = 0
-    for s, p, o in g1:
-        print(s, "->", p, "->", o)
-        if isinstance(o, Literal): # and "integer" in o.datatype:
-            print(o.datatype)
+    g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
+    g2 = ds.graph(URIRef('urn:uuid:ade44b65-0bfa-41e0-95c5-2ccb345a6fed'))
+    # gs = CIMXMLSerializer(g1)
+    print(g1.identifier)
+    print(g2.identifier)
+    for g in list(ds.graphs()):
+        print(g.identifier)
+    # for item in list(g1.triples((URIRef('urn:uuid:f1769b90-9aeb-11e5-91da-b8763fd99c5f'), None, None))):
+    #     print(item)
 
-        count += 1
-        if count == 10:
-            break
+    output_file = Path.cwd().parent / "cimxml_test.xml"
+    g1.serialize(destination=str(output_file), format="cimxml")
+
+    output_file2 = Path.cwd().parent / "cimxml_dcat_test.xml"
+    g2.serialize(destination=str(output_file2), format="cimxml")
+
+
+    # print("Version:", rdflib.__version__) 
+    # print("File:", rdflib.__file__)
+    # count = 0
+    # for s, p, o in g1:
+    #     print(s, "->", p, "->", o)
+    #     if isinstance(o, Literal): # and "integer" in o.datatype:
+    #         print(o.datatype)
+
+    #     count += 1
+    #     if count == 10:
+    #         break
 
     # g_test = g
     # t_test = t_normalized

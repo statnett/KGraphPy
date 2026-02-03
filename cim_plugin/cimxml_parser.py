@@ -9,12 +9,12 @@ import logging
 from typing import Optional, cast   #, Any
 from urllib.parse import urlparse
 from cim_plugin.exceptions import LiteralCastingError
+from cim_plugin.namespaces import CIM, EU
+
+import io
+import contextlib
 
 logger = logging.getLogger('cimxml_logger')
-
-# Namespaces
-CIM = Namespace("https://cim.ucaiug.io/ns#")
-EU = Namespace("https://cim.ucaiug.io/ns/eu#")
 
 
 class CIMXMLParser(Parser):
@@ -33,7 +33,9 @@ class CIMXMLParser(Parser):
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
         logger.info("CIMXMLParser.parse called")
         rdfxml = RDFXMLParser()     # Parsing data as if it was RDF/XML format
-        rdfxml.parse(source, sink, **kwargs)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):   
+            rdfxml.parse(source, sink, **kwargs)
         if "schema_path" in kwargs:
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
