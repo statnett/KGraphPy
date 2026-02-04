@@ -127,8 +127,8 @@ def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> 
     return subject_list
 
 
-def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[str, list[URIRef]]:
-    groups: dict[str, list[URIRef]] = {}
+def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[str, list[Node]]:
+    groups: dict[str, list[Node]] = {}
 
     nm = graph.namespace_manager
 
@@ -148,4 +148,4 @@ def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[s
 
 
 if __name__ == "__main__":
-    print("utilities for cimxml parser")
+    print("utilities for cimxml")

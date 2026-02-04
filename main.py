@@ -1,6 +1,6 @@
 import rdflib
 from rdflib.graph import Graph, Dataset
-from rdflib import URIRef, Literal, XSD
+from rdflib import URIRef, Literal, XSD, BNode
 from rdflib.compare import to_isomorphic, graph_diff
 import cim_plugin
 import logging
@@ -57,13 +57,13 @@ def normalize_strings(g):
 
 def main():
     # check_plugin_registered("cimxml", "Serializer")
-    file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
+    # file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     # g = Graph()
     # g.parse(file, "xml")
     # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_GL.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
+    ds = collect_cimxml_to_dataset([file], linkmlfile)
 
     # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
     # t = Dataset()
@@ -71,21 +71,28 @@ def main():
     # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     # t_normalized = normalize_strings(tgraph)
     g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
-    g2 = ds.graph(URIRef('urn:uuid:ade44b65-0bfa-41e0-95c5-2ccb345a6fed'))
+    # g2 = ds.graph(URIRef('urn:uuid:ade44b65-0bfa-41e0-95c5-2ccb345a6fed'))
     # gs = CIMXMLSerializer(g1)
-    print(g1.identifier)
-    print(g2.identifier)
-    for g in list(ds.graphs()):
-        print(g.identifier)
+    # print(g1.identifier)
+    # print(g2.identifier)
+    # for g in list(t.graphs()):
+    #     print(g.identifier)
     # for item in list(g1.triples((URIRef('urn:uuid:f1769b90-9aeb-11e5-91da-b8763fd99c5f'), None, None))):
     #     print(item)
+    # for item in lis
+    # for s, p, o in tgraph:
+    #     if isinstance(s, BNode):
+    #         print(s, p, o)
 
-    output_file = Path.cwd().parent / "cimxml_test.xml"
+    # g1 = tgraph
+    output_file = Path.cwd().parent / "cimxml_test_underscore.xml"
     g1.serialize(destination=str(output_file), format="cimxml")
 
-    output_file2 = Path.cwd().parent / "cimxml_dcat_test.xml"
-    g2.serialize(destination=str(output_file2), format="cimxml")
+    # output_file2 = Path.cwd().parent / "cimxml_fromtrig_urn.xml"
+    # g1.serialize(destination=str(output_file2), format="cimxml", qualifier="urn")
 
+    # output_file3 = Path.cwd().parent / "cimxml_fromtrig_ns.xml"
+    # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
 
     # print("Version:", rdflib.__version__) 
     # print("File:", rdflib.__file__)

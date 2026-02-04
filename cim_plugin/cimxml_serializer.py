@@ -8,18 +8,31 @@ import logging
 from typing import IO, Any, Generator, Tuple, Dict, Optional
 from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn
 from cim_plugin.namespaces import MD
+from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver
 
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
 
-METADATA_OBJECTS = [MD.FullModel, DCAT.Dataset]
-
 logger = logging.getLogger('cimxml_logger')
+
+METADATA_OBJECTS = [MD.FullModel, DCAT.Dataset]
+QUALIFIER_MAP = {"underscore": UnderscoreQualifier, "urn": URNQualifier, "namespace": NamespaceQualifier}
+
 
 class CIMXMLSerializer(Serializer):
     """CIMXML RDF graph serializer."""
 
-    def __init__(self, store: Graph):
+    def __init__(self, store: Graph, **kwargs):
         super(CIMXMLSerializer, self).__init__(store)
+
+        self.__serialized: Dict[Node, int] = {}
+        self._stream = None
+
+    def _init_qualifier_resolver(self, qualifier_name: str|None):
+        name = (qualifier_name or "underscore").lower()
+        qualifier_cls = QUALIFIER_MAP.get(name)
+        if qualifier_cls is None:
+            raise ValueError(f"Unknown qualifier: {qualifier_name}")
+        self.qualifier_resolver = CIMQualifierResolver(qualifier_cls())
 
     def __bindings(self) -> Generator[Tuple[str, URIRef], None, None]:
         store = self.store
@@ -35,8 +48,10 @@ class CIMXMLSerializer(Serializer):
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
         self.__stream = stream
-        self.__serialized: Dict[Node, int] = {}
-        encoding = self.encoding
+        # self.__serialized: Dict[Node, int] = {}
+        qualifier_name = kwargs.pop("qualifier", None)
+        self._init_qualifier_resolver(qualifier_name)
+        encoding = encoding or self.encoding
         self.write = write = lambda uni: stream.write(uni.encode(encoding, "replace"))
 
         write('<?xml version="1.0" encoding="%s"?>\n' % self.encoding)
@@ -72,13 +87,9 @@ class CIMXMLSerializer(Serializer):
         sorted_types = sorted(groups.keys())
 
         for t in sorted_types:
-            # for s in sorted(groups[t], key=lambda uri: str(uri)):
             for s in sorted(groups[t], key=_subject_sort_key):
                 self.subject(s, depth=1)
-        # Write triples by subject
-        # for subject in self.store.subjects():
-        #     self.subject(subject, 1)
-
+        
         write("</rdf:RDF>\n")
 
     def subject(self, subject: Node, depth: int = 1) -> None:
@@ -98,7 +109,8 @@ class CIMXMLSerializer(Serializer):
             write(f"{indent}</Error>\n") 
             return
         
-        uri = quoteattr(self.relativize(subject))
+        uri = quoteattr(self.qualifier_resolver.convert_about(subject))
+        # uri = quoteattr(self.relativize(subject))
         subject_type = next(self.store.objects(subject, RDF.type), None)
 
         if subject_type is None:
@@ -121,8 +133,6 @@ class CIMXMLSerializer(Serializer):
 
         if (subject, None, None) in self.store:
             for predicate, obj in preds:
-            # for predicate, object in self.store.predicate_objects(subject):
-                # if predicate != RDF.type:
                 self.predicate(predicate, obj, depth + 1)
         
         write(f"{indent}</{subject_type_qname}>\n")
@@ -137,23 +147,23 @@ class CIMXMLSerializer(Serializer):
             obj_text = escape(obj, ESCAPE_ENTITIES)
             write(f"{indent}<{qname}>{obj_text}</{qname}>\n")
 
-        else:
-            if isinstance(obj, URIRef):
-                relativized_obj = quoteattr(self.relativize(obj))
-                write(f"{indent}<{qname} rdf:resource={relativized_obj}/>\n")
+        elif isinstance(obj, URIRef):
+            relativized_obj = quoteattr(self.qualifier_resolver.convert_resource(obj))
+            # relativized_obj = quoteattr(self.relativize(obj))
+            write(f"{indent}<{qname} rdf:resource={relativized_obj}/>\n")
 
 
-def _subject_sort_key(uri: str) -> tuple[int, uuid.UUID|str]:
+def _subject_sort_key(uri: Node) -> tuple[int, str]:
     """
     Sort CIM subjects by UUID extracted from their URN.
     Falls back to the full URI string if not a UUID URN.
     """
     s = str(uri)
     try:
-        return (0, _extract_uuid_from_urn(s))
+        return (0, str(_extract_uuid_from_urn(s)))
     except ValueError:
         # Non-UUID subjects go last, sorted by full URI
-        return (1, s)
+        return (1, str(s))
 
 if __name__ == "__main__":
     print("Serializer class")
