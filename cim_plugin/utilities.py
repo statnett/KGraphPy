@@ -128,6 +128,15 @@ def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> 
 
 
 def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[str, list[Node]]:
+    """Group subjects with prediacte rdf:type by object.
+    
+    Parameters:
+        graph (Graph): Target for grouping.
+        skip_subjects (list[Node]): Optional list of subjects to skip grouping.
+
+    Returns:
+        dict[str, list[Node]]: All the objects with lists of subjects belonging to that type.
+    """
     groups: dict[str, list[Node]] = {}
 
     nm = graph.namespace_manager

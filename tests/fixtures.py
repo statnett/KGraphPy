@@ -30,7 +30,7 @@ def make_schemaview() -> Callable[..., SchemaView]:
             enums=enums
         )
 
-        return SchemaView(schema=schema)
+        return SchemaView(schema=schema) # type: ignore
 
     return _factory
 
@@ -136,6 +136,17 @@ def mock_extract_uuid(monkeypatch: pytest.MonkeyPatch) -> Mock:
     mock.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678") 
     monkeypatch.setattr("cim_plugin.utilities._extract_uuid_from_urn", mock) 
     return mock
+
+@pytest.fixture
+def make_graph() -> Callable[..., Graph]: 
+    """Helper to build a graph from a list of (s, p, o) triples."""
+    def _make_graph(triples: list[tuple]) -> Graph:
+        g = Graph()
+        g.bind("ex", Namespace("http://example.org/"))
+        for s, p, o in triples: 
+            g.add((s, p, o)) 
+        return g
+    return _make_graph
 
 if __name__ == "__main__":
     print("Fixtures for tests")

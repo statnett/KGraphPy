@@ -2,19 +2,20 @@ from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, Mock, patch
 import uuid
-from rdflib import Graph, URIRef, Literal, BNode
+from rdflib import Graph, Namespace, URIRef, Literal, BNode
 from rdflib.namespace import RDF, RDFS, DCAT
 from rdflib.exceptions import ParserError
 from typing import Callable
 from cim_plugin.exceptions import CIMXMLParseError
 from cim_plugin.namespaces import MD
-from tests.fixtures import cimxml_plugin, mock_extract_uuid
+from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph
 from cim_plugin.utilities import (
     _extract_uuid_from_urn, 
     get_graph_uuid, 
     load_cimxml_graph, 
     collect_cimxml_to_dataset, 
     extract_subjects_by_object_type,
+    group_subjects_by_type
 )
 
 import logging
@@ -463,7 +464,7 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: 
         for msg in caplog.messages
     )
 
-
+# Unit tests extract_subjects_by_object_type
 @pytest.mark.parametrize(
         "object_type, expected",
         [
@@ -538,6 +539,192 @@ def test_extract_subjects_by_object_type_literalsubject():
     result = extract_subjects_by_object_type(g, [MD.FullModel])
     assert result == [Literal("s1")]
 
+
+# Unit tests group_subjects_by_type
+@pytest.mark.parametrize(
+    "triples, expected",
+    [
+        pytest.param(
+            [
+                (URIRef("ex.a"), RDF.type, URIRef("http://example.org/Type1")),
+            ],
+            {"ex:Type1": [URIRef("ex.a")]},
+            id="Single subject with type"
+        ),
+        pytest.param(
+            [
+                (URIRef("ex:a"), RDF.type, URIRef("http://example.org/Type1")),
+                (URIRef("ex:b"), RDF.type, URIRef("http://example.org/Type1")),
+            ],
+            {"ex:Type1": [URIRef("ex:a"), URIRef("ex:b")]},
+            id="Two subjects with same type"
+        ),
+        pytest.param(
+            [
+                (URIRef("ex:a"), RDF.type, URIRef("http://example.org/Type1")),
+                (URIRef("ex:b"), RDF.type, URIRef("http://example.org/Type2")),
+            ],
+            {
+                "ex:Type1": [URIRef("ex:a")],
+                "ex:Type2": [URIRef("ex:b")],
+            },
+            id="Subjects with different types"
+        ),
+        pytest.param(
+            [
+                (URIRef("ex:a"), RDF.type, URIRef("http://example.org/Type1")),
+                (URIRef("ex.b"), URIRef("ex.someProp"), URIRef("ex.foo")),
+            ],
+            {
+                "ex:Type1": [URIRef("ex:a")],
+                "ErrorMissingType": [URIRef("ex.b")],
+            },
+            id="Subject missing type"
+        ),
+    ],
+)
+def test_group_subjects_by_type_basic(triples: list[tuple], expected: dict[str, list], make_graph: Callable[..., Graph]) -> None:
+    g = make_graph(triples)
+    result = group_subjects_by_type(g)
+
+    for key in result:
+        result[key].sort(key=str)
+
+    for key in expected:
+        expected[key].sort(key=str)
+
+    assert result == expected
+
+
+def test_group_subjects_by_type_skipsubjects(make_graph: Callable[..., Graph]) -> None:
+    g = make_graph(
+        [
+            (URIRef("ex:a"), RDF.type, URIRef("http://example.org/Type1")),
+            (URIRef("ex:b"), RDF.type, URIRef("http://example.org/Type1")),
+            (URIRef("ex:c"), RDF.type, URIRef("http://example.org/Type2")),
+        ]
+    )
+
+    result = group_subjects_by_type(g, skip_subjects=[URIRef("ex:b")])
+
+    assert result == {
+        "ex:Type1": [URIRef("ex:a")],
+        "ex:Type2": [URIRef("ex:c")],
+    }
+
+
+def test_group_subjects_by_type_bnodes(make_graph: Callable[..., Graph]) -> None:
+    bn = BNode()
+    g = make_graph(
+        [
+            (bn, RDF.type, URIRef("http://example.org/Type1")),
+            (URIRef("ex:a"), RDF.type, URIRef("http://example.org/Type1")),
+        ]
+    )
+
+    result = group_subjects_by_type(g)
+
+    # Order may vary because blank nodes are unordered; compare sets
+    assert set(result["ex:Type1"]) == {bn, URIRef("ex:a")}
+
+
+# def normalize(d):
+#     """Sort lists inside dicts for stable comparison."""
+#     return {k: sorted(v, key=str) for k, v in d.items()}
+
+EX = Namespace("http://example.org/")
+
+@pytest.mark.parametrize(
+    "triples, expected_keys, expected_subjects",
+    [
+        pytest.param(
+            [
+                (EX.a, RDF.type, EX.Type1),
+                (EX.a, RDF.type, EX.Type2),
+            ],
+            {"ex:Type1"},   # First encountered
+            {EX.a},
+            id="Multiple types for same subject",
+        ),
+        pytest.param(
+            [
+                (BNode("x"), RDF.type, EX.Type1),
+            ],
+            {"ex:Type1"},
+            None,  # we cannot predict BNode identity, only that one subject exists
+            id="Blank node subject with type",
+        ),
+        pytest.param(
+            [
+                (BNode("x"), EX.someProp, EX.foo),
+            ],
+            {"ErrorMissingType"},
+            None,
+            id="Blank node subject without type",
+        ),
+        pytest.param(
+            [
+                (Literal("foo"), RDF.type, EX.Type1),
+            ],
+            {"ex:Type1"},
+            {Literal("foo")},
+            id="Literal subject with type",
+        ),
+        pytest.param(
+            [
+                (EX.a, RDF.type, URIRef("urn:weird:TypeX")),
+            ],
+            {"<urn:weird:TypeX>"},  # normalizeURI adds <> to show the namespace is not recognised
+            {EX.a},
+            id="Unbound namespace type URI",
+        ),
+        pytest.param(
+            [
+                (EX.a, RDF.type, URIRef("not a uri")),
+            ],
+            {"<not a uri>"},  # normalizeURI adds <> to show the namespace is not recognised
+            {EX.a},
+            id="Malformed type URI",
+        ),
+        pytest.param(
+            [
+                (EX.a, EX.connectsTo, EX.b),
+            ],
+            {"ErrorMissingType"},  # no subjects with type
+            {EX.a}, # No EX.b in the result
+            id="Object-only node ignored",
+        ),
+        pytest.param(
+            [
+                (EX.a, RDF.type, EX.Type1),
+                (EX.a, RDF.type, EX.Type1),
+            ],
+            {"ex:Type1"},
+            {EX.a},
+            id="Duplicate triples do not duplicate subjects",
+        ),
+        pytest.param(
+            [],
+            set(),
+            set(),
+            id="Empty graph",
+        ),
+    ],
+)
+def test_group_subjects_by_type_edgecases(make_graph, triples, expected_keys, expected_subjects):
+    g = make_graph(triples)
+    result = group_subjects_by_type(g)
+
+    assert set(result.keys()) == expected_keys
+
+    # If expected_subjects is None, we only check that each group has exactly one subject
+    if expected_subjects is None:
+        for subjects in result.values():
+            assert len(subjects) == 1
+    else:
+        # Flatten subjects across all groups
+        all_subjects = {s for group in result.values() for s in group}
+        assert all_subjects == expected_subjects
 
 if __name__ == "__main__":
     pytest.main()
