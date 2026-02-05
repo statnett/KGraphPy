@@ -154,16 +154,22 @@ class CIMXMLSerializer(Serializer):
 
 
 def _subject_sort_key(uri: Node) -> tuple[int, str]:
-    """
-    Sort CIM subjects by UUID extracted from their URN.
-    Falls back to the full URI string if not a UUID URN.
+    """Create sort key for subject nodes.
+
+    Valid uuid is sorted before the invalid.
+
+    Parameters:
+        uri (Node): The subject uri to sort.
+
+    Returns:
+        tuple[int, str]: The integer showing validity priority and the uuid.
     """
     s = str(uri)
     try:
         return (0, str(_extract_uuid_from_urn(s)))
     except ValueError:
-        # Non-UUID subjects go last, sorted by full URI
         return (1, str(s))
+
 
 if __name__ == "__main__":
     print("Serializer class")
