@@ -148,5 +148,16 @@ def make_graph() -> Callable[..., Graph]:
         return g
     return _make_graph
 
+
+@pytest.fixture
+def capture_writer() -> tuple[list, Callable]:
+    output = []
+
+    def writer(text: str) -> int:
+        output.append(text)
+        return 0  # mimic stream.write return type
+
+    return output, writer
+
 if __name__ == "__main__":
     print("Fixtures for tests")

@@ -10,9 +10,10 @@ from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects
 from cim_plugin.namespaces import MD
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver
 
-from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
-
 logger = logging.getLogger('cimxml_logger')
+
+
+from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
 
 METADATA_OBJECTS = [MD.FullModel, DCAT.Dataset]
 QUALIFIER_MAP = {"underscore": UnderscoreQualifier, "urn": URNQualifier, "namespace": NamespaceQualifier}
@@ -48,7 +49,6 @@ class CIMXMLSerializer(Serializer):
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
         self.__stream = stream
-        # self.__serialized: Dict[Node, int] = {}
         qualifier_name = kwargs.pop("qualifier", None)
         self._init_qualifier_resolver(qualifier_name)
         encoding = encoding or self.encoding
@@ -110,11 +110,10 @@ class CIMXMLSerializer(Serializer):
             return
         
         uri = quoteattr(self.qualifier_resolver.convert_about(subject))
-        # uri = quoteattr(self.relativize(subject))
         subject_type = next(self.store.objects(subject, RDF.type), None)
 
         if subject_type is None:
-            logger.error("No rdf:type found for {subject}.")
+            logger.error(f"No rdf:type found for {subject}.")
             subject_type_qname = "ErrorMissingType"
             
             write(f"{indent}<{subject_type_qname} rdf:about={uri}>\n") 
@@ -139,9 +138,21 @@ class CIMXMLSerializer(Serializer):
                 
 
     def predicate(self, predicate: Node, obj: Node, depth: int = 1) -> None:
+        """Write predicate and object in CIMXML format.
+        
+        Parameters:
+            predicate (Node): The predicate to be written.
+            obj (Node): The object to be written.
+            depth (int): Indentation size.
+        """
         write = self.write
         indent = "  " * depth
-        qname = self.store.namespace_manager.qname_strict(str(predicate))
+
+        try:
+            qname = self.store.namespace_manager.qname_strict(str(predicate))
+        except (KeyError, ValueError):
+            logger.error(f"Predicate {str(predicate)} not a valid predicate.")
+            qname = f"MALFORMED_{str(predicate)}"
 
         if isinstance(obj, Literal):
             obj_text = escape(obj, ESCAPE_ENTITIES)
@@ -149,8 +160,11 @@ class CIMXMLSerializer(Serializer):
 
         elif isinstance(obj, URIRef):
             relativized_obj = quoteattr(self.qualifier_resolver.convert_resource(obj))
-            # relativized_obj = quoteattr(self.relativize(obj))
             write(f"{indent}<{qname} rdf:resource={relativized_obj}/>\n")
+
+        else:
+            logger.error("Invalid object detected.")
+            write(f"{indent}<{qname}>INVALID OBJECT</{qname}>\n")
 
 
 def _subject_sort_key(uri: Node) -> tuple[int, str]:
