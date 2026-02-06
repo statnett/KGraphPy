@@ -7,6 +7,7 @@ from rdflib import Graph, URIRef, Namespace
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
 from cim_plugin.cimxml_parser import CIMXMLParser
+from cim_plugin.cimxml_serializer import CIMXMLSerializer
 import uuid
 import textwrap
 from rdflib.plugin import register
@@ -158,6 +159,18 @@ def capture_writer() -> tuple[list, Callable]:
         return 0  # mimic stream.write return type
 
     return output, writer
+
+
+@pytest.fixture
+def serializer(capture_writer: tuple[list, Callable]) -> tuple[CIMXMLSerializer, list]:
+    output, writer = capture_writer
+    g = Graph()
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = Mock()
+    ser.qualifier_resolver.convert_about.side_effect = lambda x: str(x)
+    ser.qualifier_resolver.convert_resource.side_effect = lambda x: str(x)
+    return ser, output
 
 if __name__ == "__main__":
     print("Fixtures for tests")

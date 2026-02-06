@@ -93,6 +93,12 @@ class CIMXMLSerializer(Serializer):
         write("</rdf:RDF>\n")
 
     def subject(self, subject: Node, depth: int = 1) -> None:
+        """Write subject with predicates and objects.
+        
+        Parameters:
+            subject (Node): The subject to be written.
+            depth (int): Indentation size.
+        """
         if subject in self.__serialized:
             return
         
@@ -102,25 +108,24 @@ class CIMXMLSerializer(Serializer):
         write = self.write
         indent = "  " * depth
         
+        # Dealing with malformed subjects
         if not isinstance(subject, URIRef):
-            logger.error(f"Invalid subject (not a URIRef): {subject}.")
-            write(f"{indent}<Error rdf:about={subject}>\n") 
-            write(f"{indent} <message>Subject is not a URIRef: {subject}</message>\n") 
-            write(f"{indent}</Error>\n") 
+            self._write_malformed_subject(subject, f"Subject is not a URIRef: {subject}", depth)
             return
         
-        uri = quoteattr(self.qualifier_resolver.convert_about(subject))
-        subject_type = next(self.store.objects(subject, RDF.type), None)
+        types = list(self.store.objects(subject, RDF.type))
 
-        if subject_type is None:
-            logger.error(f"No rdf:type found for {subject}.")
-            subject_type_qname = "ErrorMissingType"
-            
-            write(f"{indent}<{subject_type_qname} rdf:about={uri}>\n") 
-            write(f"{indent} <message>No rdf:type found for {subject}</message>\n") 
-            write(f"{indent}</{subject_type_qname}>\n") 
+        if len(types) == 0:
+            self._write_malformed_subject(subject, f"No rdf:type found for {subject}", depth)
             return
-                               
+        
+        if len(types) > 1: 
+            self._write_malformed_subject(subject, f"Multiple rdf:type values found for {subject}: {types}", depth ) 
+            return
+        
+        # Shape the subject name to right format
+        subject_type = types[0]
+        uri = quoteattr(self.qualifier_resolver.convert_about(subject))
         subject_type_qname = nm.normalizeUri(str(subject_type))
 
         # Write the triple subject with rdf:type
@@ -148,12 +153,14 @@ class CIMXMLSerializer(Serializer):
         write = self.write
         indent = "  " * depth
 
+        # Shape the predicate name to right format and deal with malformed predicates
         try:
             qname = self.store.namespace_manager.qname_strict(str(predicate))
         except (KeyError, ValueError):
             logger.error(f"Predicate {str(predicate)} not a valid predicate.")
             qname = f"MALFORMED_{str(predicate)}"
 
+        # Write predicate and object
         if isinstance(obj, Literal):
             obj_text = escape(obj, ESCAPE_ENTITIES)
             write(f"{indent}<{qname}>{obj_text}</{qname}>\n")
@@ -165,6 +172,24 @@ class CIMXMLSerializer(Serializer):
         else:
             logger.error("Invalid object detected.")
             write(f"{indent}<{qname}>INVALID OBJECT</{qname}>\n")
+
+
+    def _write_malformed_subject(self, subject: Node, message: str, depth: int) -> None:
+        write = self.write
+        indent = "  " * depth
+
+        logger.error(message)
+
+        # Open MALFORMED subject
+        write(f"{indent}<MALFORMED rdf:about={quoteattr(str(subject))}>\n")
+        write(f"{indent}  <message>{message}</message>\n")
+
+        # Write all predicates/objects for debugging
+        for p, o in self.store.predicate_objects(subject):
+            self.predicate(p, o, depth + 1)
+
+        # Close MALFORMED subject
+        write(f"{indent}</MALFORMED>\n")
 
 
 def _subject_sort_key(uri: Node) -> tuple[int, str]:

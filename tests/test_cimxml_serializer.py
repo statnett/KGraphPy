@@ -1,4 +1,5 @@
 from typing import Callable
+from unittest import result
 import pytest
 from unittest.mock import MagicMock, patch, Mock
 import uuid
@@ -6,13 +7,309 @@ import logging
 
 from rdflib import URIRef, Graph, Literal, Node, BNode
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
-from rdflib.namespace import XSD
+from rdflib.namespace import XSD, RDF
 from xml.sax.saxutils import escape
 from cim_plugin.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
-from tests.fixtures import capture_writer
+from tests.fixtures import capture_writer, serializer
 
 
 logger = logging.getLogger("cimxml_logger")
+
+
+# Unit tests .subject
+def test_subject_nonuriref(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    subject = Literal("not-a-uri")
+
+    ser.subject(subject)
+
+    result = "".join(output)
+
+    assert "<MALFORMED" in result
+    assert "Subject is not a URIRef" in result
+    assert "</MALFORMED>" in result
+
+
+def test_subject_missingtype(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    s = URIRef("http://example.com/s")
+    g.add((s, URIRef("http://example.com/p"), Literal("x")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert "<MALFORMED" in result
+    assert "No rdf:type found" in result
+
+
+def test_subject_valid(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert '<ex:Class rdf:about="s123"' in result
+    assert "<ex:p>value</ex:p>" in result
+    assert "</ex:Class>" in result
+
+
+def test_subject_onlyrdftype(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+
+    ser.subject(s)
+
+    result = "".join(output)
+    assert '  <ex:Class rdf:about="s123">\n  </ex:Class>\n' in result
+    
+
+def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    s = URIRef("http://example.com/s")
+    g.add((s, RDF.type, URIRef("http://example.com/Class")))
+
+    ser.subject(s)
+    output.clear()  # Remove output so the method can be run again, but now the subject is registered
+
+    ser.subject(s)
+
+    assert output == []
+
+
+def test_subject_with_malformedpredicate(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("http://example.com/s")
+    t = URIRef("http://example.com/Class")
+
+    g.add((s, RDF.type, t))
+    g.add((s, Literal("not-a-uri"), Literal("x")))  # malformed predicate
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert "MALFORMED_" in result  # from predicate()
+
+def test_subject_malformedobject(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, BNode("value")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert '<ex:Class rdf:about="s123"' in result
+    assert "<ex:p>INVALID OBJECT</ex:p>" in result
+    assert "</ex:Class>" in result
+
+def test_subject_predicatesorting(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+    g.bind("foo", "http://bar.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+    g.add((s, URIRef("http://example.com/ad"), Literal("o")))
+    g.add((s, URIRef("http://bar.com/ad"), Literal("o2")))
+    g.add((s, URIRef("http://example.com/a_d"), Literal("o3")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert result == '  <ex:Class rdf:about="s123">\n    <ex:a_d>o3</ex:a_d>\n    <ex:ad>o</ex:ad>\n    <ex:p>value</ex:p>\n    <foo:ad>o2</foo:ad>\n  </ex:Class>\n'
+
+
+def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("http://example.com/s")
+    t1 = URIRef("http://example.com/ClassA")
+    t2 = URIRef("http://example.com/ClassB")
+
+    g.add((s, RDF.type, t1))
+    g.add((s, RDF.type, t2))
+    g.add((s, URIRef("http://example.com/p"), Literal("x")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert "<MALFORMED" in result
+    assert "Multiple rdf:type values" in result
+    assert "ClassA" in result
+    assert "ClassB" in result
+    assert "<ex:p>x</ex:p>" in result
+
+
+def test_subject_rdftypewoprefix(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://unknown.com/Class")   # No prefix registered
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+    # .qname_strict adds <> around the type.
+    assert result == '  <<http://unknown.com/Class> rdf:about="s123">\n    <ex:p>value</ex:p>\n  </<http://unknown.com/Class>>\n'
+
+
+def test_subject_rdftypnoturi(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = Literal("Class")   # Not a uri
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+    # .qname_strict adds <> around the type.
+    assert result == '  <<Class> rdf:about="s123">\n    <ex:p>value</ex:p>\n  </<Class>>\n'
+
+
+def test_subject_rdftypemalformed(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/1Class")   # Name starts with number
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+    
+    assert result == '  <ex:1Class rdf:about="s123">\n    <ex:p>value</ex:p>\n  </ex:1Class>\n'
+
+
+def test_subject_circulartriples(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")   # Name starts with number
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, s))
+
+    ser.subject(s)
+
+    result = "".join(output)
+    # .normalizeURI does not write out the whole name.
+    assert result == '  <ex:Class rdf:about="s123">\n    <ex:p rdf:resource="s123"/>\n  </ex:Class>\n'
+    
+
+def test_subject_predicatecalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    s = URIRef("http://example.com/s")
+    t = URIRef("http://example.com/Class")
+    p1 = URIRef("http://example.com/p1")
+    p2 = URIRef("http://example.com/p2")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p1, Literal("x")))
+    g.add((s, p2, Literal("y")))
+
+    ser.predicate = Mock()
+
+    ser.subject(s)
+
+    assert ser.predicate.call_count == 2
+
+def test_subject_malformedsubjectcalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    ser._write_malformed_subject = Mock()
+
+    subject = Literal("bad")
+
+    ser.subject(subject)
+
+    ser._write_malformed_subject.assert_called_once()
+
+def test_subject_multipletypesmalformedcalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+
+    s = URIRef("http://example.com/s")
+    g.add((s, RDF.type, URIRef("http://example.com/A")))
+    g.add((s, RDF.type, URIRef("http://example.com/B")))
+
+    ser._write_malformed_subject = Mock()
+
+    ser.subject(s)
+
+    ser._write_malformed_subject.assert_called_once()
+
 
 # Unit tests .predicate
 @pytest.mark.parametrize("literal", [
