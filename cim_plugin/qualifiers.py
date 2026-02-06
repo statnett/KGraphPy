@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 from rdflib import URIRef
+from cim_plugin.namespaces import MODEL
+
+uuid_namespace = MODEL
 
 class CIMQualifierStrategy(ABC):
 
@@ -54,16 +57,17 @@ class URNQualifier(CIMQualifierStrategy):
 class NamespaceQualifier(CIMQualifierStrategy):
 
     def matches(self, uri: str) -> bool:
-        return uri.startswith(":")
+        return uri.startswith(f"{uuid_namespace}:")
 
     def extract_uuid(self, uri: str) -> str:
-        return uri.lstrip(":")
+        prefix = f"{uuid_namespace}:"
+        return uri[len(prefix):]
 
     def build_about(self, uuid: str) -> str:
-        return f":{uuid}"
+        return f"{uuid_namespace}:{uuid}"
 
     def build_resource(self, uuid: str) -> str:
-        return f":{uuid}"
+        return f"{uuid_namespace}:{uuid}"
 
 
 class CIMQualifierResolver:

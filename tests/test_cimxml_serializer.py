@@ -10,6 +10,7 @@ from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
 from rdflib.namespace import XSD, RDF
 from xml.sax.saxutils import escape
 from cim_plugin.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
+from cim_plugin.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, uuid_namespace
 from tests.fixtures import capture_writer, serializer
 
 
@@ -486,6 +487,135 @@ def test_predicate_noobject(capture_writer: tuple[list, Callable], caplog: pytes
 
     assert "INVALID OBJECT" in result
     assert "Invalid object detected." in caplog.text
+
+# Integration tests .predicate and .subject
+@pytest.mark.parametrize(
+    "input_uri,output_strategy,expected_resource",
+    [
+        pytest.param("_1234", UnderscoreQualifier(), "#_1234", id="Underscore input, underscore output"),
+        pytest.param("urn:uuid:abcd", UnderscoreQualifier(), "#_abcd", id="Urn input, underscore output"),
+        pytest.param(f"{uuid_namespace}:xyz", UnderscoreQualifier(), "#_xyz", id="Namespace input, underscore output"),
+        pytest.param("weird", UnderscoreQualifier(), "#_weird", id="Fallback, underscore output"),
+        pytest.param("_1234", URNQualifier(), "urn:uuid:1234", id="Underscore input, urn output"),
+        pytest.param("urn:uuid:abcd", URNQualifier(), "urn:uuid:abcd", id="Urn input, urn output"),
+        pytest.param(f"{uuid_namespace}:xyz", URNQualifier(), "urn:uuid:xyz", id="Namespace input, urn output"),
+        pytest.param("weird", URNQualifier(), "urn:uuid:weird", id="Fallback, urn output"),
+        pytest.param("_1234", NamespaceQualifier(), f"{uuid_namespace}:1234", id="Underscore input, namespace output"),
+        pytest.param("urn:uuid:abcd", NamespaceQualifier(), f"{uuid_namespace}:abcd", id="Urn input, namespace output"),
+        pytest.param(f"{uuid_namespace}:xyz", NamespaceQualifier(), f"{uuid_namespace}:xyz", id="Namespace input, namespace output"),
+        pytest.param("weird", NamespaceQualifier(), f"{uuid_namespace}:weird", id="Fallback, namespace output"),
+    ]
+)
+def test_predicate_resolver_integration(capture_writer: tuple[list, Callable], input_uri: str, output_strategy: CIMQualifierStrategy, expected_resource: str) -> None:
+    output, writer = capture_writer
+
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("http://example.com/s")
+    p = URIRef("http://example.com/p")
+    o = URIRef(input_uri)
+
+    g.add((s, p, o))
+
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(output_strategy)
+
+    ser.predicate(p, o)
+
+    result = "".join(output)
+
+    assert f'rdf:resource="{expected_resource}"' in result
+
+
+@pytest.mark.parametrize(
+    "input_uri,output_strategy,expected_about",
+    [
+        pytest.param("_1234", UnderscoreQualifier(), "_1234", id="Underscore input, underscore output"),
+        pytest.param("urn:uuid:abcd", UnderscoreQualifier(), "_abcd", id="Urn input, underscore output"),
+        pytest.param(f"{uuid_namespace}:xyz", UnderscoreQualifier(), "_xyz", id="Namespace input, underscore output"),
+        pytest.param("weird", UnderscoreQualifier(), "_weird", id="Fallback, underscore output"),
+        pytest.param("_1234", URNQualifier(), "urn:uuid:1234", id="Underscore input, urn output"),
+        pytest.param("urn:uuid:abcd", URNQualifier(), "urn:uuid:abcd", id="Urn input, urn output"),
+        pytest.param(f"{uuid_namespace}:xyz", URNQualifier(), "urn:uuid:xyz", id="Namespace input, urn output"),
+        pytest.param("weird", URNQualifier(), "urn:uuid:weird", id="Fallback, urn output"),
+        pytest.param("_1234", NamespaceQualifier(), f"{uuid_namespace}:1234", id="Underscore input, namespace output"),
+        pytest.param("urn:uuid:abcd", NamespaceQualifier(), f"{uuid_namespace}:abcd", id="Urn input, namespace output"),
+        pytest.param(f"{uuid_namespace}:xyz", NamespaceQualifier(), f"{uuid_namespace}:xyz", id="Namespace input, namespace output"),
+        pytest.param("weird", NamespaceQualifier(), f"{uuid_namespace}:weird", id="Fallback, namespace output"),
+    ]
+)
+def test_subject_resolver_integration(capture_writer: tuple[list, Callable], input_uri: str, output_strategy: CIMQualifierStrategy, expected_about: str) -> None:
+    output, writer = capture_writer
+
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef(input_uri)
+    t = URIRef("http://example.com/Class")
+
+    g.add((s, RDF.type, t))
+
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(output_strategy)
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert f'rdf:about="{expected_about}"' in result
+
+
+@pytest.mark.parametrize(
+    "subject_uri,object_uri,output_strategy,expected_about,expected_resource",
+    [
+        pytest.param("_s", "_o", UnderscoreQualifier(), "_s", "#_o", id="Underscore input, underscore output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", UnderscoreQualifier(), "_abcd", "#_efgh", id="Urn input, underscore output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", UnderscoreQualifier(), "_x", "#_y", id="Namespace input, underscore output"),
+        pytest.param("weird", "strange", UnderscoreQualifier(), "_weird", "#_strange", id="Fallback, underscore output"),
+        pytest.param("_s", "_o", URNQualifier(), "urn:uuid:s", "urn:uuid:o", id="Underscore input, urn output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", URNQualifier(), "urn:uuid:abcd", "urn:uuid:efgh", id="Urn input, urn output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", URNQualifier(), "urn:uuid:x", "urn:uuid:y", id="Namespace input, urn output"),
+        pytest.param("weird", "strange", URNQualifier(), "urn:uuid:weird", "urn:uuid:strange", id="Fallback, urn output"),
+        pytest.param("_s", "_o", NamespaceQualifier(), f"{uuid_namespace}:s", f"{uuid_namespace}:o", id="Underscore input, namespace output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", NamespaceQualifier(), f"{uuid_namespace}:abcd", f"{uuid_namespace}:efgh", id="Urn input, namespace output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", NamespaceQualifier(), f"{uuid_namespace}:x", f"{uuid_namespace}:y", id="Namespace input, namespace output"),
+        pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", f"{uuid_namespace}:strange", id="Fallback, namespace output"),
+    ]
+)
+def test_subject_and_predicate_resolver_integration(
+    capture_writer: tuple[list, Callable],
+    subject_uri: str,
+    object_uri: str,
+    output_strategy: CIMQualifierStrategy,
+    expected_about: str,
+    expected_resource: str,
+):
+    output, writer = capture_writer
+
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef(subject_uri)
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+    o = URIRef(object_uri)
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, o))
+
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(output_strategy)
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert f'rdf:about="{expected_about}"' in result
+    assert f'rdf:resource="{expected_resource}"' in result
 
 # Unit tests _subject_sort_key
 

@@ -88,11 +88,11 @@ def main():
     output_file = Path.cwd().parent / "cimxml_test_underscore.xml"
     g1.serialize(destination=str(output_file), format="cimxml")
 
-    # output_file2 = Path.cwd().parent / "cimxml_fromtrig_urn.xml"
-    # g1.serialize(destination=str(output_file2), format="cimxml", qualifier="urn")
+    output_file2 = Path.cwd().parent / "cimxml_test_urn.xml"
+    g1.serialize(destination=str(output_file2), format="cimxml", qualifier="urn")
 
-    # output_file3 = Path.cwd().parent / "cimxml_fromtrig_ns.xml"
-    # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
+    output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
+    g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
 
     # print("Version:", rdflib.__version__) 
     # print("File:", rdflib.__file__)
