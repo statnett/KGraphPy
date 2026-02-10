@@ -1,14 +1,16 @@
 import uuid
 from rdflib.serializer import Serializer
 from rdflib.graph import Graph
-from rdflib.term import URIRef, Identifier, Literal, Node
+from rdflib.term import URIRef, Identifier, Literal, Node, BNode
 from rdflib.namespace import RDF, DCAT
 from xml.sax.saxutils import quoteattr, escape
 import logging
+# from cim_plugin import header
 from typing import IO, Any, Generator, Tuple, Dict, Optional
 from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn
 from cim_plugin.namespaces import MD
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver
+from cim_plugin.header import CIMMetadataHeader
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -70,20 +72,19 @@ class CIMXMLSerializer(Serializer):
                 write('    xmlns="%s"\n' % namespace)
         write("    >\n")
 
-        # Write metadata header
-        meta = extract_subjects_by_object_type(self.store, METADATA_OBJECTS)
-        if len(meta) > 1:
-            logger.error("Multiple metadata headers detected.")
-        
-        if meta:
-            self.subject(meta[0], depth=1)
+        header = getattr(self.store, "metadata_header", None)
+
+        if header is not None:
+            self.write_header(header, depth=1)
+            meta_subject = [header.subject]
         else:
-            logger.error("No metadata header detected.")
+            logger.error("No metadata header configured. Header triples will be serialized as regular data.")
+            meta_subject = []
 
         write("\n")
 
         # Sort by class and write triples by subject
-        groups = group_subjects_by_type(self.store, skip_subjects=meta)
+        groups = group_subjects_by_type(self.store, skip_subjects=meta_subject)
         sorted_types = sorted(groups.keys())
 
         for t in sorted_types:
@@ -91,6 +92,43 @@ class CIMXMLSerializer(Serializer):
                 self.subject(s, depth=1)
         
         write("</rdf:RDF>\n")
+
+
+    def write_header(self, header: CIMMetadataHeader, depth: int = 1) -> None:
+        """
+        Write the CIM metadata header in CIMXML format.
+        Always uses URNQualifier for the header subject and resources.
+        """
+
+        write = self.write
+        nm = self.store.namespace_manager
+        indent = "  " * depth
+
+        subject = header.subject
+        subject_type = header.main_type
+
+        # --- Temporarily override qualifier strategy ---
+        original_strategy = self.qualifier_resolver.output
+        self.qualifier_resolver.output = URNQualifier()
+
+        try:
+            uri = quoteattr(self.qualifier_resolver.convert_about(subject))
+
+            subject_type_qname = nm.normalizeUri(str(subject_type))
+            write(f"{indent}<{subject_type_qname} rdf:about={uri}>\n")
+
+            body_triples = [(p, o) for (_, p, o) in header.triples if not (p == RDF.type and o == subject_type)]
+            body_triples.sort(key=lambda po: nm.normalizeUri(str(po[0])))
+
+            for p, o in body_triples:
+                self.predicate(p, o, depth + 1, use_qualifier=False)
+
+            write(f"{indent}</{subject_type_qname}>\n")
+
+        finally:
+            # --- Restore original qualifier strategy ---
+            self.qualifier_resolver.output = original_strategy
+
 
     def subject(self, subject: Node, depth: int = 1) -> None:
         """Write subject with predicates and objects.
@@ -110,8 +148,12 @@ class CIMXMLSerializer(Serializer):
         
         # Dealing with malformed subjects
         if not isinstance(subject, URIRef):
-            self._write_malformed_subject(subject, f"Subject is not a URIRef: {subject}", depth)
-            return
+            if isinstance(subject, BNode) and subject in self.store.metadata_header.reachable_nodes:    # pyright: ignore[reportAttributeAccessIssue]
+                # Header blank nodes are dealt with by the header object
+                return
+            else:
+                self._write_malformed_subject(subject, f"Subject is not a URIRef: {subject}", depth)
+                return
         
         types = list(self.store.objects(subject, RDF.type))
 
@@ -142,7 +184,7 @@ class CIMXMLSerializer(Serializer):
         write(f"{indent}</{subject_type_qname}>\n")
                 
 
-    def predicate(self, predicate: Node, obj: Node, depth: int = 1) -> None:
+    def predicate(self, predicate: Node, obj: Node, depth: int = 1, use_qualifier: bool = True) -> None:
         """Write predicate and object in CIMXML format.
         
         Parameters:
@@ -166,7 +208,11 @@ class CIMXMLSerializer(Serializer):
             write(f"{indent}<{qname}>{obj_text}</{qname}>\n")
 
         elif isinstance(obj, URIRef):
-            relativized_obj = quoteattr(self.qualifier_resolver.convert_resource(obj))
+            if use_qualifier:
+                relativized_obj = quoteattr(self.qualifier_resolver.convert_resource(obj))
+            else:
+                relativized_obj = quoteattr(str(obj))
+
             write(f"{indent}<{qname} rdf:resource={relativized_obj}/>\n")
 
         else:

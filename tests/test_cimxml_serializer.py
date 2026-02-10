@@ -287,15 +287,33 @@ def test_subject_predicatecalls(serializer: tuple[CIMXMLSerializer, list]) -> No
 
     assert ser.predicate.call_count == 2
 
-def test_subject_malformedsubjectcalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
+
+b = BNode("bad")    # Creating a shared bnode for test below
+
+@pytest.mark.parametrize(
+        "input, reachable",
+        [
+            pytest.param(Literal("bad"), set(), id="Literal subject"),
+            pytest.param(BNode("bad"), set(), id="BNode not reachable"),
+            pytest.param(b, {b}, id="BNode reachable"),
+        ]
+)
+def test_subject_malformedsubjectcalls(input: Literal|BNode, reachable: set, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser._write_malformed_subject = Mock()
-
-    subject = Literal("bad")
+    header_mock = Mock()
+    header_mock.reachable_nodes = reachable
+    ser.store.metadata_header = header_mock # pyright: ignore[reportAttributeAccessIssue]
+    
+    subject = input
 
     ser.subject(subject)
 
-    ser._write_malformed_subject.assert_called_once()
+    if len(reachable) == 0:
+        ser._write_malformed_subject.assert_called_once()
+    else:
+        ser._write_malformed_subject.assert_not_called()
+
 
 def test_subject_multipletypesmalformedcalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
@@ -396,6 +414,26 @@ def test_predicate_uriref(object_value: str, return_value: str, capture_writer: 
     esc_return = escape(return_value, ESCAPE_ENTITIES)
     assert f'<ex:p rdf:resource="{esc_return}"/>' in result
     ser.qualifier_resolver.convert_resource.assert_called_once_with(obj)
+
+
+def test_predicate_noqualifier(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    pred = URIRef("http://example.com/p")
+    obj = URIRef("http://example.com/o")
+
+    ser = CIMXMLSerializer(g)
+    ser.qualifier_resolver = Mock()
+
+    ser.write = writer
+
+    ser.predicate(pred, obj, depth=1, use_qualifier=False)
+    result = "".join(output)
+
+    esc_return = escape("http://example.com/o", ESCAPE_ENTITIES)
+    assert f'<ex:p rdf:resource="http://example.com/o"/>' in result
+    ser.qualifier_resolver.convert_resource.assert_not_called()
 
 
 def test_predicate_qnameerror(capture_writer: tuple[list, Callable]) -> None:

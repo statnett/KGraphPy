@@ -5,6 +5,7 @@ from cim_plugin.namespaces import MODEL
 uuid_namespace = MODEL
 
 class CIMQualifierStrategy(ABC):
+    """Strategy for switching between different types of uuid qualifiers in a cim graph."""
 
     @abstractmethod
     def matches(self, uri: str) -> bool:
@@ -71,6 +72,7 @@ class NamespaceQualifier(CIMQualifierStrategy):
 
 
 class CIMQualifierResolver:
+    """Convert between different types of uuid qualifiers in cim graphs."""
 
     strategies = [
         UnderscoreQualifier(),
