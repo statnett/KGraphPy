@@ -6,6 +6,8 @@ import logging
 from xml.sax import SAXParseException
 from cim_plugin.exceptions import CIMXMLParseError
 from cim_plugin.namespaces import MD
+from cim_plugin.graph import CIMDataset, CIMGraph
+from cim_plugin.header import CIMMetadataHeader
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -53,7 +55,7 @@ def _extract_uuid_from_urn(urn: str) -> uuid.UUID:
     return uuid.UUID(urn[len(prefix):])
 
 
-def load_cimxml_graph(file_path: str, schema_path: str|None = None) -> tuple[uuid.UUID, Graph]:
+def load_cimxml_graph(file_path: str, schema_path: str|None = None) -> CIMGraph:
     """Load one CIMXML file to Graph and get graph uuid.
     
     Parameters:
@@ -67,16 +69,15 @@ def load_cimxml_graph(file_path: str, schema_path: str|None = None) -> tuple[uui
         tuple[uuid.UUID, Graph]: The graph uuid and the Graph object.
     """
     try:
-        g = Graph() 
+        g = CIMGraph() 
         g.parse(file_path, format="cimxml", schema_path=schema_path) 
-        uuid = get_graph_uuid(g) 
-        return uuid, g
+        return g
     except (FileNotFoundError, ParserError, SAXParseException, ValueError) as e:
         raise CIMXMLParseError(file_path, e) from e
 
 
-def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) -> Dataset:
-    """Collect multiple CIMXML files into one Dataset object. 
+def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) -> CIMDataset:
+    """Collect multiple CIMXML files into one CIMDataset object. 
     
     Namespaces will be normalised between graphs:
         - Same namespace with different prefixes: last prefix added keeps namespace, previous namespaces are set to None.
@@ -87,27 +88,97 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
         schema_path (str): Path to the linkML file with the cim model.
 
     Returns:
-        Dataset: All the graphs collected in a Dataset object.
+        CIMDataset: All the graphs collected in a CIMDataset object. Each graph consist of:
+            - The parsed triples minus the header triples
+            - A metadata header which contains the header triples
+            - A namespace manager
     """
-    ds = Dataset()
+    ds = CIMDataset()
 
     for file_path in files:
         try:
-            uuid, graph = load_cimxml_graph(file_path, schema_path)
+            graph = load_cimxml_graph(file_path, schema_path)
         except (CIMXMLParseError) as e:
             logger.error(e)
             continue
 
-        named = ds.graph(URIRef(f"urn:uuid:{uuid}"))
+        try:
+            header = CIMMetadataHeader.from_graph(graph)
+        except ValueError as e:
+            header = CIMMetadataHeader.empty()
+            logger.error(f"{e}: Metadata header cannot be extracted. Graph given random id {str(header.subject)}.")
+            
+        named = ds.graph(URIRef(header.subject))
 
         for prefix, uri in graph.namespace_manager.namespaces():
             ds.namespace_manager.bind(prefix, uri)
             named.namespace_manager.bind(prefix, uri)
 
         for triple in graph:
+            if triple in header.triples:
+                continue
             named.add(triple)
-
+        
+        named.metadata_header = header
+        
     return ds
+
+
+# def load_cimxml_graph(file_path: str, schema_path: str|None = None) -> tuple[uuid.UUID, Graph]:
+#     """Load one CIMXML file to Graph and get graph uuid.
+    
+#     Parameters:
+#         file_path (str): Path to CIMXML file.
+#         schema_path (str): Path to linkML file with the cim model
+
+#     Raises:
+#         CIMXMLParseError: If errors in the parsing process is raised.
+
+#     Returns:
+#         tuple[uuid.UUID, Graph]: The graph uuid and the Graph object.
+#     """
+#     try:
+#         g = Graph() 
+#         g.parse(file_path, format="cimxml", schema_path=schema_path) 
+#         uuid = get_graph_uuid(g) 
+#         return uuid, g
+#     except (FileNotFoundError, ParserError, SAXParseException, ValueError) as e:
+#         raise CIMXMLParseError(file_path, e) from e
+
+
+# def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) -> Dataset:
+#     """Collect multiple CIMXML files into one Dataset object. 
+    
+#     Namespaces will be normalised between graphs:
+#         - Same namespace with different prefixes: last prefix added keeps namespace, previous namespaces are set to None.
+#         - Same prefix with different namespaces: first namespace added is kept
+
+#     Parameters:
+#         files (list): Paths to files containing CIMXML graphs.
+#         schema_path (str): Path to the linkML file with the cim model.
+
+#     Returns:
+#         Dataset: All the graphs collected in a Dataset object.
+#     """
+#     ds = Dataset()
+
+#     for file_path in files:
+#         try:
+#             uuid, graph = load_cimxml_graph(file_path, schema_path)
+#         except (CIMXMLParseError) as e:
+#             logger.error(e)
+#             continue
+
+#         named = ds.graph(URIRef(f"urn:uuid:{uuid}"))
+
+#         for prefix, uri in graph.namespace_manager.namespaces():
+#             ds.namespace_manager.bind(prefix, uri)
+#             named.namespace_manager.bind(prefix, uri)
+
+#         for triple in graph:
+#             named.add(triple)
+
+#     return ds
 
 
 def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> list[Node]: 

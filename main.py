@@ -71,6 +71,11 @@ def main():
     # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     # t_normalized = normalize_strings(tgraph)
     g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
+    for g in ds.graphs():
+        print(g.identifier, type(g), getattr(g, "metadata_header", None))
+
+    if g1.metadata_header:
+        print(g1.metadata_header.triples)
     # g2 = ds.graph(URIRef('urn:uuid:ade44b65-0bfa-41e0-95c5-2ccb345a6fed'))
     # gs = CIMXMLSerializer(g1)
     # print(g1.identifier)
@@ -85,14 +90,14 @@ def main():
     #         print(s, p, o)
 
     # g1 = tgraph
-    output_file = Path.cwd().parent / "cimxml_test_underscore.xml"
-    g1.serialize(destination=str(output_file), format="cimxml")
+    # output_file = Path.cwd().parent / "cimxml_test_underscore.xml"
+    # g1.serialize(destination=str(output_file), format="cimxml")
 
-    output_file2 = Path.cwd().parent / "cimxml_test_urn.xml"
-    g1.serialize(destination=str(output_file2), format="cimxml", qualifier="urn")
+    # output_file2 = Path.cwd().parent / "cimxml_test_urn.xml"
+    # g1.serialize(destination=str(output_file2), format="cimxml", qualifier="urn")
 
-    output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
-    g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
+    # output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
+    # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
 
     # print("Version:", rdflib.__version__) 
     # print("File:", rdflib.__file__)

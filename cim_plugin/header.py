@@ -2,6 +2,7 @@
 from rdflib import Graph, Node, URIRef, RDF, BNode, Literal
 from typing import Iterable, List, Tuple, Optional, Sequence, Set
 import logging
+import uuid
 
 logger = logging.getLogger("cimxml_logger")
 
@@ -19,11 +20,20 @@ class CIMMetadataHeader:
     # Default metadata object types (can be extended by user)
     DEFAULT_METADATA_OBJECTS: List[URIRef] = []
 
-    def __init__(self, subject: URIRef, triples: Sequence[Tuple[Node, Node, Node]], metadata_objects: Optional[Iterable[URIRef]] = None, reachable_nodes: Set[Node] = set()):
+    def __init__(
+            self, 
+            subject: Optional[URIRef] = None, 
+            triples: Optional[Sequence[Tuple[Node, Node, Node]]] = None, 
+            metadata_objects: Optional[Iterable[URIRef]] = None, 
+            reachable_nodes: Optional[Set[Node]] = set()
+    ):
+        if subject is None:
+            subject = URIRef(f"urn:uuid:{uuid.uuid4()}")
+
         self.subject: URIRef = subject
-        self.triples: List[Tuple[Node, Node, Node]] = list(triples)
+        self.triples: List[Tuple[Node, Node, Node]] = list(triples) if triples else []
         self.metadata_objects = list(metadata_objects) if metadata_objects else list(self.DEFAULT_METADATA_OBJECTS)
-        self.reachable_nodes: Set[Node] = reachable_nodes  # Blank nodes belonging to the header and therefore reachable through other header triples.
+        self.reachable_nodes: Set[Node] = reachable_nodes if reachable_nodes else set()  # Blank nodes belonging to the header and therefore reachable through other header triples.
 
 
     @classmethod
@@ -54,8 +64,7 @@ class CIMMetadataHeader:
         if not header_subjects:
             raise ValueError("No metadata header found in graph")
 
-        # if len(subjects) > 1:
-        if not header_subjects:
+        if len(header_subjects) > 1:
             raise ValueError(f"Multiple metadata headers found: {header_subjects}")
 
         # subject_node = subjects[0]
@@ -119,6 +128,9 @@ class CIMMetadataHeader:
 
         return final_subject, repaired, reachable
 
+    @classmethod
+    def empty(cls, subject: Optional[URIRef] = None, metadata_objects=None):
+        return cls(subject=subject, triples=[], metadata_objects=metadata_objects)
 
     @staticmethod
     def _repair_blank_header_subject(graph: Graph, blank: Node) -> URIRef:
@@ -151,19 +163,36 @@ class CIMMetadataHeader:
         raise ValueError("No metadata-object rdf:type found in header")
 
 
+    def set_subject(self, new_subject: URIRef):
+        # Rewrite all triples that use the old subject
+        old_subject = self.subject
+        self.subject = new_subject
+
+        new_triples = []
+        for (s, p, o) in self.triples:
+            if s == old_subject:
+                new_triples.append((new_subject, p, o))
+            else:
+                new_triples.append((s, p, o))
+
+        self.triples = new_triples
+
+
     def iter_predicates(self):
         """Yield (predicate, object) pairs for writing."""
         for _, p, o in self.triples:
             yield p, o
+
 
     def get_types(self) -> List[Node]:
         """Return all rdf:type values for the header subject."""
         return [o for (_, p, o) in self.triples if p == RDF.type]
 
 
-    def add_triple(self, predicate: URIRef, obj: URIRef):
+    def add_triple(self, predicate: Node, obj: Node):
         """Add a metadata triple."""
         self.triples.append((self.subject, predicate, obj))
+
 
     def remove_triple(self, predicate: Node, obj: Optional[Node] = None):
         """Remove metadata triples matching predicate (and optionally object)."""
@@ -172,6 +201,7 @@ class CIMMetadataHeader:
             for (s, p, o) in self.triples
             if not (p == predicate and (obj is None or o == obj))
         ]
+
 
     def to_triples(self) -> List[Tuple[Node, Node, Node]]:
         """Return all metadata triples."""
