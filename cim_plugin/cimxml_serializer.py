@@ -145,6 +145,7 @@ class CIMXMLSerializer(Serializer):
         nm = self.store.namespace_manager
         write = self.write
         indent = "  " * depth
+        rdf_keyword = "about"
         
         # Dealing with malformed subjects
         if not isinstance(subject, URIRef):
@@ -171,7 +172,7 @@ class CIMXMLSerializer(Serializer):
         subject_type_qname = nm.normalizeUri(str(subject_type))
 
         # Write the triple subject with rdf:type
-        write(f"{indent}<{subject_type_qname} rdf:about={uri}>\n")
+        write(f"{indent}<{subject_type_qname} rdf:{rdf_keyword}={uri}>\n")
 
         # Sort and write predicates and objects
         preds = [(p, o) for p, o in self.store.predicate_objects(subject) if p != RDF.type]

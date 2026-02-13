@@ -1,0 +1,100 @@
+%YAML 1.2
+---
+
+prefixes:
+  cim: "https://cim.ucaiug.io/ns#"
+  nc: "https://cim4.eu/ns/nc#"
+
+profiles:
+  # CGMES 3.0 (IEC 61970-600-2:2021)
+  "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/DiagramLayout-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/Dynamics-EU/1.0":
+    - cim:EnergyConsumer
+  "http://iec.ch/TC57/ns/CIM/EquipmentBoundary-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/GeographicalLocation-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/Operation-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0": 
+    - cim:ACLineSegment
+    - cim:AsynchronousMachine
+    - cim:BusbarSection
+    - cim:EnergySource
+    - cim:EquivalentBranch
+    - cim:EquivalentInjection
+    - cim:ExternalNetworkInjection
+    - cim:GroundingImpedance
+    - cim:LinearShuntCompensator
+    - cim:NonlinearShuntCompensatorPoint
+    - cim:PetersenCoil
+    - cim:PowerTransformer
+    - cim:PowerTransformerEnd
+    - cim:SeriesCompensator
+    - cim:SynchronousMachine
+  "http://iec.ch/TC57/ns/CIM/StateVariables-EU/3.0":
+    - cim:CsConverter
+    - cim:VsConverter
+  "http://iec.ch/TC57/ns/CIM/Topology-EU/3.0":
+    - cim:ACDCConverterDCTerminal
+    - cim:ConnectivityNode
+    - cim:DCNode
+    - cim:DCTerminal
+    - cim:Terminal
+
+  # IEC 61970-452:2021:
+  "http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0": []
+  "http://iec.ch/TC57/ns/CIM/Operation/4.0": []
+  "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": []
+  # "http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0": []   Repeated above. Same as http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0
+
+  #IEC 61970-456:2021:
+  "http://iec.ch/TC57/ns/CIM/StateVariables/5.0": []
+  # "http://iec.ch/TC57/ns/CIM/StateVariables-EU/3.0": [] Repeated above. Same as http://iec.ch/TC57/ns/CIM/StateVariables/5.0
+  "http://iec.ch/TC57/ns/CIM/Topology/5.0": []
+  # "http://iec.ch/TC57/ns/CIM/Topology-EU/3.0": []  Repeated above. Same as http://iec.ch/TC57/ns/CIM/Topology/5.0
+
+  # IEC 61970-457:2024:
+  "http://cim-profile.ucaiug.io/grid/DetailedModelConfiguration/1.0": []
+  "http://cim-profile.ucaiug.io/grid/DetailedModelParameterisation/1.0": []
+  "http://cim-profile.ucaiug.io/grid/Dynamics/2.0": []
+  "http://cim-profile.ucaiug.io/grid/SimulationResults/1.0": []
+  "http://cim-profile.ucaiug.io/grid/SimulationSettings/1.0": []
+
+  # Network Code:
+  "https://ap-voc.cim4.eu/EquipmentReliability/2.3":
+    - cim:ControlArea
+    - cim:DCBreaker
+    - cim:DCBusbar
+    - cim:DCChopper
+    - cim:DCConverterUnit
+    - cim:DCDisconnector
+    - cim:DCGround
+    - cim:DCLine
+    - cim:DCLineSegment
+    - cim:DCSeriesDevice
+    - cim:DCShunt
+    - cim:DCSwitch
+    - cim:EnergyConsumer
+    - cim:Equipment
+    - cim:EquivalentInjection
+    - cim:FossilFuel
+    - cim:GeneratingUnit
+    - cim:HydroPowerPlant
+    - cim:HydroPump
+    - cim:Line
+    - cim:NuclearGeneratingUnit
+    - cim:OperationalLimitSet
+    - cim:PowerElectronicsUnit
+    - cim:Substation
+    - cim:TapChanger
+    - cim:TieFlow
+    - nc:PTCTriggeredEquipment
+  "https://ap-voc.cim4.eu/GridDisturbance/1.1":
+    - cim:Equipment
+  "https://ap-voc.cim4.eu/RemedialAction/2.3":
+    - cim:Line
+    - cim:Substation
+    - nc:PowerShiftKeyStrategy
+  "https://ap-voc.cim4.eu/RemedialActionSchedule/2.3":
+    - nc:AvailabilitySchedule
+    - nc:RemedialActionSchemeSchedule
+    - nc:SchemeRemedialAction

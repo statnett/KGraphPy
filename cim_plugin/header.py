@@ -1,5 +1,6 @@
-# from __future__ import annotations
 from rdflib import Graph, Node, URIRef, RDF, BNode, Literal
+from rdflib.namespace import DCTERMS
+from cim_plugin.namespaces import MD
 from typing import Iterable, List, Tuple, Optional, Sequence, Set
 import logging
 import uuid
@@ -25,7 +26,8 @@ class CIMMetadataHeader:
             subject: Optional[URIRef] = None, 
             triples: Optional[Sequence[Tuple[Node, Node, Node]]] = None, 
             metadata_objects: Optional[Iterable[URIRef]] = None, 
-            reachable_nodes: Optional[Set[Node]] = set()
+            reachable_nodes: Optional[Set[Node]] = set(),
+            profile: Optional[str] = None
     ):
         if subject is None:
             subject = URIRef(f"urn:uuid:{uuid.uuid4()}")
@@ -34,7 +36,7 @@ class CIMMetadataHeader:
         self.triples: List[Tuple[Node, Node, Node]] = list(triples) if triples else []
         self.metadata_objects = list(metadata_objects) if metadata_objects else list(self.DEFAULT_METADATA_OBJECTS)
         self.reachable_nodes: Set[Node] = reachable_nodes if reachable_nodes else set()  # Blank nodes belonging to the header and therefore reachable through other header triples.
-
+        self.profile: Optional[str] = profile or self.collect_profile()
 
     @classmethod
     def from_graph(cls, graph: Graph, metadata_objects: Optional[Iterable[URIRef]] = None) -> "CIMMetadataHeader":
@@ -55,31 +57,18 @@ class CIMMetadataHeader:
         metadata_objects = list(metadata_objects) if metadata_objects else list(cls.DEFAULT_METADATA_OBJECTS)
 
         header_subjects = [s for (s, _, o) in graph.triples((None, RDF.type, None)) if o in metadata_objects]
-        # subjects: List[Node] = []
-        # for s, _, o in graph.triples((None, RDF.type, None)):
-        #     if o in metadata_objects:
-        #         subjects.append(s)
 
-        # if not subjects:
         if not header_subjects:
             raise ValueError("No metadata header found in graph")
 
         if len(header_subjects) > 1:
             raise ValueError(f"Multiple metadata headers found: {header_subjects}")
 
-        # subject_node = subjects[0]
         header_subject = header_subjects[0]
 
         final_subject, repaired_triples, reachable = cls._collect_header_triples(graph, header_subject)
         return cls(final_subject, repaired_triples, metadata_objects, reachable)
     
-        # if not isinstance(subject_node, URIRef): 
-        #     raise ValueError(f"Metadata header subject is not a URIRef: {subject_node}")
-
-        # triples = list(graph.triples((subject_node, None, None)))
-
-        # return cls(subject_node, triples, metadata_objects)
-
 
     @classmethod
     def _collect_header_triples(cls, graph: Graph, header_subject: Node) -> Tuple[URIRef, List[Tuple[Node, Node, Node]], Set[Node]]:
@@ -129,8 +118,9 @@ class CIMMetadataHeader:
         return final_subject, repaired, reachable
 
     @classmethod
-    def empty(cls, subject: Optional[URIRef] = None, metadata_objects=None):
-        return cls(subject=subject, triples=[], metadata_objects=metadata_objects)
+    def empty(cls, subject: Optional[URIRef] = None, metadata_objects: Iterable[URIRef]|None = None, profile: str|None = None):
+        return cls(subject=subject, triples=[], metadata_objects=metadata_objects, profile=profile)
+
 
     @staticmethod
     def _repair_blank_header_subject(graph: Graph, blank: Node) -> URIRef:
@@ -161,6 +151,14 @@ class CIMMetadataHeader:
             if p == RDF.type and o in self.metadata_objects:
                 return o
         raise ValueError("No metadata-object rdf:type found in header")
+
+
+    def collect_profile(self) -> str|None:
+        profile_predicates = [MD["Model.profile"], DCTERMS.conformsTo]
+        for _, p, o in self.triples:
+            if p in profile_predicates:
+                if isinstance(o, Literal):
+                    return o.value
 
 
     def set_subject(self, new_subject: URIRef):
@@ -206,9 +204,7 @@ class CIMMetadataHeader:
     def to_triples(self) -> List[Tuple[Node, Node, Node]]:
         """Return all metadata triples."""
         return list(self.triples)
-
-
-
+                
 
 
 if __name__ == "__main__":
