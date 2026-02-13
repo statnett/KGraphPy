@@ -4,7 +4,7 @@ from cim_plugin.rdf_id_selection import find_rdf_id_or_about
 
 # Unit tests find_rdf_id_or_about
 @pytest.mark.parametrize(
-    "profile, predicate, expected",
+    "profile, object_type, expected",
     [
         pytest.param("Different_profile", "cim:wrong_pred", "about", id="Neither match"),
         pytest.param("http://iec.ch/TC57/ns/CIM/Operation-EU/3.0", "cim:wrong_pred", "ID", id="Profile match"),
@@ -13,16 +13,16 @@ from cim_plugin.rdf_id_selection import find_rdf_id_or_about
         pytest.param(None, "cim:wrong_pred", "about", id="Profile None"),
     ]
 )
-def test_rdf_id_or_about_various(profile: str, predicate: str|URIRef, expected: str) -> None:
-    result = find_rdf_id_or_about(profile, predicate)
+def test_rdf_id_or_about_various(profile: str, object_type: str|URIRef, expected: str) -> None:
+    result = find_rdf_id_or_about(profile, object_type)
     assert result == expected
 
-def test_rdf_id_or_about_predicatenone() -> None:
+def test_rdf_id_or_about_objectnone() -> None:
     profile = "http://iec.ch/TC57/ns/CIM/Operation-EU/3.0"
-    predicate = None
+    object_type = None
     with pytest.raises(TypeError):
         # Pylance silenced to test wrong input type
-        find_rdf_id_or_about(profile, predicate)    # type: ignore
+        find_rdf_id_or_about(profile, object_type)    # type: ignore
 
 if __name__ == "__main__":
     pytest.main()

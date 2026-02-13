@@ -409,7 +409,7 @@ def test_collect_cimxml_to_dataset_nondata(mock_loader: MagicMock, caplog: pytes
     assert g1_named.metadata_header.triples == []
     assert ds.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
     assert g1_named.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
-    assert "Metadata header cannot be extracted. Graph given random id" in caplog.text
+    assert "Random id generated for graph" in caplog.text
 
 
 @patch("cim_plugin.utilities.load_cimxml_graph")

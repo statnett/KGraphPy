@@ -7,6 +7,7 @@ from rdflib import Graph, URIRef, Namespace
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
 from cim_plugin.cimxml_parser import CIMXMLParser
+from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
 import uuid
 import textwrap
@@ -165,6 +166,7 @@ def capture_writer() -> tuple[list, Callable]:
 def serializer(capture_writer: tuple[list, Callable]) -> tuple[CIMXMLSerializer, list]:
     output, writer = capture_writer
     g = Graph()
+    g.metadata_header = CIMMetadataHeader.empty() # pyright: ignore[reportAttributeAccessIssue]
     ser = CIMXMLSerializer(g)
     ser.write = writer
     ser.qualifier_resolver = Mock()

@@ -102,12 +102,7 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
             logger.error(e)
             continue
 
-        try:
-            header = CIMMetadataHeader.from_graph(graph)
-        except ValueError as e:
-            header = CIMMetadataHeader.empty()
-            logger.error(f"{e}: Metadata header cannot be extracted. Graph given random id {str(header.subject)}.")
-            
+        header = create_header_attribute(graph)            
         named = ds.graph(URIRef(header.subject))
 
         for prefix, uri in graph.namespace_manager.namespaces():
@@ -122,6 +117,17 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
         named.metadata_header = header
         
     return ds
+
+
+def create_header_attribute(graph: Graph) -> CIMMetadataHeader:
+    try:
+        header = CIMMetadataHeader.from_graph(graph)
+    except ValueError as e:
+        header = CIMMetadataHeader.empty()
+        logger.error(f"{e}: Random id generated for graph: {str(header.subject)}")
+
+    return header
+
 
 def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> list[Node]: 
     """Extract subjects with predicate rdf:type and matching specified objects.

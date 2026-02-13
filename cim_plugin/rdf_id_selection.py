@@ -18,17 +18,17 @@ def expand(uri: str) -> str:
     return prefixes.get(prefix, prefix + ":") + local
 
 
-def find_rdf_id_or_about(profile: str, predicate: str|URIRef) -> str:
+def find_rdf_id_or_about(profile: str, obj_type: str|URIRef) -> str:
     if profile not in profiles:
         return "about"
 
-    if isinstance(predicate, URIRef):
-        predicate = str(predicate)
+    if isinstance(obj_type, URIRef):
+        obj_type = str(obj_type)
 
-    expanded_predicate = expand(predicate)
+    expanded_object = expand(obj_type)
     expanded_exceptions = [expand(x) for x in profiles[profile]]
     
-    if expanded_predicate in expanded_exceptions:
+    if expanded_object in expanded_exceptions:
         return "about"
 
     return "ID"

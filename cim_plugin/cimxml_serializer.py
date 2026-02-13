@@ -7,10 +7,12 @@ from xml.sax.saxutils import quoteattr, escape
 import logging
 # from cim_plugin import header
 from typing import IO, Any, Generator, Tuple, Dict, Optional
-from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn
+from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
 from cim_plugin.namespaces import MD
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver
 from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.graph import CIMGraph
+from cim_plugin.rdf_id_selection import find_rdf_id_or_about
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -36,21 +38,66 @@ class CIMXMLSerializer(Serializer):
         if qualifier_cls is None:
             raise ValueError(f"Unknown qualifier: {qualifier_name}")
         self.qualifier_resolver = CIMQualifierResolver(qualifier_cls())
+        
+    # def __bindings(self) -> Generator[Tuple[str, URIRef], None, None]:
+    #     store = self.store
+    #     nm = store.namespace_manager
+    #     bindings: Dict[str, URIRef] = {}
 
-    def __bindings(self) -> Generator[Tuple[str, URIRef], None, None]:
-        store = self.store
-        nm = store.namespace_manager
-        bindings: Dict[str, URIRef] = {}
+    #     for predicate in set(store.predicates()):
+    #         prefix, namespace, name = nm.compute_qname_strict(str(predicate))
+    #         bindings[prefix] = URIRef(namespace)
 
-        for predicate in set(store.predicates()):
-            prefix, namespace, name = nm.compute_qname_strict(str(predicate))
-            bindings[prefix] = URIRef(namespace)
+    #     for prefix, namespace in bindings.items():
+    #         yield prefix, namespace
 
-        for prefix, namespace in bindings.items():
-            yield prefix, namespace
+    def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
+        nm = self.store.namespace_manager
+        namespaces: dict[str, URIRef] = {}
+
+        def add_uri(uri: URIRef|Node):
+            # Skip URNs explicitly (optional but safe)
+            if str(uri).startswith("urn:"):
+                return
+            try:
+                prefix, ns, _ = nm.compute_qname_strict(str(uri))
+                namespaces[prefix] = URIRef(ns)
+            except ValueError:
+                pass
+
+        # --- 1. Header namespaces ---
+        header = getattr(self.store, "metadata_header", None)
+        if header is not None:
+            add_uri(header.subject)
+            add_uri(header.main_type)
+            for _, p, o in header.triples:
+                add_uri(p)
+                if isinstance(o, URIRef):
+                    add_uri(o)
+
+        # --- 2. Data namespaces ---
+        for s, p, o in self.store:
+            if isinstance(s, URIRef):
+                add_uri(s)
+            add_uri(p)
+            if isinstance(o, URIRef):
+                add_uri(o)
+
+        # Convert to sorted list
+        return sorted(namespaces.items())
+
+    def _ensure_header(self) -> CIMMetadataHeader:
+        header = getattr(self.store, "metadata_header", None)
+        if header is None:
+            header = create_header_attribute(self.store)
+            setattr(self.store, "metadata_header", header)
+        return header
+
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
         self.__stream = stream
+        header = self._ensure_header()
+        
         qualifier_name = kwargs.pop("qualifier", None)
         self._init_qualifier_resolver(qualifier_name)
         encoding = encoding or self.encoding
@@ -62,9 +109,8 @@ class CIMXMLSerializer(Serializer):
         # Namespaces not used will not be written
         write("<rdf:RDF\n")
 
-        bindings = list(self.__bindings())
-        bindings.sort()
-
+        bindings = self._collect_used_namespaces()
+        
         for prefix, namespace in bindings:
             if prefix:
                 write('    xmlns:%s="%s"\n' % (prefix, namespace))
@@ -72,19 +118,11 @@ class CIMXMLSerializer(Serializer):
                 write('    xmlns="%s"\n' % namespace)
         write("    >\n")
 
-        header = getattr(self.store, "metadata_header", None)
-
-        if header is not None:
-            self.write_header(header, depth=1)
-            meta_subject = [header.subject]
-        else:
-            logger.error("No metadata header configured. Header triples will be serialized as regular data.")
-            meta_subject = []
-
+        self.write_header(header, depth=1)
         write("\n")
 
         # Sort by class and write triples by subject
-        groups = group_subjects_by_type(self.store, skip_subjects=meta_subject)
+        groups = group_subjects_by_type(self.store, skip_subjects=[header.subject])
         sorted_types = sorted(groups.keys())
 
         for t in sorted_types:
@@ -145,11 +183,11 @@ class CIMXMLSerializer(Serializer):
         nm = self.store.namespace_manager
         write = self.write
         indent = "  " * depth
-        rdf_keyword = "about"
+        header = self.store.metadata_header # pyright: ignore[reportAttributeAccessIssue]
         
         # Dealing with malformed subjects
         if not isinstance(subject, URIRef):
-            if isinstance(subject, BNode) and subject in self.store.metadata_header.reachable_nodes:    # pyright: ignore[reportAttributeAccessIssue]
+            if isinstance(subject, BNode) and subject in header.reachable_nodes:
                 # Header blank nodes are dealt with by the header object
                 return
             else:
@@ -171,7 +209,10 @@ class CIMXMLSerializer(Serializer):
         uri = quoteattr(self.qualifier_resolver.convert_about(subject))
         subject_type_qname = nm.normalizeUri(str(subject_type))
 
-        # Write the triple subject with rdf:type
+        # Find whether it should be ID or about
+        rdf_keyword = find_rdf_id_or_about(header.profile, str(subject_type))
+
+        # Write the triple subject with rdf:ID or rdf:about
         write(f"{indent}<{subject_type_qname} rdf:{rdf_keyword}={uri}>\n")
 
         # Sort and write predicates and objects
@@ -218,10 +259,21 @@ class CIMXMLSerializer(Serializer):
 
         else:
             logger.error("Invalid object detected.")
-            write(f"{indent}<{qname}>INVALID OBJECT</{qname}>\n")
+            write(f"{indent}<{qname}>MALFORMED_{obj}</{qname}>\n")
 
 
     def _write_malformed_subject(self, subject: Node, message: str, depth: int) -> None:
+        """Write triples with a malformed subject.
+
+        - Marks subject as MALFORMED
+        - Writes all predicates and object to the subject
+        - Logs an error
+
+        Parameters:
+            subject (Node): The malformed subject.
+            message (str): The message to write in the triple and send to log.
+            depth (int): Size of indentation.
+        """
         write = self.write
         indent = "  " * depth
 

@@ -11,6 +11,7 @@ from rdflib.namespace import XSD, RDF
 from xml.sax.saxutils import escape
 from cim_plugin.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
 from cim_plugin.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, uuid_namespace
+from cim_plugin.header import CIMMetadataHeader
 from tests.fixtures import capture_writer, serializer
 
 
@@ -64,6 +65,29 @@ def test_subject_valid(serializer: tuple[CIMXMLSerializer, list]) -> None:
     result = "".join(output)
 
     assert '<ex:Class rdf:about="s123"' in result
+    assert "<ex:p>value</ex:p>" in result
+    assert "</ex:Class>" in result
+
+
+def test_subject_rdfid(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+    g.metadata_header.profile = "http://cim-profile.ucaiug.io/grid/Dynamics/2.0"    # pyright: ignore[reportAttributeAccessIssue]
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert '<ex:Class rdf:ID="s123"' in result
     assert "<ex:p>value</ex:p>" in result
     assert "</ex:Class>" in result
 
@@ -135,9 +159,9 @@ def test_subject_malformedobject(serializer: tuple[CIMXMLSerializer, list]) -> N
     ser.subject(s)
 
     result = "".join(output)
-
+    print(result)
     assert '<ex:Class rdf:about="s123"' in result
-    assert "<ex:p>INVALID OBJECT</ex:p>" in result
+    assert "<ex:p>MALFORMED_value</ex:p>" in result
     assert "</ex:Class>" in result
 
 def test_subject_predicatesorting(serializer: tuple[CIMXMLSerializer, list]) -> None:
@@ -208,7 +232,7 @@ def test_subject_rdftypewoprefix(serializer: tuple[CIMXMLSerializer, list]) -> N
     assert result == '  <<http://unknown.com/Class> rdf:about="s123">\n    <ex:p>value</ex:p>\n  </<http://unknown.com/Class>>\n'
 
 
-def test_subject_rdftypnoturi(serializer: tuple[CIMXMLSerializer, list]) -> None:
+def test_subject_rdftypenoturi(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
 
@@ -431,7 +455,6 @@ def test_predicate_noqualifier(capture_writer: tuple[list, Callable]) -> None:
     ser.predicate(pred, obj, depth=1, use_qualifier=False)
     result = "".join(output)
 
-    esc_return = escape("http://example.com/o", ESCAPE_ENTITIES)
     assert f'<ex:p rdf:resource="http://example.com/o"/>' in result
     ser.qualifier_resolver.convert_resource.assert_not_called()
 
@@ -522,8 +545,7 @@ def test_predicate_noobject(capture_writer: tuple[list, Callable], caplog: pytes
     # Pylance silenced to test invalid input
     ser.predicate(pred, obj)    # type: ignore
     result = "".join(output)
-
-    assert "INVALID OBJECT" in result
+    assert "MALFORMED_None" in result
     assert "Invalid object detected." in caplog.text
 
 # Integration tests .predicate and .subject
@@ -588,6 +610,7 @@ def test_subject_resolver_integration(capture_writer: tuple[list, Callable], inp
     output, writer = capture_writer
 
     g = Graph()
+    g.metadata_header = CIMMetadataHeader.empty()   # pyright: ignore[reportAttributeAccessIssue]
     g.bind("ex", "http://example.com/")
 
     s = URIRef(input_uri)
@@ -634,6 +657,7 @@ def test_subject_and_predicate_resolver_integration(
     output, writer = capture_writer
 
     g = Graph()
+    g.metadata_header = CIMMetadataHeader.empty()   # pyright: ignore[reportAttributeAccessIssue]
     g.bind("ex", "http://example.com/")
 
     s = URIRef(subject_uri)
@@ -654,6 +678,88 @@ def test_subject_and_predicate_resolver_integration(
 
     assert f'rdf:about="{expected_about}"' in result
     assert f'rdf:resource="{expected_resource}"' in result
+
+# Unit tests ._write_malformed_subject
+def test_write_malformed_subject_success(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    sub = URIRef("s1")
+    pred = URIRef("http://example.com/p")
+    obj = Literal(True)
+    g.add((sub, pred, obj))
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+
+    ser._write_malformed_subject(sub, "error", depth=1)
+
+    result = "".join(output)
+    print(result)
+    assert result == '  <MALFORMED rdf:about="s1">\n    <message>error</message>\n    <ex:p>true</ex:p>\n  </MALFORMED>\n'
+    assert "error" in caplog.text
+
+
+def test_write_malformed_subject_predicatecalls(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    sub = URIRef("s1")
+    pred = URIRef("http://example.com/p")
+    obj = Literal(True)
+    g.add((sub, pred, obj))
+    g.add((sub, URIRef("http://example.com/p2"), Literal("1")))
+    ser = CIMXMLSerializer(g)
+    ser.predicate = Mock()
+    ser.write = writer
+
+    ser._write_malformed_subject(sub, "oops", depth=1)
+
+    assert ser.predicate.call_count == 2
+    error_logs = [rec for rec in caplog.records if rec.levelname == "ERROR"] 
+    assert len(error_logs) == 1
+    assert error_logs[0].message == "oops"
+
+
+def test_write_malformed_subject_nopredicates(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    sub = URIRef("s1")
+    ser = CIMXMLSerializer(g)
+    ser.predicate = Mock()
+    ser.write = writer
+
+    ser._write_malformed_subject(sub, "error", depth=1)
+    result = "".join(output)
+
+    assert ser.predicate.call_count == 0
+    assert result == '  <MALFORMED rdf:about="s1">\n    <message>error</message>\n  </MALFORMED>\n'
+    assert "error" in caplog.text
+
+@pytest.mark.parametrize(
+        "depth, expected",
+        [
+            pytest.param(1, '  <MALFORMED rdf:about="s1">\n    <message>error</message>\n  </MALFORMED>\n', id="depth 1"),
+            pytest.param(0, '<MALFORMED rdf:about="s1">\n  <message>error</message>\n</MALFORMED>\n', id="depth 0"),
+            pytest.param(3, '      <MALFORMED rdf:about="s1">\n        <message>error</message>\n      </MALFORMED>\n', id="depth 3")
+        ]
+)
+def test_write_malformed_subject_indents(depth: int, expected: str, capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    sub = URIRef("s1")
+    ser = CIMXMLSerializer(g)
+    ser.predicate = Mock()
+    ser.write = writer
+
+    ser._write_malformed_subject(sub, "error", depth=depth)
+    result = "".join(output)
+
+    assert ser.predicate.call_count == 0
+    assert result == expected
+    assert "error" in caplog.text
+
 
 # Unit tests _subject_sort_key
 
