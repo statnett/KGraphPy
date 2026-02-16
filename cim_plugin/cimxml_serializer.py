@@ -38,7 +38,14 @@ class CIMXMLSerializer(Serializer):
         if qualifier_cls is None:
             raise ValueError(f"Unknown qualifier: {qualifier_name}")
         self.qualifier_resolver = CIMQualifierResolver(qualifier_cls())
-        
+
+    def _ensure_header(self) -> CIMMetadataHeader:
+        header = getattr(self.store, "metadata_header", None)
+        if header is None:
+            header = create_header_attribute(self.store)
+            setattr(self.store, "metadata_header", header)
+        return header
+
     def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
         nm = self.store.namespace_manager
         namespaces: dict[str, URIRef] = {}
@@ -73,14 +80,6 @@ class CIMXMLSerializer(Serializer):
 
         # Convert to sorted list
         return sorted(namespaces.items())
-
-    def _ensure_header(self) -> CIMMetadataHeader:
-        header = getattr(self.store, "metadata_header", None)
-        if header is None:
-            header = create_header_attribute(self.store)
-            setattr(self.store, "metadata_header", header)
-        return header
-
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
         self.__stream = stream

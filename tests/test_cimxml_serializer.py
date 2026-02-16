@@ -1,4 +1,4 @@
-from typing import Callable, Type
+from typing import Callable, Type, cast
 import pytest
 from unittest.mock import MagicMock, call, patch, Mock
 import uuid
@@ -45,6 +45,57 @@ def test_init_qualifier_resolver_wronginput() -> None:
         ser._init_qualifier_resolver("wrong")
 
     assert str(exc.value) == "Unknown qualifier: wrong"
+
+
+# Unit tests ._ensure_header
+def test_ensure_header_headerexists() -> None:
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("s1"))
+    ser = CIMXMLSerializer(g)
+
+    header = ser._ensure_header()
+    assert header.subject == g.metadata_header.subject
+    store_header = cast(CIMGraph, ser.store).metadata_header
+    assert store_header is not None
+    assert store_header.subject == URIRef("s1")
+    assert header is g.metadata_header
+
+
+def test_ensure_header_noheader(caplog: pytest.LogCaptureFixture) -> None:
+    g = CIMGraph()
+    ser = CIMXMLSerializer(g)
+    assert getattr(ser.store, "metadata_header", None) == None
+    
+    header = ser._ensure_header()
+    store_header = cast(CIMGraph, ser.store).metadata_header
+    assert store_header is not None
+    assert store_header is header
+    assert store_header.subject == header.subject
+    assert "Random id generated for graph" in caplog.text
+
+@patch("cim_plugin.cimxml_serializer.create_header_attribute")
+def test_ensure_header_createcalled(mock_create: MagicMock) -> None:
+    g = CIMGraph()
+    ser = CIMXMLSerializer(g)
+    mock_create.return_value = CIMMetadataHeader.empty(URIRef("s1"))
+    header = ser._ensure_header()
+
+    mock_create.assert_called_once()
+    store_header = cast(CIMGraph, ser.store).metadata_header
+    assert store_header is header
+
+
+@patch("cim_plugin.cimxml_serializer.create_header_attribute")
+def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("s1"))
+    ser = CIMXMLSerializer(g)
+    header = ser._ensure_header()
+
+    mock_create.assert_not_called()
+    store_header = cast(CIMGraph, ser.store).metadata_header
+    assert store_header is header
+
 
 # Unit tests .write_header
 def test_write_header_basic(capture_writer: tuple[list, Callable]) -> None:
