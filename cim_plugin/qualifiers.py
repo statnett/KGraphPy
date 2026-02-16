@@ -17,11 +17,11 @@ class CIMQualifierStrategy(ABC):
         pass
 
     @abstractmethod
-    def build_about(self, uuid: str) -> str:
+    def build_special(self, uuid: str) -> str:
         pass
 
     @abstractmethod
-    def build_resource(self, uuid: str) -> str:
+    def build_default(self, uuid: str) -> str:
         pass
 
 
@@ -33,10 +33,10 @@ class UnderscoreQualifier(CIMQualifierStrategy):
     def extract_uuid(self, uri: str) -> str:
         return uri.lstrip("#_")
 
-    def build_about(self, uuid: str) -> str:
+    def build_special(self, uuid: str) -> str:
         return f"_{uuid}"
 
-    def build_resource(self, uuid: str) -> str:
+    def build_default(self, uuid: str) -> str:
         return f"#_{uuid}"
 
 
@@ -48,10 +48,10 @@ class URNQualifier(CIMQualifierStrategy):
     def extract_uuid(self, uri: str) -> str:
         return uri.split("urn:uuid:")[1]
 
-    def build_about(self, uuid: str) -> str:
+    def build_special(self, uuid: str) -> str:
         return f"urn:uuid:{uuid}"
 
-    def build_resource(self, uuid: str) -> str:
+    def build_default(self, uuid: str) -> str:
         return f"urn:uuid:{uuid}"
 
 
@@ -64,10 +64,10 @@ class NamespaceQualifier(CIMQualifierStrategy):
         prefix = f"{uuid_namespace}:"
         return uri[len(prefix):]
 
-    def build_about(self, uuid: str) -> str:
+    def build_special(self, uuid: str) -> str:
         return f"{uuid_namespace}:{uuid}"
 
-    def build_resource(self, uuid: str) -> str:
+    def build_default(self, uuid: str) -> str:
         return f"{uuid_namespace}:{uuid}"
 
 
@@ -83,22 +83,22 @@ class CIMQualifierResolver:
     def __init__(self, output_strategy: CIMQualifierStrategy):
         self.output = output_strategy
 
-    def convert_about(self, uri: URIRef) -> str:
+    def convert_to_special_qualifier(self, uri: URIRef) -> str:
         uri_str = str(uri)
         for s in self.strategies:
             if s.matches(uri_str):
                 uuid = s.extract_uuid(uri_str)
-                return self.output.build_about(uuid)
+                return self.output.build_special(uuid)
         # fallback: treat as literal UUID
-        return self.output.build_about(uri_str)
+        return self.output.build_special(uri_str)
 
-    def convert_resource(self, uri: URIRef) -> str:
+    def convert_to_default_qualifier(self, uri: URIRef) -> str:
         uri_str = str(uri)
         for s in self.strategies:
             if s.matches(uri_str):
                 uuid = s.extract_uuid(uri_str)
-                return self.output.build_resource(uuid)
-        return self.output.build_resource(uri_str)
+                return self.output.build_default(uuid)
+        return self.output.build_default(uri_str)
 
 
 if __name__ == "__main__":

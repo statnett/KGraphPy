@@ -1,21 +1,156 @@
 from typing import Callable
-from unittest import result
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, call, patch, Mock
 import uuid
 import logging
 
 from rdflib import URIRef, Graph, Literal, Node, BNode
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
-from rdflib.namespace import XSD, RDF
+from rdflib.namespace import XSD, RDF, DCAT
 from xml.sax.saxutils import escape
 from cim_plugin.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
 from cim_plugin.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, uuid_namespace
 from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.graph import CIMGraph
+from cim_plugin.namespaces import MD
 from tests.fixtures import capture_writer, serializer
 
 
 logger = logging.getLogger("cimxml_logger")
+
+# Unit tests .write_header
+def test_write_header_basic(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(URIRef("http://example.com/p"), Literal("o"))
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser.write_header(header)
+
+    result = "".join(output)
+
+    assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1">\n    <ex:p>o</ex:p>\n  </dcat:Dataset>\n'
+    assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
+
+
+def test_write_header_emptybody(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+    ser.predicate = Mock()
+
+    ser.write_header(header)
+
+    result = "".join(output)
+
+    assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1"/>\n'
+    assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
+    ser.predicate.assert_not_called()
+
+
+def test_write_header_predicatesorting(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(URIRef("http://example.com/p"), Literal("o"))
+    header.add_triple(URIRef("http://example.com/a"), URIRef("o"))
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser.write_header(header)
+
+    result = "".join(output)
+    print(result)
+    assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1">\n    <ex:a rdf:resource="o"/>\n    <ex:p>o</ex:p>\n  </dcat:Dataset>\n'
+    assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
+
+
+def test_write_header_rdftypehandling(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    header.add_triple(RDF.type, DCAT.Dataset)   # The first rdf.type in metadata_object is set as main_type
+    header.add_triple(RDF.type, MD.FullModel)   # The next rdf.type is treated as any other triple
+    header.add_triple(RDF.type, URIRef("o"))
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser.write_header(header)
+
+    result = "".join(output)
+    print(result)
+    assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1">\n    <rdf:type rdf:resource="http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel"/>\n    <rdf:type rdf:resource="o"/>\n  </dcat:Dataset>\n'
+    assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
+
+
+def test_write_header_predicatecalls(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    g.bind("MODEL", "https://model4powersystem.no/")
+    header = CIMMetadataHeader.empty(subject=URIRef("s1")) 
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(URIRef("http://example.com/p"), Literal("o"))
+    header.add_triple(URIRef("http://example.com/a"), URIRef("o"))
+    header.add_triple(URIRef("http://example.com/f"), URIRef("urn:uuid:o"))
+    header.add_triple(URIRef("http://example.com/s"), URIRef("https://model4powersystem.no/:o"))
+    header.add_triple(URIRef("http://example.com/b"), URIRef("#_o"))
+
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(NamespaceQualifier())
+    ser.predicate = Mock()
+
+    ser.write_header(header)
+    calls = [
+        call(URIRef("http://example.com/a"), URIRef("o"), 2, use_qualifier=False), 
+        call(URIRef("http://example.com/b"), URIRef("#_o"), 2, use_qualifier=True),
+        call(URIRef("http://example.com/f"), URIRef("urn:uuid:o"), 2, use_qualifier=True),
+        call(URIRef("http://example.com/p"), Literal("o"), 2, use_qualifier=False),
+        call(URIRef("http://example.com/s"), URIRef("https://model4powersystem.no/:o"), 2, use_qualifier=True),
+    ]
+    assert ser.predicate.call_count == 5
+    ser.predicate.assert_has_calls(calls)
+    assert type(ser.qualifier_resolver.output) == NamespaceQualifier
+
+
+def test_write_header_resolverrestored(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(URIRef("http://example.com/p"), Literal("o"))
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(NamespaceQualifier())
+    ser.predicate = Mock(side_effect=ValueError)
+
+    with pytest.raises(ValueError):
+        ser.write_header(header)
+
+    assert type(ser.qualifier_resolver.output) == NamespaceQualifier
 
 
 # Unit tests .subject
@@ -125,7 +260,7 @@ def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) ->
     assert output == []
 
 
-def test_subject_with_malformedpredicate(serializer: tuple[CIMXMLSerializer, list]) -> None:
+def test_subject_malformedpredicate(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
 
@@ -212,7 +347,7 @@ def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list]) -> Non
     assert "<ex:p>x</ex:p>" in result
 
 
-def test_subject_rdftypewoprefix(serializer: tuple[CIMXMLSerializer, list]) -> None:
+def test_subject_rdftypewithoutprefix(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
 
@@ -239,7 +374,7 @@ def test_subject_rdftypenoturi(serializer: tuple[CIMXMLSerializer, list]) -> Non
     g.bind("ex", "http://example.com/")
 
     s = URIRef("s123")
-    t = Literal("Class")   # Not a uri
+    t = Literal("Not-a-uri")   # Not a uri
     p = URIRef("http://example.com/p")
 
     g.add((s, RDF.type, t))
@@ -248,8 +383,8 @@ def test_subject_rdftypenoturi(serializer: tuple[CIMXMLSerializer, list]) -> Non
     ser.subject(s)
 
     result = "".join(output)
-    # .qname_strict adds <> around the type.
-    assert result == '  <<Class> rdf:about="s123">\n    <ex:p>value</ex:p>\n  </<Class>>\n'
+    print(result)
+    assert result == '  <MALFORMED rdf:about="s123">\n    <message>The rdf:type object is not a uri: Not-a-uri</message>\n    <rdf:type>Not-a-uri</rdf:type>\n    <ex:p>value</ex:p>\n  </MALFORMED>\n'
 
 
 def test_subject_rdftypemalformed(serializer: tuple[CIMXMLSerializer, list]) -> None:
@@ -428,7 +563,7 @@ def test_predicate_uriref(object_value: str, return_value: str, capture_writer: 
 
     ser = CIMXMLSerializer(g)
     ser.qualifier_resolver = Mock()
-    ser.qualifier_resolver.convert_resource.return_value = return_value
+    ser.qualifier_resolver.convert_to_default_qualifier.return_value = return_value
 
     ser.write = writer
 
@@ -437,7 +572,7 @@ def test_predicate_uriref(object_value: str, return_value: str, capture_writer: 
 
     esc_return = escape(return_value, ESCAPE_ENTITIES)
     assert f'<ex:p rdf:resource="{esc_return}"/>' in result
-    ser.qualifier_resolver.convert_resource.assert_called_once_with(obj)
+    ser.qualifier_resolver.convert_to_default_qualifier.assert_called_once_with(obj)
 
 
 def test_predicate_noqualifier(capture_writer: tuple[list, Callable]) -> None:
@@ -456,7 +591,7 @@ def test_predicate_noqualifier(capture_writer: tuple[list, Callable]) -> None:
     result = "".join(output)
 
     assert f'<ex:p rdf:resource="http://example.com/o"/>' in result
-    ser.qualifier_resolver.convert_resource.assert_not_called()
+    ser.qualifier_resolver.convert_to_default_qualifier.assert_not_called()
 
 
 def test_predicate_qnameerror(capture_writer: tuple[list, Callable]) -> None:
@@ -592,10 +727,10 @@ def test_predicate_resolver_integration(capture_writer: tuple[list, Callable], i
 @pytest.mark.parametrize(
     "input_uri,output_strategy,expected_about",
     [
-        pytest.param("_1234", UnderscoreQualifier(), "_1234", id="Underscore input, underscore output"),
-        pytest.param("urn:uuid:abcd", UnderscoreQualifier(), "_abcd", id="Urn input, underscore output"),
-        pytest.param(f"{uuid_namespace}:xyz", UnderscoreQualifier(), "_xyz", id="Namespace input, underscore output"),
-        pytest.param("weird", UnderscoreQualifier(), "_weird", id="Fallback, underscore output"),
+        pytest.param("_1234", UnderscoreQualifier(), "#_1234", id="Underscore input, underscore output"),
+        pytest.param("urn:uuid:abcd", UnderscoreQualifier(), "#_abcd", id="Urn input, underscore output"),
+        pytest.param(f"{uuid_namespace}:xyz", UnderscoreQualifier(), "#_xyz", id="Namespace input, underscore output"),
+        pytest.param("weird", UnderscoreQualifier(), "#_weird", id="Fallback, underscore output"),
         pytest.param("_1234", URNQualifier(), "urn:uuid:1234", id="Underscore input, urn output"),
         pytest.param("urn:uuid:abcd", URNQualifier(), "urn:uuid:abcd", id="Urn input, urn output"),
         pytest.param(f"{uuid_namespace}:xyz", URNQualifier(), "urn:uuid:xyz", id="Namespace input, urn output"),
@@ -632,10 +767,10 @@ def test_subject_resolver_integration(capture_writer: tuple[list, Callable], inp
 @pytest.mark.parametrize(
     "subject_uri,object_uri,output_strategy,expected_about,expected_resource",
     [
-        pytest.param("_s", "_o", UnderscoreQualifier(), "_s", "#_o", id="Underscore input, underscore output"),
-        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", UnderscoreQualifier(), "_abcd", "#_efgh", id="Urn input, underscore output"),
-        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", UnderscoreQualifier(), "_x", "#_y", id="Namespace input, underscore output"),
-        pytest.param("weird", "strange", UnderscoreQualifier(), "_weird", "#_strange", id="Fallback, underscore output"),
+        pytest.param("_s", "_o", UnderscoreQualifier(), "#_s", "#_o", id="Underscore input, underscore output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", UnderscoreQualifier(), "#_abcd", "#_efgh", id="Urn input, underscore output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", UnderscoreQualifier(), "#_x", "#_y", id="Namespace input, underscore output"),
+        pytest.param("weird", "strange", UnderscoreQualifier(), "#_weird", "#_strange", id="Fallback, underscore output"),
         pytest.param("_s", "_o", URNQualifier(), "urn:uuid:s", "urn:uuid:o", id="Underscore input, urn output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", URNQualifier(), "urn:uuid:abcd", "urn:uuid:efgh", id="Urn input, urn output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", URNQualifier(), "urn:uuid:x", "urn:uuid:y", id="Namespace input, urn output"),
@@ -646,7 +781,7 @@ def test_subject_resolver_integration(capture_writer: tuple[list, Callable], inp
         pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", f"{uuid_namespace}:strange", id="Fallback, namespace output"),
     ]
 )
-def test_subject_and_predicate_resolver_integration(
+def test_subject_and_predicate_resolver_integration_with_default_qualifier(
     capture_writer: tuple[list, Callable],
     subject_uri: str,
     object_uri: str,
@@ -677,6 +812,58 @@ def test_subject_and_predicate_resolver_integration(
     result = "".join(output)
 
     assert f'rdf:about="{expected_about}"' in result
+    assert f'rdf:resource="{expected_resource}"' in result
+
+
+@pytest.mark.parametrize(
+    "subject_uri,object_uri,output_strategy,expected_about,expected_resource",
+    [
+        pytest.param("_s", "_o", UnderscoreQualifier(), "_s", "#_o", id="Underscore input, underscore output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", UnderscoreQualifier(), "_abcd", "#_efgh", id="Urn input, underscore output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", UnderscoreQualifier(), "_x", "#_y", id="Namespace input, underscore output"),
+        pytest.param("weird", "strange", UnderscoreQualifier(), "_weird", "#_strange", id="Fallback, underscore output"),
+        pytest.param("_s", "_o", URNQualifier(), "urn:uuid:s", "urn:uuid:o", id="Underscore input, urn output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", URNQualifier(), "urn:uuid:abcd", "urn:uuid:efgh", id="Urn input, urn output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", URNQualifier(), "urn:uuid:x", "urn:uuid:y", id="Namespace input, urn output"),
+        pytest.param("weird", "strange", URNQualifier(), "urn:uuid:weird", "urn:uuid:strange", id="Fallback, urn output"),
+        pytest.param("_s", "_o", NamespaceQualifier(), f"{uuid_namespace}:s", f"{uuid_namespace}:o", id="Underscore input, namespace output"),
+        pytest.param("urn:uuid:abcd", "urn:uuid:efgh", NamespaceQualifier(), f"{uuid_namespace}:abcd", f"{uuid_namespace}:efgh", id="Urn input, namespace output"),
+        pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", NamespaceQualifier(), f"{uuid_namespace}:x", f"{uuid_namespace}:y", id="Namespace input, namespace output"),
+        pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", f"{uuid_namespace}:strange", id="Fallback, namespace output"),
+    ]
+)
+def test_subject_and_predicate_resolver_integration_with_special_qualifier(
+    capture_writer: tuple[list, Callable],
+    subject_uri: str,
+    object_uri: str,
+    output_strategy: CIMQualifierStrategy,
+    expected_about: str,
+    expected_resource: str,
+):
+    output, writer = capture_writer
+
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty()
+    g.bind("ex", "http://example.com/")
+    g.metadata_header.profile = "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"
+
+    s = URIRef(subject_uri)
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+    o = URIRef(object_uri)
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, o))
+
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(output_strategy)
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert f'rdf:ID="{expected_about}"' in result
     assert f'rdf:resource="{expected_resource}"' in result
 
 # Unit tests ._write_malformed_subject

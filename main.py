@@ -61,9 +61,9 @@ def main():
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     # g = Graph()
     # g.parse(file, "xml")
-    # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_GL.xml"
+    file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = collect_cimxml_to_dataset([file], linkmlfile)
+    ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
 
     # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
     # t = Dataset()
@@ -71,11 +71,12 @@ def main():
     # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     # t_normalized = normalize_strings(tgraph)
     g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
+    g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
     for g in ds.graphs():
         print(g.identifier, type(g), getattr(g, "metadata_header", None))
 
-    if g1.metadata_header:
-        print(g1.metadata_header.triples)
+    # if g1.metadata_header:
+    #     print(g1.metadata_header.triples)
     # g2 = ds.graph(URIRef('urn:uuid:ade44b65-0bfa-41e0-95c5-2ccb345a6fed'))
     # gs = CIMXMLSerializer(g1)
     # print(g1.identifier)
@@ -90,11 +91,11 @@ def main():
     #         print(s, p, o)
 
     # g1 = tgraph
-    # output_file = Path.cwd().parent / "cimxml_test_underscore.xml"
-    # g1.serialize(destination=str(output_file), format="cimxml")
+    output_file = Path.cwd().parent / "cimxml_to_cimxml_eq.xml"
+    g1.serialize(destination=str(output_file), format="cimxml")
 
-    # output_file2 = Path.cwd().parent / "cimxml_test_urn.xml"
-    # g1.serialize(destination=str(output_file2), format="cimxml", qualifier="urn")
+    output_file2 = Path.cwd().parent / "cimxml_to_cimxml_ssh.xml"
+    g2.serialize(destination=str(output_file2), format="cimxml")
 
     # output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
     # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")

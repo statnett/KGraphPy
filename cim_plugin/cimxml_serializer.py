@@ -133,9 +133,13 @@ class CIMXMLSerializer(Serializer):
 
 
     def write_header(self, header: CIMMetadataHeader, depth: int = 1) -> None:
-        """
-        Write the CIM metadata header in CIMXML format.
-        Always uses URNQualifier for the header subject and resources.
+        """Write the CIM metadata header in CIMXML format.
+        
+        Always uses URNQualifier for the subject uuid and any object uuids.
+        
+        Parameters:
+            header (CIMMetadataHeader): The header with the triples to be written.
+            depth (int): The size of indentation.
         """
 
         write = self.write
@@ -150,18 +154,24 @@ class CIMXMLSerializer(Serializer):
         self.qualifier_resolver.output = URNQualifier()
 
         try:
-            uri = quoteattr(self.qualifier_resolver.convert_about(subject))
+            uri = quoteattr(self.qualifier_resolver.convert_to_special_qualifier(subject))
 
             subject_type_qname = nm.normalizeUri(str(subject_type))
-            write(f"{indent}<{subject_type_qname} rdf:about={uri}>\n")
 
             body_triples = [(p, o) for (_, p, o) in header.triples if not (p == RDF.type and o == subject_type)]
             body_triples.sort(key=lambda po: nm.normalizeUri(str(po[0])))
 
-            for p, o in body_triples:
-                self.predicate(p, o, depth + 1, use_qualifier=False)
+            write(f"{indent}<{subject_type_qname} rdf:about={uri}")
+            
+            if not body_triples:
+                write("/>\n")
+            else:
+                write(">\n")
+                for p, o in body_triples:
+                    use_qualifier = is_uuid_qualified(self.qualifier_resolver, o)
+                    self.predicate(p, o, depth + 1, use_qualifier=use_qualifier)
 
-            write(f"{indent}</{subject_type_qname}>\n")
+                write(f"{indent}</{subject_type_qname}>\n")
 
         finally:
             # --- Restore original qualifier strategy ---
@@ -204,15 +214,22 @@ class CIMXMLSerializer(Serializer):
             self._write_malformed_subject(subject, f"Multiple rdf:type values found for {subject}: {types}", depth ) 
             return
         
-        # Shape the subject name to right format
-        subject_type = types[0]
-        uri = quoteattr(self.qualifier_resolver.convert_about(subject))
-        subject_type_qname = nm.normalizeUri(str(subject_type))
+        subject_type = types[0] # In the triple this is the object, it specifies the rdf:type for the subject
+        if not isinstance(subject_type, URIRef):
+            self._write_malformed_subject(subject, f"The rdf:type object is not a uri: {subject_type}", depth)
+            return
 
-        # Find whether it should be ID or about
+        # Shape and write the subject line
         rdf_keyword = find_rdf_id_or_about(header.profile, str(subject_type))
 
-        # Write the triple subject with rdf:ID or rdf:about
+        if rdf_keyword == "ID":
+            raw_uri = self.qualifier_resolver.convert_to_special_qualifier(subject)
+        else:
+            raw_uri = self.qualifier_resolver.convert_to_default_qualifier(subject)
+
+        uri = quoteattr(raw_uri)
+        subject_type_qname = nm.normalizeUri(str(subject_type))
+
         write(f"{indent}<{subject_type_qname} rdf:{rdf_keyword}={uri}>\n")
 
         # Sort and write predicates and objects
@@ -251,7 +268,7 @@ class CIMXMLSerializer(Serializer):
 
         elif isinstance(obj, URIRef):
             if use_qualifier:
-                relativized_obj = quoteattr(self.qualifier_resolver.convert_resource(obj))
+                relativized_obj = quoteattr(self.qualifier_resolver.convert_to_default_qualifier(obj))
             else:
                 relativized_obj = quoteattr(str(obj))
 
@@ -308,6 +325,9 @@ def _subject_sort_key(uri: Node) -> tuple[int, str]:
     except ValueError:
         return (1, str(s))
 
+def is_uuid_qualified(resolver: CIMQualifierResolver, value) -> bool:
+    uri = str(value)
+    return any(strategy.matches(uri) for strategy in resolver.strategies)
 
 if __name__ == "__main__":
     print("Serializer class")

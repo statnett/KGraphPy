@@ -46,8 +46,8 @@ def test_qualifierstrategy_extract_uuid(strategy: CIMQualifierStrategy, uri: str
     ]
 )
 def test_qualifierstrategy_build(strategy: CIMQualifierStrategy, uuid: str, expected_about: str, expected_resource: str) -> None:
-    assert strategy.build_about(uuid) == expected_about
-    assert strategy.build_resource(uuid) == expected_resource
+    assert strategy.build_special(uuid) == expected_about
+    assert strategy.build_default(uuid) == expected_resource
 
 
 # Unit tests CIMQualifierResolver.convert_about
@@ -62,8 +62,8 @@ def test_qualifierstrategy_build(strategy: CIMQualifierStrategy, uuid: str, expe
 )
 def test_resolver_underscore_convert_about(input_uri: str, expected_uuid: str) -> None:
     resolver = CIMQualifierResolver(UnderscoreQualifier())
-    assert resolver.convert_about(URIRef(input_uri)) == f"_{expected_uuid}"
-    assert resolver.convert_resource(URIRef(input_uri)) == f"#_{expected_uuid}"
+    assert resolver.convert_to_special_qualifier(URIRef(input_uri)) == f"_{expected_uuid}"
+    assert resolver.convert_to_default_qualifier(URIRef(input_uri)) == f"#_{expected_uuid}"
 
 
 @pytest.mark.parametrize(
@@ -77,7 +77,7 @@ def test_resolver_underscore_convert_about(input_uri: str, expected_uuid: str) -
 )
 def test_resolver_urn_convert_about(input_uri: str, expected_uuid: str) -> None:
     resolver = CIMQualifierResolver(URNQualifier())
-    assert resolver.convert_about(URIRef(input_uri)) == f"urn:uuid:{expected_uuid}"
+    assert resolver.convert_to_special_qualifier(URIRef(input_uri)) == f"urn:uuid:{expected_uuid}"
 
 
 @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ def test_resolver_urn_convert_about(input_uri: str, expected_uuid: str) -> None:
 )
 def test_resolver_namespace_convert_about(input_uri: str, expected_uuid: str) -> None:
     resolver = CIMQualifierResolver(NamespaceQualifier())
-    assert resolver.convert_about(URIRef(input_uri)) == f"{uuid_namespace}:{expected_uuid}"
+    assert resolver.convert_to_special_qualifier(URIRef(input_uri)) == f"{uuid_namespace}:{expected_uuid}"
 
 
 

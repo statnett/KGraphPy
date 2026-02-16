@@ -170,8 +170,8 @@ def serializer(capture_writer: tuple[list, Callable]) -> tuple[CIMXMLSerializer,
     ser = CIMXMLSerializer(g)
     ser.write = writer
     ser.qualifier_resolver = Mock()
-    ser.qualifier_resolver.convert_about.side_effect = lambda x: str(x)
-    ser.qualifier_resolver.convert_resource.side_effect = lambda x: str(x)
+    ser.qualifier_resolver.convert_to_special_qualifier.side_effect = lambda x: str(x)
+    ser.qualifier_resolver.convert_to_default_qualifier.side_effect = lambda x: str(x)
     return ser, output
 
 if __name__ == "__main__":
