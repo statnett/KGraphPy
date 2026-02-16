@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Type
 import pytest
 from unittest.mock import MagicMock, call, patch, Mock
 import uuid
@@ -17,6 +17,34 @@ from tests.fixtures import capture_writer, serializer
 
 
 logger = logging.getLogger("cimxml_logger")
+
+# Unit tests ._init_qualifier_resolver
+@pytest.mark.parametrize(
+        "input, resolver",
+        [
+            pytest.param("urn", URNQualifier, id="Urn qualifier"),
+            pytest.param("underscore", UnderscoreQualifier, id="Underscore qualifier"),
+            pytest.param("namespace", NamespaceQualifier, id="Namespace qualifier"),
+            pytest.param("UNderSCore", UnderscoreQualifier, id="Mixed letters"),
+            pytest.param(None, UnderscoreQualifier, id="None input"),
+            pytest.param("", UnderscoreQualifier, id="Empty input")
+        ]
+)
+def test_init_qualifier_resolver_basic(input: str, resolver: Type[CIMQualifierStrategy]) -> None:
+    g = Graph()
+    ser = CIMXMLSerializer(g)
+    ser._init_qualifier_resolver(input)
+    assert type(ser.qualifier_resolver.output) == resolver
+    assert isinstance(ser.qualifier_resolver, CIMQualifierResolver)
+    assert isinstance(ser.qualifier_resolver.output, resolver)
+
+def test_init_qualifier_resolver_wronginput() -> None:
+    g = Graph()
+    ser = CIMXMLSerializer(g)
+    with pytest.raises(ValueError) as exc:
+        ser._init_qualifier_resolver("wrong")
+
+    assert str(exc.value) == "Unknown qualifier: wrong"
 
 # Unit tests .write_header
 def test_write_header_basic(capture_writer: tuple[list, Callable]) -> None:

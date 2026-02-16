@@ -32,25 +32,13 @@ class CIMXMLSerializer(Serializer):
         self.__serialized: Dict[Node, int] = {}
         self._stream = None
 
-    def _init_qualifier_resolver(self, qualifier_name: str|None):
+    def _init_qualifier_resolver(self, qualifier_name: str|None) -> None:
         name = (qualifier_name or "underscore").lower()
         qualifier_cls = QUALIFIER_MAP.get(name)
         if qualifier_cls is None:
             raise ValueError(f"Unknown qualifier: {qualifier_name}")
         self.qualifier_resolver = CIMQualifierResolver(qualifier_cls())
         
-    # def __bindings(self) -> Generator[Tuple[str, URIRef], None, None]:
-    #     store = self.store
-    #     nm = store.namespace_manager
-    #     bindings: Dict[str, URIRef] = {}
-
-    #     for predicate in set(store.predicates()):
-    #         prefix, namespace, name = nm.compute_qname_strict(str(predicate))
-    #         bindings[prefix] = URIRef(namespace)
-
-    #     for prefix, namespace in bindings.items():
-    #         yield prefix, namespace
-
     def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
         nm = self.store.namespace_manager
         namespaces: dict[str, URIRef] = {}
@@ -325,7 +313,7 @@ def _subject_sort_key(uri: Node) -> tuple[int, str]:
     except ValueError:
         return (1, str(s))
 
-def is_uuid_qualified(resolver: CIMQualifierResolver, value) -> bool:
+def is_uuid_qualified(resolver: CIMQualifierResolver, value: str|Node) -> bool:
     uri = str(value)
     return any(strategy.matches(uri) for strategy in resolver.strategies)
 
