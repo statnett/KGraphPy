@@ -7,7 +7,7 @@ import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
 from pathlib import Path
-from cim_plugin.utilities import collect_cimxml_to_dataset
+from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
 
 dictConfig(LOG_CONFIG)
@@ -62,9 +62,12 @@ def main():
     # g = Graph()
     # g.parse(file, "xml")
     file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
+    file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
     ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
-
+    g3 = load_cimxml_graph(file3, linkmlfile)
+    # for prefix, namespace in g3.namespace_manager.store.namespaces():
+    #     print(prefix, namespace)
     # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
     # t = Dataset()
     # t.parse(tfile, format="trig")
@@ -72,8 +75,9 @@ def main():
     # t_normalized = normalize_strings(tgraph)
     g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
-    for g in ds.graphs():
-        print(g.identifier, type(g), getattr(g, "metadata_header", None))
+    # g3 = ds.graph(URIRef('urn:uuid:ebef4527-f0bc-4c59-8870-950af8ed9041'))
+    # for g in ds.graphs():
+    #     print(g.identifier, type(g), getattr(g, "metadata_header", None))
 
     # if g1.metadata_header:
     #     print(g1.metadata_header.triples)
@@ -91,11 +95,15 @@ def main():
     #         print(s, p, o)
 
     # g1 = tgraph
-    output_file = Path.cwd().parent / "cimxml_to_cimxml_eq.xml"
+    output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq.xml"
     g1.serialize(destination=str(output_file), format="cimxml")
 
-    output_file2 = Path.cwd().parent / "cimxml_to_cimxml_ssh.xml"
+    output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh.xml"
     g2.serialize(destination=str(output_file2), format="cimxml")
+
+    output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er.xml"
+    g3.serialize(destination=str(output_file3), format="cimxml")
+
 
     # output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
     # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")

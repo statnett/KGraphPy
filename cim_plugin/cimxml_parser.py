@@ -40,8 +40,8 @@ class CIMXMLParser(Parser):
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
             self.schemaview = SchemaView(self.schema_path)
-            self.ensure_correct_namespace_model(prefix="cim", correct_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
-            self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
+            # self.ensure_correct_namespace_model(prefix="cim", correct_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
+            # self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
             # self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.post_process(sink)
@@ -52,8 +52,8 @@ class CIMXMLParser(Parser):
         logger.info("Running post-process")
         # self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
         self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
-        ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
-        ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
+        # ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
+        # ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
         self.enrich_literal_datatypes(graph)    # Add datatypes from model
 
 

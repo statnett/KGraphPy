@@ -1,7 +1,8 @@
-from typing import Callable, Type, cast
+from typing import Callable, Type, cast, IO
 import pytest
 from unittest.mock import MagicMock, call, patch, Mock
 import uuid
+import io
 import logging
 
 from rdflib import URIRef, Graph, Literal, Node, BNode
@@ -95,6 +96,259 @@ def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
     mock_create.assert_not_called()
     store_header = cast(CIMGraph, ser.store).metadata_header
     assert store_header is header
+
+# Unit tests .serialize
+@patch("cim_plugin.cimxml_serializer._subject_sort_key")
+@patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
+def test_serialize_allcalls(mock_group: MagicMock, mock_sort: MagicMock) -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    ser = CIMXMLSerializer(g)
+
+    ser._ensure_header = Mock(return_value=g.metadata_header)
+    ser._init_qualifier_resolver = Mock()
+    ser._collect_used_namespaces = Mock(return_value=[("ex", "example.com/")])
+    ser.write_header = Mock()
+    mock_group.return_value = {"ex:o": [URIRef("s1"), URIRef("s2")]}
+    mock_sort.side_effect = [(1, "s1"), (0, "s2")]
+    ser.subject = Mock()
+
+    ser.serialize(buf, qualifier="foo")
+    result = buf.getvalue().decode()
+
+    ser._ensure_header.assert_called_once()
+    ser._init_qualifier_resolver.assert_called_once_with("foo")
+    ser._collect_used_namespaces.assert_called_once()
+    ser.write_header.assert_called_once()
+    mock_group.assert_called_once()
+    assert mock_sort.call_count == 2
+    assert ser.subject.call_count == 2
+    assert result == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    xmlns:ex="example.com/"\n    >\n\n</rdf:RDF>\n'
+    
+def test_serialize_namespaces() -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    g.bind("foo", "http://bar.com/")
+    g.add((URIRef("s1"), URIRef("http://example.com/p"), Literal("o")))
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    g.metadata_header.add_triple(RDF.type, DCAT.Dataset)
+
+    ser = CIMXMLSerializer(g)
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    assert 'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"' in out
+    assert 'xmlns:ex="http://example.com/"' in out
+    assert 'xmlns:foo="http://bar.com/' not in out
+
+
+def test_serialize_multipleserializations() -> None:
+    buf1 = io.BytesIO()
+    buf2 = io.BytesIO()
+    g1 = CIMGraph()
+    g1.bind("ex", "http://example.com/")
+    g2 = CIMGraph()
+    g2.bind("foo", "http://bar.com/")
+    g1.add((URIRef("s1"), URIRef("http://example.com/p"), Literal("o")))
+    g2.add((URIRef("s2"), URIRef("http://bar.com/p"), Literal("o")))
+    g1.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    g1.metadata_header.add_triple(RDF.type, DCAT.Dataset)
+    g2.metadata_header = CIMMetadataHeader.empty(URIRef("h2"))
+    g2.metadata_header.add_triple(RDF.type, DCAT.Dataset)
+
+    ser1 = CIMXMLSerializer(g1)
+    ser2 = CIMXMLSerializer(g2)
+    ser1.serialize(buf1)
+    ser2.serialize(buf2)
+    out1 = buf1.getvalue().decode()
+    out2 = buf2.getvalue().decode()
+    assert 'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"' in out1
+    assert 'xmlns:ex="http://example.com/"' in out1
+    assert 'xmlns:foo="http://bar.com/' not in out1
+    assert 'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"' in out2
+    assert 'xmlns:ex="http://example.com/"' not in out2
+    assert 'xmlns:foo="http://bar.com/' in out2
+
+
+@pytest.mark.parametrize(
+    "subjects, expected",
+    [
+        pytest.param([URIRef("beta"), URIRef("alfa")], ["alfa", "beta"], id="Two subjects"),
+        pytest.param([URIRef("ex:xeta"), URIRef("zeta"), URIRef("mu")], ["ex:xeta", "mu", "zeta"], id="Three subjects, one with namespace"),
+    ],
+)
+@patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
+def test_serialize_subjectsorting(mock_group: MagicMock, subjects: list[URIRef], expected: list[str]) -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+
+    ser = CIMXMLSerializer(g)
+
+    # Fake grouping
+    def fake_group(*args, **kwargs):
+        return {"ex:o": subjects}
+
+    mock_group.side_effect = fake_group
+    ser.serialize(buf)
+
+    out = buf.getvalue().decode()
+    lines = [line.strip() for line in out.splitlines() if "<" in line]
+
+    # Extract subject IDs
+    found = [s for s in expected if any(s in line for line in lines)]
+    assert found == expected
+
+@pytest.mark.parametrize("enc", ["utf-8", "latin-1"])
+def test_serialize_encoding(enc: str) -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    g.metadata_header.add_triple(RDF.type, DCAT.dataset)
+    g.metadata_header.add_triple(URIRef("http://example.com/p"), Literal("æøå"))
+
+    ser = CIMXMLSerializer(g)
+    ser.encoding = enc
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode(enc)
+
+    assert f'encoding="{enc}"' in out
+    assert '<ex:p>æøå</ex:p>' in out
+
+
+def test_serialize_header() -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    g.metadata_header.add_triple(RDF.type, DCAT.Dataset)
+
+    ser = CIMXMLSerializer(g)
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    assert '<dcat:Dataset rdf:about="urn:uuid:h1"/>\n' in out
+
+
+def test_serialize_nonamespaces() -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    
+    ser = CIMXMLSerializer(g)
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    # Header is malformed because it lacks the rdf:type, which is excluded to keep it from being collected in the namespaces
+    assert out == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    >\n  <<MALFORMED> rdf:about="urn:uuid:h1"/>\n\n</rdf:RDF>\n'
+
+
+def test_serialize_namespacewithnoprefix() -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    g.bind("", "http://noprefix.com/")
+    g.add((URIRef("http://example.com/s1"), URIRef("http://noprefix.com/p"), Literal("o")))
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    
+    ser = CIMXMLSerializer(g)
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    assert 'xmlns:ex="http://example.com/"' in out
+    assert 'xmlns="http://noprefix.com/"' in out
+
+
+def test_serialize_nosubjects() -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    g.metadata_header.add_triple(RDF.type, DCAT.Dataset)
+    
+    ser = CIMXMLSerializer(g)
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    assert out == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    xmlns:dcat="http://www.w3.org/ns/dcat#"\n    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"\n    >\n  <dcat:Dataset rdf:about="urn:uuid:h1"/>\n\n</rdf:RDF>\n'
+
+
+def test_serialize_multiplegroups() -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    s3 = "123e4567-e89b-12d3-a456-426614174000"
+    s2 = "123e4567-e89b-12d3-a456-426614174001"
+    s1 = "123e4567-e89b-12d3-a456-426614174002"
+    s4 = "123e4567-e89b-12d3-a456-426614174003"
+    s5 = "http://example.com/a5"
+    g.add((URIRef(f"urn:uuid:{s1}"), RDF.type, URIRef("http://example.com/TypeA")))
+    g.add((URIRef(f"urn:uuid:{s2}"), RDF.type, URIRef("http://example.com/TypeA")))
+    g.add((URIRef(f"urn:uuid:{s3}"), RDF.type, URIRef("http://example.com/TypeA")))
+    g.add((URIRef(f"urn:uuid:{s4}"), RDF.type, URIRef("http://example.com/TypeB")))
+    g.add((URIRef(s5), RDF.type, URIRef("http://example.com/TypeA")))
+
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    
+    ser = CIMXMLSerializer(g)
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    # Extract rdf:about values in order 
+    abouts = [ 
+        line.split('"')[1] 
+        for line in out.splitlines() 
+        if 'rdf:about="#_' in line 
+    ] 
+    assert abouts == [ 
+        f"#_{s3}", 
+        f"#_{s2}", 
+        f"#_{s1}", 
+        f"#_{s5}", # invalid UUID → sorted last among TypeA 
+        f"#_{s4}", # TypeB comes after TypeA 
+    ]
+    
+def test_serialize_streamwritefailure() -> None:
+    class BadStream():
+        def write(self, data: bytes) -> int:
+            raise IOError("boom")
+
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    ser = CIMXMLSerializer(g)
+
+    bad_stream = BadStream()
+
+    with pytest.raises(IOError) as excinfo:
+        # Pylance silenced to test bad input
+        ser.serialize(bad_stream)   # type: ignore
+
+    assert "boom" in str(excinfo.value)
+
+
+def test_serialize_streamwritefailurepartial() -> None:
+    class BadStream:
+        def __init__(self):
+            self.calls = 0
+
+        def write(self, data: bytes) -> int:
+            self.calls += 1
+            raise IOError("boom")
+
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    ser = CIMXMLSerializer(g)
+
+    bad_stream = BadStream()
+
+    with pytest.raises(IOError):
+        # Pylance silenced to test bad input
+        ser.serialize(bad_stream)   # type: ignore
+
+    # Should have attempted exactly one write (XML header)
+    assert bad_stream.calls == 1
 
 
 # Unit tests .write_header
@@ -231,6 +485,30 @@ def test_write_header_resolverrestored(capture_writer: tuple[list, Callable]) ->
 
     assert type(ser.qualifier_resolver.output) == NamespaceQualifier
 
+def test_write_header_nomaintype(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    ser = CIMXMLSerializer(g)
+    ser.qualifier_resolver = CIMQualifierResolver(NamespaceQualifier())
+    ser.write = writer
+    
+    ser.write_header(g.metadata_header)
+    result = "".join(output)
+    assert "MALFORMED" in result
+    assert "Header type missing:" in caplog.text
+
+
+def test_write_header_noqualifierresolver(capture_writer: tuple[list, Callable]) -> None:
+    # Documents what happends if the qualifier_resolver has not been set
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    
+    with pytest.raises(AttributeError):
+        ser.write_header(g.metadata_header)
 
 # Unit tests .subject
 def test_subject_nonuriref(serializer: tuple[CIMXMLSerializer, list]) -> None:

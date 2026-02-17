@@ -50,38 +50,86 @@ class CIMXMLSerializer(Serializer):
         nm = self.store.namespace_manager
         namespaces: dict[str, URIRef] = {}
 
-        def add_uri(uri: URIRef|Node):
-            # Skip URNs explicitly (optional but safe)
-            if str(uri).startswith("urn:"):
+        # Preload the namespace manager’s known namespaces
+        known = list(nm.namespaces())  # list of (prefix, URIRef)
+
+        def add_uri(uri: URIRef | Node):
+            if not isinstance(uri, URIRef):
                 return
-            try:
-                prefix, ns, _ = nm.compute_qname_strict(str(uri))
-                namespaces[prefix] = URIRef(ns)
-            except ValueError:
-                pass
+
+            uri_str = str(uri)
+
+            # Skip URNs explicitly
+            if uri_str.startswith("urn:"):
+                return
+
+            # Match only namespaces already registered in the graph
+            for prefix, ns in known:
+                if uri_str.startswith(str(ns)):
+                    namespaces[prefix] = ns
+                    break  # stop at first match
 
         # --- 1. Header namespaces ---
         header = getattr(self.store, "metadata_header", None)
         if header is not None:
             add_uri(header.subject)
-            add_uri(header.main_type)
+            # add_uri(header.main_type)
             for _, p, o in header.triples:
                 add_uri(p)
-                if isinstance(o, URIRef):
-                    add_uri(o)
+                add_uri(o)
 
         # --- 2. Data namespaces ---
         for s, p, o in self.store:
-            if isinstance(s, URIRef):
-                add_uri(s)
+            add_uri(s)
             add_uri(p)
-            if isinstance(o, URIRef):
-                add_uri(o)
+            add_uri(o)
 
-        # Convert to sorted list
         return sorted(namespaces.items())
 
+    # def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
+    #     nm = self.store.namespace_manager
+    #     namespaces: dict[str, URIRef] = {}
+
+    #     def add_uri(uri: URIRef|Node):
+    #         # Skip URNs explicitly (optional but safe)
+    #         if str(uri).startswith("urn:"):
+    #             return
+    #         try:
+    #             prefix, ns, _ = nm.compute_qname_strict(str(uri))
+    #             namespaces[prefix] = URIRef(ns)
+    #         except ValueError:
+    #             pass
+
+    #     # --- 1. Header namespaces ---
+    #     header = getattr(self.store, "metadata_header", None)
+    #     if header is not None:
+    #         add_uri(header.subject)
+    #         add_uri(header.main_type)
+    #         for _, p, o in header.triples:
+    #             add_uri(p)
+    #             if isinstance(o, URIRef):
+    #                 add_uri(o)
+
+    #     # --- 2. Data namespaces ---
+    #     for s, p, o in self.store:
+    #         if isinstance(s, URIRef):
+    #             add_uri(s)
+    #         add_uri(p)
+    #         if isinstance(o, URIRef):
+    #             add_uri(o)
+
+    #     # Convert to sorted list
+    #     return sorted(namespaces.items())
+
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
+        """Serialize graph to CIMXML format.
+        
+        Parameters:
+            stream (IO[bytes]): The stream to serialize to.
+            base (str): Not used. Inherited from rdflib.Serializer.
+            encoding (str): The encoding used for the stream.
+            qualifier (str): From **kwargs. Specifies the qualifier for uuids.
+        """
         self.__stream = stream
         header = self._ensure_header()
         
@@ -134,7 +182,11 @@ class CIMXMLSerializer(Serializer):
         indent = "  " * depth
 
         subject = header.subject
-        subject_type = header.main_type
+        try:
+            subject_type = header.main_type
+        except ValueError as e:
+            logger.error(f"Header type missing: {e}")
+            subject_type = URIRef("MALFORMED")
 
         # --- Temporarily override qualifier strategy ---
         original_strategy = self.qualifier_resolver.output
@@ -311,6 +363,7 @@ def _subject_sort_key(uri: Node) -> tuple[int, str]:
         return (0, str(_extract_uuid_from_urn(s)))
     except ValueError:
         return (1, str(s))
+        
 
 def is_uuid_qualified(resolver: CIMQualifierResolver, value: str|Node) -> bool:
     uri = str(value)
