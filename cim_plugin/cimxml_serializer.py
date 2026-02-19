@@ -9,7 +9,7 @@ import logging
 from typing import IO, Any, Generator, Tuple, Dict, Optional
 from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
 from cim_plugin.namespaces import MD
-from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver
+from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
@@ -339,9 +339,6 @@ def _subject_sort_key(uri: Node) -> tuple[int, str]:
         return (1, str(s))
         
 
-def is_uuid_qualified(resolver: CIMQualifierResolver, value: str|Node) -> bool:
-    uri = str(value)
-    return any(strategy.matches(uri) for strategy in resolver.strategies)
 
 if __name__ == "__main__":
     print("Serializer class")

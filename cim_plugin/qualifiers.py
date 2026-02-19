@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from rdflib import URIRef
+from rdflib import Node, URIRef
 from cim_plugin.namespaces import MODEL
 
 uuid_namespace = MODEL
@@ -99,6 +99,11 @@ class CIMQualifierResolver:
                 uuid = s.extract_uuid(uri_str)
                 return self.output.build_default(uuid)
         return self.output.build_default(uri_str)
+
+
+def is_uuid_qualified(resolver: CIMQualifierResolver, value: str|Node) -> bool:
+    uri = str(value)
+    return any(strategy.matches(uri) for strategy in resolver.strategies)
 
 
 if __name__ == "__main__":

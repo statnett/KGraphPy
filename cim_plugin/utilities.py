@@ -120,6 +120,17 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
 
 
 def create_header_attribute(graph: Graph) -> CIMMetadataHeader:
+    """Create a header from a graph.
+    
+    The header will be extracted from the graph. 
+    If there are no header triples in the graph, an empty header object will be created with a random subject uuid.
+
+    Parameters:
+        graph (Graph or CIMGraph): The graph to extract the header from.
+
+    Returns:
+        CIMMetadataHeader: The header object.
+    """
     try:
         header = CIMMetadataHeader.from_graph(graph)
     except ValueError as e:

@@ -8,12 +8,15 @@ from rdflib.exceptions import ParserError
 from typing import Callable
 from cim_plugin.exceptions import CIMXMLParseError
 from cim_plugin.namespaces import MD
+from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.graph import CIMGraph
 from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph
 from cim_plugin.utilities import (
     _extract_uuid_from_urn, 
     get_graph_uuid, 
     load_cimxml_graph, 
-    collect_cimxml_to_dataset, 
+    collect_cimxml_to_dataset,
+    create_header_attribute, 
     extract_subjects_by_object_type,
     group_subjects_by_type
 )
@@ -483,6 +486,52 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: 
         for msg in caplog.messages
     )
 
+
+#Unit tests create_header_attribute
+def test_create_header_attribute_fromgraph() -> None:
+    graph = MagicMock()
+    fake_header = MagicMock()
+
+    with patch.object(CIMMetadataHeader, "from_graph", return_value=fake_header) as mock_from_graph, \
+         patch.object(CIMMetadataHeader, "empty") as mock_empty, \
+         patch.object(logger, "error") as mock_log:
+
+        result = create_header_attribute(graph)
+
+    assert result is fake_header
+    mock_from_graph.assert_called_once_with(graph)
+    mock_empty.assert_not_called()
+    mock_log.assert_not_called()
+
+
+def test_create_header_attribute_valueerror(caplog: pytest.LogCaptureFixture) -> None:
+    graph = MagicMock()
+    fake_empty_header = MagicMock()
+    fake_empty_header.subject = "generated-id"
+
+    with patch.object(CIMMetadataHeader, "from_graph", side_effect=ValueError("oops")) as mock_from_graph, \
+         patch.object(CIMMetadataHeader, "empty", return_value=fake_empty_header) as mock_empty:
+        result = create_header_attribute(graph)
+
+    assert result is fake_empty_header
+    mock_from_graph.assert_called_once_with(graph)
+    mock_empty.assert_called_once()
+    
+    assert len(caplog.records) == 1 
+    record = caplog.records[0] 
+    assert record.levelname == "ERROR" 
+    assert "oops" in record.message 
+    assert "generated-id" in record.message
+
+
+def test_create_header_attribute_otherexceptions() -> None:
+    graph = Graph()
+
+    with patch.object(CIMMetadataHeader, "from_graph", side_effect=TypeError("boom")):
+        with pytest.raises(TypeError):
+            create_header_attribute(graph)
+
+
 # Unit tests extract_subjects_by_object_type
 @pytest.mark.parametrize(
         "object_type, expected",
@@ -646,10 +695,6 @@ def test_group_subjects_by_type_bnodes(make_graph: Callable[..., Graph]) -> None
     # Order may vary because blank nodes are unordered; compare sets
     assert set(result["ex:Type1"]) == {bn, URIRef("ex:a")}
 
-
-# def normalize(d):
-#     """Sort lists inside dicts for stable comparison."""
-#     return {k: sorted(v, key=str) for k, v in d.items()}
 
 EX = Namespace("http://example.org/")
 
