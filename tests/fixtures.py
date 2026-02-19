@@ -4,17 +4,20 @@ from linkml_runtime import SchemaView
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition
 from rdflib import Graph, URIRef, Namespace
+from rdflib.namespace import RDF, DCAT
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
 from cim_plugin.cimxml_parser import CIMXMLParser
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
+from cim_plugin.graph import CIMGraph
 import uuid
 import textwrap
 from rdflib.plugin import register
 from rdflib.parser import Parser
 
 
+# Schemaview fixtures
 @pytest.fixture
 def make_schemaview() -> Callable[..., SchemaView]:
     """Factory for creating SchemaView objects that mimic real LinkML schemas."""
@@ -37,6 +40,93 @@ def make_schemaview() -> Callable[..., SchemaView]:
     return _factory
 
 
+# Graph making fixtures
+@pytest.fixture
+def make_graph_with_prefixes() -> Graph:
+    g = Graph()
+    g.bind("ex", Namespace("www.example.com/"))
+    g.bind("same", Namespace("www.same.com/"))
+    g.bind("ws", Namespace(" www.whitespace.com/ "))
+    g.add((URIRef("www.example.com/a"), URIRef("www.same.com/b"), URIRef(" www.whitespace.com/ c")))
+
+    return g
+
+
+@pytest.fixture
+def make_graph() -> Callable[..., Graph]: 
+    """Helper to build a graph from a list of (s, p, o) triples."""
+    def _make_graph(triples: list[tuple]) -> Graph:
+        g = Graph()
+        g.bind("ex", Namespace("http://example.org/"))
+        for s, p, o in triples: 
+            g.add((s, p, o)) 
+        return g
+    return _make_graph
+
+
+@pytest.fixture
+def make_cimgraph():
+    """Create a CIMGraph with a metadata header and some predefined namespaces."""
+    g = CIMGraph()
+
+    # Register namespaces
+    g.bind("ex", Namespace("http://example.com/"))
+    g.bind("foo", Namespace("http://foo.org/ns#"))
+    g.bind("bar", Namespace("http://bar.org/"))
+
+    # Create metadata header
+    header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    g.metadata_header = header
+
+    return g
+
+
+# CIMXMLParser
+@pytest.fixture
+def cimxmlinstance_w_prefixes(make_schemaview):
+    """Create an instance with a real SchemaView."""
+    obj = CIMXMLParser()
+    obj.schemaview = make_schemaview(prefixes={"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}})
+    return obj
+
+
+@pytest.fixture
+def make_cimxmlparser() -> Callable[..., CIMXMLParser]:
+    def _factory(schemaview: SchemaView) -> CIMXMLParser:
+        obj = CIMXMLParser()
+        obj.schema_path = "schema.yaml"
+        obj.schemaview = schemaview
+        return obj
+    return _factory
+
+
+# CIMXMLSerializer
+@pytest.fixture
+def capture_writer() -> tuple[list, Callable]:
+    output = []
+
+    def writer(text: str) -> int:
+        output.append(text)
+        return 0  # mimic stream.write return type
+
+    return output, writer
+
+
+@pytest.fixture
+def serializer(capture_writer: tuple[list, Callable]) -> tuple[CIMXMLSerializer, list]:
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty()
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser.qualifier_resolver = Mock()
+    ser.qualifier_resolver.convert_to_special_qualifier.side_effect = lambda x: str(x)
+    ser.qualifier_resolver.convert_to_default_qualifier.side_effect = lambda x: str(x)
+    return ser, output
+
+
+# Function specific fixtures
 @dataclass
 class PatchMocks:
     """Collecting mocks for all functions used by patch_integer_ranges."""
@@ -63,38 +153,10 @@ def mock_patch_integer_ranges(monkeypatch: pytest.MonkeyPatch) -> PatchMocks:
     return mocks
 
 
-@pytest.fixture
-def cimxmlinstance_w_prefixes(make_schemaview):
-    """Create an instance with a real SchemaView."""
-    obj = CIMXMLParser()
-    obj.schemaview = make_schemaview(prefixes={"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}})
-    return obj
-
-
-@pytest.fixture
-def make_cimxmlparser() -> Callable[..., CIMXMLParser]:
-    def _factory(schemaview: SchemaView) -> CIMXMLParser:
-        obj = CIMXMLParser()
-        obj.schema_path = "schema.yaml"
-        obj.schemaview = schemaview
-        return obj
-    return _factory
-
-
+# Various
 @pytest.fixture
 def set_prefixes() -> dict:
     return {"ex": {"prefix_prefix": "ex", "prefix_reference": "http://example.org/"}}
-
-
-@pytest.fixture
-def make_graph_with_prefixes() -> Graph:
-    g = Graph()
-    g.bind("ex", Namespace("www.example.com/"))
-    g.bind("same", Namespace("www.same.com/"))
-    g.bind("ws", Namespace(" www.whitespace.com/ "))
-    g.add((URIRef("www.example.com/a"), URIRef("www.same.com/b"), URIRef(" www.whitespace.com/ c")))
-
-    return g
 
 
 @pytest.fixture
@@ -125,6 +187,7 @@ def sample_yaml() -> str:
                     range: Count
     """)
 
+
 @pytest.fixture 
 def cimxml_plugin() -> Generator: 
     register( "cimxml", Parser, "cim_plugin.cimxml_parser", "CIMXMLParser" ) 
@@ -139,40 +202,6 @@ def mock_extract_uuid(monkeypatch: pytest.MonkeyPatch) -> Mock:
     monkeypatch.setattr("cim_plugin.utilities._extract_uuid_from_urn", mock) 
     return mock
 
-@pytest.fixture
-def make_graph() -> Callable[..., Graph]: 
-    """Helper to build a graph from a list of (s, p, o) triples."""
-    def _make_graph(triples: list[tuple]) -> Graph:
-        g = Graph()
-        g.bind("ex", Namespace("http://example.org/"))
-        for s, p, o in triples: 
-            g.add((s, p, o)) 
-        return g
-    return _make_graph
-
-
-@pytest.fixture
-def capture_writer() -> tuple[list, Callable]:
-    output = []
-
-    def writer(text: str) -> int:
-        output.append(text)
-        return 0  # mimic stream.write return type
-
-    return output, writer
-
-
-@pytest.fixture
-def serializer(capture_writer: tuple[list, Callable]) -> tuple[CIMXMLSerializer, list]:
-    output, writer = capture_writer
-    g = Graph()
-    g.metadata_header = CIMMetadataHeader.empty() # pyright: ignore[reportAttributeAccessIssue]
-    ser = CIMXMLSerializer(g)
-    ser.write = writer
-    ser.qualifier_resolver = Mock()
-    ser.qualifier_resolver.convert_to_special_qualifier.side_effect = lambda x: str(x)
-    ser.qualifier_resolver.convert_to_default_qualifier.side_effect = lambda x: str(x)
-    return ser, output
 
 if __name__ == "__main__":
     print("Fixtures for tests")

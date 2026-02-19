@@ -5,7 +5,7 @@ import uuid
 import io
 import logging
 
-from rdflib import URIRef, Graph, Literal, Node, BNode
+from rdflib import Namespace, URIRef, Graph, Literal, Node, BNode
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
 from rdflib.namespace import XSD, RDF, DCAT
 from xml.sax.saxutils import escape
@@ -14,7 +14,7 @@ from cim_plugin.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URN
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD
-from tests.fixtures import capture_writer, serializer
+from tests.fixtures import capture_writer, serializer, make_cimgraph
 
 
 logger = logging.getLogger("cimxml_logger")
@@ -96,6 +96,204 @@ def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
     mock_create.assert_not_called()
     store_header = cast(CIMGraph, ser.store).metadata_header
     assert store_header is header
+
+
+
+# Unit tests ._collect_used_namespaces
+@pytest.mark.parametrize(
+    "uri,expected_prefix",
+    [
+        ("http://example.com/Thing", "ex"),
+        ("http://foo.org/ns#Item", "foo"),
+        ("http://bar.org/Value", "bar"),
+    ],
+)
+def test__collect_used_namespaces_onlyregisterednamespaces(make_cimgraph: CIMGraph, uri: str, expected_prefix: str) -> None:
+    # Collecting namespace if it exist in the namespace_manager
+    g = make_cimgraph
+    g.add((URIRef(uri), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert expected_prefix in ns_list
+    # Check that the namespace collected matches the namespace by the same prefix in the namespace_manager
+    assert str(ns_list[expected_prefix]).startswith(
+        str(dict(g.namespace_manager.namespaces())[expected_prefix])
+    )
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "http://not-registered.com/A",
+        "http://another.org/ns#B",
+        "http://www.fake.org/",
+    ],
+)
+def test_collect_used_namespaces_unregisterednamespaces(make_cimgraph: CIMGraph, uri: str) -> None:
+    # Namespace not collected if it is not in namespace_manager
+    g = make_cimgraph
+    g.add((URIRef(uri), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert ns_list.keys() == {'dcat', 'ex', 'rdf'}
+    # None of these should appear
+    assert all(not str(ns).startswith(uri.rsplit("/", 1)[0]) for ns in ns_list.values())
+    
+
+def test_urns_are_ignored(make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    g.add((URIRef("urn:uuid:1234"), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert len(ns_list) == 3
+    assert ns_list.keys() == {'dcat', 'ex', 'rdf'}  # No urn in the the prefix list
+    
+
+def test_collect_used_namespaces_headertriples(make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+
+    # Add header triples
+    assert g.metadata_header    # Without this pylance reacts to add_triple
+    g.metadata_header.add_triple(
+        URIRef("http://foo.org/ns#headerPredicate"),
+        URIRef("http://foo.org/ns#headerObject"),
+    )
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert "foo" in ns_list
+    assert "ex" in ns_list  # header subject is in example.com namespace
+
+
+def test_collect_used_namespaces_sortedandunique(make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+
+    # Add multiple triples using same namespace
+    g.add((URIRef("http://example.com/A"), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
+    g.add((URIRef("http://example.com/B"), URIRef("http://example.com/p2"), URIRef("http://example.com/o2")))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = ser._collect_used_namespaces()
+
+    # Should contain only one entry for "ex"
+    prefixes = [p for p, _ in ns_list]
+    assert prefixes.count("ex") == 1
+
+    # Should be sorted by prefix
+    assert prefixes == sorted(prefixes)
+
+def test_collect_used_namespaces_blanknodes(make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+
+    b = BNode("http://bar.org/bnode")
+    g.add((b, URIRef("http://example.com/p"), URIRef("http://example.com/o")))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert ns_list.keys() == {'dcat', 'ex', 'rdf'}  # No blank node in the the prefix list
+
+def test_collect_used_namespaces_literals(make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+
+    g.add((
+        URIRef("http://example.com/s"),
+        URIRef("http://example.com/p"),
+        Literal("http://bar.org/bnode")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+    assert ns_list.keys() == {'dcat', 'ex', 'rdf'}  # No literal in the the prefix list
+    assert "bar" not in ns_list
+
+
+def test_collect_used_namespaces_nousednamespaces():
+    g = CIMGraph()
+
+    # Add triples with URIs that look like namespaces
+    g.add((
+        URIRef("http://example.com/A"),
+        URIRef("http://example.com/p"),
+        URIRef("http://example.com/o")
+    ))
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert ns_list == {}
+
+
+def test_collect_used_namespaces_overlappingnamespaces() -> None:
+    g = CIMGraph()
+    g.bind("ex", Namespace("http://example.com/"))
+    g.bind("exns", Namespace("http://example.com/ns/"))
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+    g.add((
+        URIRef("http://example.com/ns/Thing"),
+        URIRef("http://example.com/p"),
+        URIRef("http://example.com/ns/Object")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+    assert "ex" in ns_list
+    assert "exns" in ns_list
+    assert str(ns_list["ex"]) == "http://example.com/"
+    assert str(ns_list["exns"]) == "http://example.com/ns/"
+
+
+def test_collect_used_namespaces_collisions() -> None:
+    g = CIMGraph()
+
+    # Two prefixes bound to the same namespace URI
+    g.bind("ex", Namespace("http://example.com/"))
+    g.bind("alt", Namespace("http://example.com/"))
+
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+
+    g.add((
+        URIRef("http://example.com/Thing"),
+        URIRef("http://example.com/p"),
+        URIRef("http://example.com/o")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+    print(ns_list)
+
+    assert len(ns_list) == 1    # Only one prefix should survive
+    assert list(ns_list.values())[0] == URIRef("http://example.com/")   # It must map to the correct namespace URI
+    assert list(ns_list.keys())[0] in {"ex", "alt"} # And the prefix must be one of the registered ones
+
+
+def test_collect_used_namespaces_rebindingnamespace() -> None:
+    g = CIMGraph()
+
+    g.bind("ex", Namespace("http://old.example.com/"))
+    g.bind("ex", Namespace("http://new.example.com/"), replace=True)    # Rebinding to new namespace
+
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://new.example.com/header"))
+
+    g.add((
+        URIRef("http://new.example.com/Thing"),
+        URIRef("http://new.example.com/p"),
+        URIRef("http://new.example.com/o")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert "ex" in ns_list
+    assert ns_list["ex"] == URIRef("http://new.example.com/")
+    assert URIRef("http://old.example.com/") not in ns_list.values()
 
 # Unit tests .serialize
 @patch("cim_plugin.cimxml_serializer._subject_sort_key")

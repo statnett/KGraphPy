@@ -46,12 +46,21 @@ class CIMXMLSerializer(Serializer):
             setattr(self.store, "metadata_header", header)
         return header
 
+
     def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
+        """Collect namespaces used by the header and/or the data.
+        
+        The namespace is only collected if it is both registered in the namespace_manager 
+        and present in the header/data.
+
+        Returns:
+            list[tuple[str, URIRef]]: Sorted list of tuples with prefix, namespace.
+        """
         nm = self.store.namespace_manager
         namespaces: dict[str, URIRef] = {}
 
-        # Preload the namespace manager’s known namespaces
-        known = list(nm.namespaces())  # list of (prefix, URIRef)
+        # Sorting to prevent overlapping namespaces from being excluded
+        known = sorted(nm.namespaces(), key=lambda item: len(str(item[1])), reverse=True,)
 
         def add_uri(uri: URIRef | Node):
             if not isinstance(uri, URIRef):
@@ -59,26 +68,25 @@ class CIMXMLSerializer(Serializer):
 
             uri_str = str(uri)
 
-            # Skip URNs explicitly
             if uri_str.startswith("urn:"):
                 return
 
-            # Match only namespaces already registered in the graph
+            # Match only namespaces already registered in the graph,
             for prefix, ns in known:
-                if uri_str.startswith(str(ns)):
+                ns_str = str(ns)
+                if uri_str.startswith(ns_str):
                     namespaces[prefix] = ns
-                    break  # stop at first match
+                    break
 
-        # --- 1. Header namespaces ---
+        # Header
         header = getattr(self.store, "metadata_header", None)
         if header is not None:
             add_uri(header.subject)
-            # add_uri(header.main_type)
             for _, p, o in header.triples:
                 add_uri(p)
                 add_uri(o)
 
-        # --- 2. Data namespaces ---
+        # Data
         for s, p, o in self.store:
             add_uri(s)
             add_uri(p)
@@ -86,40 +94,6 @@ class CIMXMLSerializer(Serializer):
 
         return sorted(namespaces.items())
 
-    # def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
-    #     nm = self.store.namespace_manager
-    #     namespaces: dict[str, URIRef] = {}
-
-    #     def add_uri(uri: URIRef|Node):
-    #         # Skip URNs explicitly (optional but safe)
-    #         if str(uri).startswith("urn:"):
-    #             return
-    #         try:
-    #             prefix, ns, _ = nm.compute_qname_strict(str(uri))
-    #             namespaces[prefix] = URIRef(ns)
-    #         except ValueError:
-    #             pass
-
-    #     # --- 1. Header namespaces ---
-    #     header = getattr(self.store, "metadata_header", None)
-    #     if header is not None:
-    #         add_uri(header.subject)
-    #         add_uri(header.main_type)
-    #         for _, p, o in header.triples:
-    #             add_uri(p)
-    #             if isinstance(o, URIRef):
-    #                 add_uri(o)
-
-    #     # --- 2. Data namespaces ---
-    #     for s, p, o in self.store:
-    #         if isinstance(s, URIRef):
-    #             add_uri(s)
-    #         add_uri(p)
-    #         if isinstance(o, URIRef):
-    #             add_uri(o)
-
-    #     # Convert to sorted list
-    #     return sorted(namespaces.items())
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
         """Serialize graph to CIMXML format.
