@@ -72,12 +72,20 @@ class CIMMetadataHeader:
 
     @classmethod
     def _collect_header_triples(cls, graph: Graph, header_subject: Node) -> Tuple[URIRef, List[Tuple[Node, Node, Node]], Set[Node]]:
-        """
-        Perform BFS reachability from the header subject, collect all reachable
-        triples, and repair blank-node subjects.
+        """Collect all triples reachable from the header subject.
+
+        If the subject is a blank node a repair will be attempted.
+        See _repair_blank_header_subject for more information.
+
+        Parameters:
+            graph (Graph): The graph to collect the header triples from.
+            header_subject (Node): A uri uuid which identifies the header subject.
+
+        Returns:
+            tuple[URIRef, list[tuple[Node, Node, Node]], set[Node]]: The repaired header subject, the triples and the blank nodes reachable from the header.
         """
 
-        # BFS reachability
+        # Find blank nodes reachable from the header subject
         reachable: Set[Node] = set()
         queue: List[Node] = [header_subject]
 
@@ -107,12 +115,12 @@ class CIMMetadataHeader:
         # Rewrite blank-node subjects
         repaired: List[Tuple[Node, Node, Node]] = []
         for (s, p, o) in collected:
+            if isinstance(o, BNode):
+                continue
+
             if isinstance(s, BNode):
                 repaired.append((final_subject, p, o))
             else:
-                if isinstance(o, BNode):
-                    continue
-
                 repaired.append((s, p, o))
 
         return final_subject, repaired, reachable
@@ -124,12 +132,21 @@ class CIMMetadataHeader:
 
     @staticmethod
     def _repair_blank_header_subject(graph: Graph, blank: Node) -> URIRef:
-        from rdflib.namespace import DCTERMS
-        import uuid
+        """Repair header subject by turning it into a uuid uri.
 
-        logger.warning(
+        If DCTERMS.identifier is present, this is made the new header subject.
+        With no other options, a random uuid4 will be generated.
+
+        Parameters:
+            graph (Graph): The graph to collect the identifier from.
+            blank (Node): The subject blank node.
+
+        Returns:
+            URIRef: The new header subject uuid.
+        """
+        logger.error(
             f"Metadata header subject is a blank node ({blank}). "
-            "Attempting to repair."
+            "Attempting to collect subject from dcterms:identifier."
         )
 
         # Try dct:identifier
@@ -139,9 +156,9 @@ class CIMMetadataHeader:
 
         # Fallback: generate UUID
         new_id = uuid.uuid4()
-        logger.warning(
-            f"No dct:identifier found for blank header subject. "
-            f"Generated new UUID: {new_id}"
+        logger.error(
+            f"No dcterms:identifier found for blank header subject. "
+            f"Random UUID generated: {new_id}"
         )
         return URIRef(f"urn:uuid:{new_id}")
 

@@ -3,7 +3,7 @@ from typing import Callable, Generator
 from linkml_runtime import SchemaView
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition
-from rdflib import Graph, URIRef, Namespace
+from rdflib import Graph, URIRef, Namespace, BNode, Literal
 from rdflib.namespace import RDF, DCAT
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
@@ -81,6 +81,20 @@ def make_cimgraph():
 
     return g
 
+@pytest.fixture
+def build_graph_with_blank_header() -> tuple[Graph, BNode, set[BNode]]: 
+    g = Graph() 
+    header = BNode() 
+    b1 = BNode() 
+    b2 = BNode() 
+    # Header type triple 
+    g.add((header, RDF.type, URIRef("urn:meta:Header"))) 
+    # Reachable chain 
+    g.add((header, URIRef("urn:p:1"), b1)) 
+    g.add((b1, URIRef("urn:p:2"), b2)) 
+    g.add((b2, URIRef("urn:p:3"), Literal("value"))) 
+    
+    return g, header, {header, b1, b2}
 
 # CIMXMLParser
 @pytest.fixture
