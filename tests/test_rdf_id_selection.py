@@ -24,5 +24,11 @@ def test_rdf_id_or_about_objectnone() -> None:
         # Pylance silenced to test wrong input type
         find_rdf_id_or_about(profile, object_type)    # type: ignore
 
+
+def test_rdf_id_or_about_profilenone(caplog: pytest.LogCaptureFixture) -> None:
+    result = find_rdf_id_or_about(None, "Any_predicate")
+    assert result == "about"
+    assert "No profile found. Defaults to 'about'." in caplog.text
+
 if __name__ == "__main__":
     pytest.main()

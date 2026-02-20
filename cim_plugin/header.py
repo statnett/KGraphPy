@@ -28,7 +28,7 @@ class CIMMetadataHeader:
             triples: Optional[Sequence[Tuple[Node, Node, Node]]] = None, 
             metadata_objects: Optional[Iterable[URIRef]] = None, 
             reachable_nodes: Optional[Set[Node]] = set(),
-            profile_predicates: Optional[Set[Node]] = None,
+            profile_predicates: Optional[Set[URIRef]] = None,
             profile: Optional[str] = None
     ):
         if subject is None:
@@ -129,8 +129,8 @@ class CIMMetadataHeader:
         return final_subject, repaired, reachable
 
     @classmethod
-    def empty(cls, subject: Optional[URIRef] = None, metadata_objects: Iterable[URIRef]|None = None, profile: str|None = None):
-        return cls(subject=subject, triples=[], metadata_objects=metadata_objects, profile=profile)
+    def empty(cls, subject: Optional[URIRef] = None, metadata_objects: Iterable[URIRef]|None = None, profile_predicates: Set[URIRef]|None = None, profile: str|None = None):
+        return cls(subject=subject, triples=[], metadata_objects=metadata_objects, profile_predicates=profile_predicates, profile=profile)
 
 
     @staticmethod
@@ -173,12 +173,17 @@ class CIMMetadataHeader:
         raise ValueError("No metadata-object rdf:type found in header")
 
 
-    def collect_profile(self) -> str|None:
-        profile_predicates = [MD["Model.profile"], DCTERMS.conformsTo]
+    def collect_profile(self) -> str | None:
+        """Collect the profile of a graph from the triple with predicate in self.profile_predicates.
+
+        Returns:
+            str|: The profile or None if no profile is found.
+        """
         for _, p, o in self.triples:
-            if p in profile_predicates:
+            if p in self.profile_predicates:
                 if isinstance(o, Literal):
-                    return o.value
+                    return str(o.value)
+        return None
 
 
     def set_subject(self, new_subject: URIRef):

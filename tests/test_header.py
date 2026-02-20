@@ -61,7 +61,7 @@ def test_init_profilepredicatesdefault() -> None:
 
 
 def test_init_profilepredicatesoverride() -> None:
-    preds: set[Node] = {URIRef("urn:test:profile")}
+    preds = {URIRef("urn:test:profile")}
     h = CIMMetadataHeader(profile_predicates=preds)
     assert h.profile_predicates is preds
 
@@ -81,7 +81,7 @@ def test_init_profileoverride() -> None:
 
 @patch.object(CIMMetadataHeader, "collect_profile")
 def test_init_profilepredicatesusedincollect(mock_collect: MagicMock) -> None:
-    preds: set[Node] = {URIRef("urn:test:profile")}
+    preds = {URIRef("urn:test:profile")}
     h = CIMMetadataHeader(profile=None, profile_predicates=preds)
     mock_collect.assert_called_once()
     assert h.profile_predicates is preds
@@ -403,11 +403,47 @@ def test_collect_header_triples_mixedobjects(mock_repair: MagicMock, obj: Node, 
 
 
 # Unit tests .empty
-# Consider if tests with custom inputs should be added.
-def test_empty_createsminimalheader() -> None:
+def test_empty_basic() -> None:
     h = CIMMetadataHeader.empty()
-    assert h.triples == []
     assert isinstance(h.subject, URIRef)
+    assert h.triples == []
+    assert h.reachable_nodes == set()
+    assert h.metadata_objects == CIMMetadataHeader.DEFAULT_METADATA_OBJECTS
+    assert h.profile_predicates == CIMMetadataHeader.DEFAULT_PROFILE_PREDICATES
+
+
+def test_empty_subjectoverride() -> None:
+    s = URIRef("urn:test")
+    h = CIMMetadataHeader.empty(subject=s)
+    assert h.subject == s
+
+
+def test_empty_metadataobjectsoverride() -> None:
+    objs = {URIRef("urn:meta")}
+    h = CIMMetadataHeader.empty(metadata_objects=objs)
+    assert h.metadata_objects == objs
+
+
+def test_empty_profilepredicatesoverride() -> None:
+    preds = {URIRef("urn:custom:profile")}
+    h = CIMMetadataHeader.empty(profile_predicates=preds)
+    assert h.profile_predicates is preds
+
+
+@patch.object(CIMMetadataHeader, "collect_profile")
+def test_empty_profile_override(mock_collect: MagicMock) -> None:
+    h = CIMMetadataHeader.empty(profile="manual")
+    assert h.profile == "manual"
+    mock_collect.assert_not_called()
+
+
+@patch.object(CIMMetadataHeader, "collect_profile")
+def test_empty_profile_none_calls_collect(mock_collect: MagicMock) -> None:
+    mock_collect.return_value = "auto"
+    h = CIMMetadataHeader.empty(profile=None)
+    assert h.profile == "auto"
+    mock_collect.assert_called_once()
+
 
 # Unit tests ._repair_blank_header_subject
 @pytest.mark.parametrize(
@@ -515,11 +551,15 @@ def test_repair_blank_header_subject_norepairneeded(mock_repair: MagicMock, head
 @pytest.mark.parametrize(
         "triples, expected",
         [
-            pytest.param([(RDF.type, MD.FullModel), (URIRef("http://iec.ch/TC57/61970-552/ModelDescription/1#Model.profile"), Literal("http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"))], "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0", id="Fullmodel header, model profile"),
-            pytest.param([(RDF.type, MD.FullModel), (URIRef("http://purl.org/dc/terms/conformsTo"), Literal("http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"))], "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0", id="Fullmodel header, dcterms profile"),
-            pytest.param([(RDF.type, DCAT.Dataset), (URIRef("http://purl.org/dc/terms/conformsTo"), Literal("http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"))], "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0", id="Dcat header, dcterms profile"),
-            pytest.param([(RDF.type, DCAT.Dataset), (URIRef("http://iec.ch/TC57/61970-552/ModelDescription/1#Model.profile"), Literal("http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"))], "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0", id="Dcat header, model profile"),
-            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.identifier), Literal("Not a profile"))], None, id="Profile not present")
+            pytest.param([(RDF.type, MD.FullModel), (URIRef(MD["Model.profile"]), Literal("model"))], "model", id="Fullmodel header, model profile"),
+            pytest.param([(RDF.type, MD.FullModel), (URIRef(DCTERMS.conformsTo), Literal("dcterms"))], "dcterms", id="Fullmodel header, dcterms profile"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal("dcterms"))], "dcterms", id="Dcat header, dcterms profile"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(MD["Model.profile"]), Literal("model"))], "model", id="Dcat header, model profile"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.identifier), Literal("Not a profile"))], None, id="Profile not present"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), URIRef("Not a profile"))], None, id="URIRef"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), BNode("Not a profile"))], None, id="BNode"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal(42))], "42", id="Integer literal"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal("dcterms", lang="en"))], "dcterms", id="Literal with language"),
         ]
 )
 def test_collect_profile_success(triples: tuple, expected: str) -> None:
@@ -529,6 +569,25 @@ def test_collect_profile_success(triples: tuple, expected: str) -> None:
     
     result = header.collect_profile()
     assert result == expected
+
+
+def test_collect_profile_customprofile() -> None:
+    header = CIMMetadataHeader.empty(URIRef("s1"), profile_predicates={URIRef("custom")})
+    header.add_triple(RDF.type, MD.FullModel)
+    header.add_triple(URIRef("custom"), Literal("model"))
+    
+    result = header.collect_profile()
+    assert result == "model"
+
+
+def test_collect_profile_multipleprofiles() -> None:
+    header = CIMMetadataHeader.empty(URIRef("s1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(DCTERMS.conformsTo, Literal("model1"))
+    header.add_triple(DCTERMS.conformsTo, Literal("model2"))
+    
+    result = header.collect_profile()
+    assert result == "model1"   # First encountered wins
 
 if __name__ == "__main__":
     pytest.main()

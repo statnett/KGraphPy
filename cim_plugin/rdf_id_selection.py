@@ -1,6 +1,9 @@
 import yaml
 from rdflib import URIRef
 from pathlib import Path
+import logging
+
+logger = logging.getLogger('cimxml_logger')
 
 file_path = Path.cwd() /"cim_plugin" / "id_profiles.yaml"
 
@@ -18,7 +21,11 @@ def expand(uri: str) -> str:
     return prefixes.get(prefix, prefix + ":") + local
 
 
-def find_rdf_id_or_about(profile: str, obj_type: str|URIRef) -> str:
+def find_rdf_id_or_about(profile: str|None, obj_type: str|URIRef) -> str:
+    if not profile:
+        logger.error("No profile found. Defaults to 'about'.")
+        return "about"
+    
     if profile not in profiles:
         return "about"
 
