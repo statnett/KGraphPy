@@ -6,7 +6,127 @@ from cim_plugin.namespaces import MD
 from cim_plugin.header import CIMMetadataHeader
 from tests.fixtures import build_graph_with_blank_header
 
-# Unit tests _collect_header_triples
+
+# Unit tests .from_graph
+@patch.object(CIMMetadataHeader, "_collect_header_triples")
+def test_from_graph_noheadertriples(mock_collect: MagicMock) -> None:
+    g = Graph()
+    # No rdf:type triples at all
+    with pytest.raises(ValueError, match="No metadata header"):
+        CIMMetadataHeader.from_graph(g)
+    mock_collect.assert_not_called()
+
+@patch.object(CIMMetadataHeader, "_collect_header_triples")
+def test_from_graph_multipleheaders(mock_collect: MagicMock) -> None:
+    g = Graph()
+    g.add((URIRef("urn:h1"), RDF.type, MD.FullModel))
+    g.add((URIRef("urn:h2"), RDF.type, DCAT.Dataset))
+
+    with pytest.raises(ValueError, match="Multiple metadata headers"):
+        CIMMetadataHeader.from_graph(g)
+    mock_collect.assert_not_called()
+
+
+@patch.object(CIMMetadataHeader, "_collect_header_triples")
+def test_from_graph_onlyheadertriple(mock_collect: MagicMock) -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+    g.add((header, RDF.type, DCAT.Dataset))
+
+    mock_collect.return_value = (header, [(header, RDF.type, DCAT.Dataset)], set(header))
+
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.subject == header
+    assert result.triples == [(header, RDF.type, DCAT.Dataset)]
+    mock_collect.assert_called_once_with(g, header)
+
+
+@patch.object(CIMMetadataHeader, "_collect_header_triples")
+def test_from_graph_blankheaderrepair(mock_collect: MagicMock) -> None:
+    g = Graph()
+    header = BNode()
+    repaired = URIRef("urn:uuid:fixed")
+
+    g.add((header, RDF.type, DCAT.Dataset))
+
+    mock_collect.return_value = (repaired, [(repaired, RDF.type, DCAT.Dataset)], set(repaired))
+
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.subject == repaired
+    assert result.triples == [(repaired, RDF.type, DCAT.Dataset)]
+    mock_collect.assert_called_once_with(g, header)
+
+
+@patch.object(CIMMetadataHeader, "_collect_header_triples")
+def test_from_graph_metadataobjectsoverride(mock_collect: MagicMock) -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+
+    g.add((header, RDF.type, URIRef("urn:custom:Type")))
+
+    mock_collect.return_value = (header, [], set())
+
+    result = CIMMetadataHeader.from_graph(g, metadata_objects=[URIRef("urn:custom:Type")])
+
+    assert result.metadata_objects == [URIRef("urn:custom:Type")]
+
+
+# Integration tests .from_graph
+def test_from_graph_integration_dcatheader() -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+    g.add((header, RDF.type, DCAT.Dataset))
+    g.add((header, URIRef("urn:p"), URIRef("urn:o")))
+    reachable = {header}
+
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.triples == [(header, RDF.type, DCAT.Dataset), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert result.reachable_nodes == reachable
+
+
+def test_from_graph_integration_fullmodelheader() -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+    g.add((header, RDF.type, MD.FullModel))
+    g.add((header, URIRef("urn:p"), URIRef("urn:o")))
+    reachable = {header}
+
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.triples == [(header, RDF.type, MD.FullModel), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert result.reachable_nodes == reachable
+
+def test_from_graph_integration_metadataobjectsoverride() -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+    g.add((header, RDF.type, URIRef("urn:meta:Header")))
+    g.add((header, URIRef("urn:p"), URIRef("urn:o")))
+    reachable = {header}
+
+    result = CIMMetadataHeader.from_graph(g, metadata_objects=[URIRef("urn:meta:Header")])
+
+    assert result.triples == [(header, RDF.type, URIRef("urn:meta:Header")), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert result.reachable_nodes == reachable
+
+
+def test_from_graph_integration_blankheaderrepair(caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    header = BNode()
+    repaired = URIRef("urn:uuid:fixed")
+
+    g.add((header, RDF.type, DCAT.Dataset))
+    g.add((header, DCTERMS.identifier, Literal("fixed")))
+
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.subject == repaired
+    assert result.triples == [(repaired, RDF.type, DCAT.Dataset), (repaired, DCTERMS.identifier, Literal("fixed"))]
+    assert "Metadata header subject is a blank node" in caplog.text
+
+# Unit tests ._collect_header_triples
 
 def test_collect_header_triples_reachability(build_graph_with_blank_header: tuple[Graph, BNode, set[BNode]]) -> None:
     # Checks that triples with blank subject nodes are reachable
