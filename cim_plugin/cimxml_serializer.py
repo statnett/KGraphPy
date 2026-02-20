@@ -1,3 +1,5 @@
+"""Serializer for writing graphs to CIMXML files."""
+
 import uuid
 from rdflib.serializer import Serializer
 from rdflib.graph import Graph
@@ -251,7 +253,8 @@ class CIMXMLSerializer(Serializer):
 
         if (subject, None, None) in self.store:
             for predicate, obj in preds:
-                self.predicate(predicate, obj, depth + 1)
+                use_qualifier = is_uuid_qualified(self.qualifier_resolver, obj)
+                self.predicate(predicate, obj, depth + 1, use_qualifier=use_qualifier)
         
         write(f"{indent}</{subject_type_qname}>\n")
                 

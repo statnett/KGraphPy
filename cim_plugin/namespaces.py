@@ -1,3 +1,5 @@
+"""The namespaces used which are not default to rdflib."""
+
 from rdflib import Namespace
 
 

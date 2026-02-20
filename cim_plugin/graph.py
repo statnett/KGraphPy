@@ -1,3 +1,5 @@
+"""The graph and dataset classes used to handle the graph triples."""
+
 from rdflib import Graph, Dataset
 from cim_plugin.header import CIMMetadataHeader
 

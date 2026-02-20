@@ -736,9 +736,10 @@ def test_subject_missingtype(serializer: tuple[CIMXMLSerializer, list]) -> None:
     assert "<MALFORMED" in result
     assert "No rdf:type found" in result
 
-
-def test_subject_valid(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_valid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -759,8 +760,35 @@ def test_subject_valid(serializer: tuple[CIMXMLSerializer, list]) -> None:
     assert "</ex:Class>" in result
 
 
-def test_subject_rdfid(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@pytest.mark.parametrize(
+        "qualifier_return", [True, False]
+)
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list], qualifier_return: bool) -> None:
     ser, output = serializer
+    mock_qualified.return_value = qualifier_return
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("s123")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+    ser.predicate = Mock()
+
+    ser.subject(s)
+
+    mock_qualified.assert_called_once_with(ser.qualifier_resolver, Literal("value"))
+    ser.predicate.assert_called_once_with(p, Literal("value"), 2, use_qualifier=qualifier_return)
+
+
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_rdfid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
     g.metadata_header.profile = "http://cim-profile.ucaiug.io/grid/Dynamics/2.0"    # pyright: ignore[reportAttributeAccessIssue]
 
@@ -814,9 +842,10 @@ def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) ->
 
     assert output == []
 
-
-def test_subject_malformedpredicate(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_malformedpredicate(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -833,8 +862,10 @@ def test_subject_malformedpredicate(serializer: tuple[CIMXMLSerializer, list]) -
 
     assert "MALFORMED_" in result  # from predicate()
 
-def test_subject_malformedobject(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_malformedobject(mock_qualified, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -849,13 +880,14 @@ def test_subject_malformedobject(serializer: tuple[CIMXMLSerializer, list]) -> N
     ser.subject(s)
 
     result = "".join(output)
-    print(result)
     assert '<ex:Class rdf:about="s123"' in result
     assert "<ex:p>MALFORMED_value</ex:p>" in result
     assert "</ex:Class>" in result
 
-def test_subject_predicatesorting(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_predicatesorting(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -901,9 +933,10 @@ def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list]) -> Non
     assert "ClassB" in result
     assert "<ex:p>x</ex:p>" in result
 
-
-def test_subject_rdftypewithoutprefix(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_rdftypewithoutprefix(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -942,8 +975,10 @@ def test_subject_rdftypenoturi(serializer: tuple[CIMXMLSerializer, list]) -> Non
     assert result == '  <MALFORMED rdf:about="s123">\n    <message>The rdf:type object is not a uri: Not-a-uri</message>\n    <rdf:type>Not-a-uri</rdf:type>\n    <ex:p>value</ex:p>\n  </MALFORMED>\n'
 
 
-def test_subject_rdftypemalformed(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_rdftypemalformed(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -962,8 +997,10 @@ def test_subject_rdftypemalformed(serializer: tuple[CIMXMLSerializer, list]) -> 
     assert result == '  <ex:1Class rdf:about="s123">\n    <ex:p>value</ex:p>\n  </ex:1Class>\n'
 
 
-def test_subject_circulartriples(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_circulartriples(mock_qualifier: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualifier.return_value = False
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -982,8 +1019,10 @@ def test_subject_circulartriples(serializer: tuple[CIMXMLSerializer, list]) -> N
     assert result == '  <ex:Class rdf:about="s123">\n    <ex:p rdf:resource="s123"/>\n  </ex:Class>\n'
     
 
-def test_subject_predicatecalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+def test_subject_predicatecalls(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    mock_qualified.side_effect = [False, False]
     g = ser.store
 
     s = URIRef("http://example.com/s")
@@ -999,7 +1038,10 @@ def test_subject_predicatecalls(serializer: tuple[CIMXMLSerializer, list]) -> No
 
     ser.subject(s)
 
-    assert ser.predicate.call_count == 2
+    qual_calls = [call(ser.qualifier_resolver, Literal("x")), call(ser.qualifier_resolver, Literal("y"))]
+    pred_calls = [call(p1, Literal("x"), 2, use_qualifier=False), call(p2, Literal("y"), 2, use_qualifier=False)]
+    mock_qualified.assert_has_calls(qual_calls)
+    ser.predicate.assert_has_calls(pred_calls)
 
 
 b = BNode("bad")    # Creating a shared bnode for test below
@@ -1325,15 +1367,15 @@ def test_subject_resolver_integration(capture_writer: tuple[list, Callable], inp
         pytest.param("_s", "_o", UnderscoreQualifier(), "#_s", "#_o", id="Underscore input, underscore output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", UnderscoreQualifier(), "#_abcd", "#_efgh", id="Urn input, underscore output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", UnderscoreQualifier(), "#_x", "#_y", id="Namespace input, underscore output"),
-        pytest.param("weird", "strange", UnderscoreQualifier(), "#_weird", "#_strange", id="Fallback, underscore output"),
+        pytest.param("weird", "strange", UnderscoreQualifier(), "#_weird", "strange", id="Fallback, underscore output"),
         pytest.param("_s", "_o", URNQualifier(), "urn:uuid:s", "urn:uuid:o", id="Underscore input, urn output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", URNQualifier(), "urn:uuid:abcd", "urn:uuid:efgh", id="Urn input, urn output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", URNQualifier(), "urn:uuid:x", "urn:uuid:y", id="Namespace input, urn output"),
-        pytest.param("weird", "strange", URNQualifier(), "urn:uuid:weird", "urn:uuid:strange", id="Fallback, urn output"),
+        pytest.param("weird", "strange", URNQualifier(), "urn:uuid:weird", "strange", id="Fallback, urn output"),
         pytest.param("_s", "_o", NamespaceQualifier(), f"{uuid_namespace}:s", f"{uuid_namespace}:o", id="Underscore input, namespace output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", NamespaceQualifier(), f"{uuid_namespace}:abcd", f"{uuid_namespace}:efgh", id="Urn input, namespace output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", NamespaceQualifier(), f"{uuid_namespace}:x", f"{uuid_namespace}:y", id="Namespace input, namespace output"),
-        pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", f"{uuid_namespace}:strange", id="Fallback, namespace output"),
+        pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", "strange", id="Fallback, namespace output"),
     ]
 )
 def test_subject_and_predicate_resolver_integration_with_default_qualifier(
@@ -1376,15 +1418,15 @@ def test_subject_and_predicate_resolver_integration_with_default_qualifier(
         pytest.param("_s", "_o", UnderscoreQualifier(), "_s", "#_o", id="Underscore input, underscore output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", UnderscoreQualifier(), "_abcd", "#_efgh", id="Urn input, underscore output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", UnderscoreQualifier(), "_x", "#_y", id="Namespace input, underscore output"),
-        pytest.param("weird", "strange", UnderscoreQualifier(), "_weird", "#_strange", id="Fallback, underscore output"),
+        pytest.param("weird", "strange", UnderscoreQualifier(), "_weird", "strange", id="Fallback, underscore output"),
         pytest.param("_s", "_o", URNQualifier(), "urn:uuid:s", "urn:uuid:o", id="Underscore input, urn output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", URNQualifier(), "urn:uuid:abcd", "urn:uuid:efgh", id="Urn input, urn output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", URNQualifier(), "urn:uuid:x", "urn:uuid:y", id="Namespace input, urn output"),
-        pytest.param("weird", "strange", URNQualifier(), "urn:uuid:weird", "urn:uuid:strange", id="Fallback, urn output"),
+        pytest.param("weird", "strange", URNQualifier(), "urn:uuid:weird", "strange", id="Fallback, urn output"),
         pytest.param("_s", "_o", NamespaceQualifier(), f"{uuid_namespace}:s", f"{uuid_namespace}:o", id="Underscore input, namespace output"),
         pytest.param("urn:uuid:abcd", "urn:uuid:efgh", NamespaceQualifier(), f"{uuid_namespace}:abcd", f"{uuid_namespace}:efgh", id="Urn input, namespace output"),
         pytest.param(f"{uuid_namespace}:x", f"{uuid_namespace}:y", NamespaceQualifier(), f"{uuid_namespace}:x", f"{uuid_namespace}:y", id="Namespace input, namespace output"),
-        pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", f"{uuid_namespace}:strange", id="Fallback, namespace output"),
+        pytest.param("weird", "strange", NamespaceQualifier(), f"{uuid_namespace}:weird", "strange", id="Fallback, namespace output"),
     ]
 )
 def test_subject_and_predicate_resolver_integration_with_special_qualifier(

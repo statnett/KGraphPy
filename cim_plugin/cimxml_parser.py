@@ -1,3 +1,5 @@
+"""Parser for CIM/XML files."""
+
 from rdflib.parser import Parser, InputSource
 from rdflib.plugins.parsers.rdfxml import RDFXMLParser
 from rdflib import URIRef, Literal, Namespace, Graph

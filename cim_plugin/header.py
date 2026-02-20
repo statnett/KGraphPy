@@ -1,3 +1,5 @@
+"""The class which handles metadata header triples and information about them."""
+
 from rdflib import Graph, Node, URIRef, RDF, BNode, Literal
 from rdflib.namespace import DCTERMS
 from cim_plugin.namespaces import MD
@@ -129,7 +131,15 @@ class CIMMetadataHeader:
         return final_subject, repaired, reachable
 
     @classmethod
-    def empty(cls, subject: Optional[URIRef] = None, metadata_objects: Iterable[URIRef]|None = None, profile_predicates: Set[URIRef]|None = None, profile: str|None = None):
+    def empty(cls, subject: Optional[URIRef] = None, metadata_objects: Optional[Iterable[URIRef]] = None, profile_predicates: Optional[Set[URIRef]] = None, profile: Optional[str] = None):
+        """Creates and empty instance with optional attributes.
+        
+        Parameters:
+            subject (URIRef): Subject used for all header triples. Should be a valid uuid.
+            metadata_objects (URIRef): A custom rdf:type object. Default are md:FullModel and dcat:Dataset.
+            profile_predicates (set[URIRef]): A custom predicate that holds the profile information. Default are md:Model.Profile and dcterms.conformsTo.
+            profile (str): A custom profile.
+        """
         return cls(subject=subject, triples=[], metadata_objects=metadata_objects, profile_predicates=profile_predicates, profile=profile)
 
 
@@ -205,11 +215,6 @@ class CIMMetadataHeader:
         """Yield (predicate, object) pairs for writing."""
         for _, p, o in self.triples:
             yield p, o
-
-
-    def get_types(self) -> List[Node]:
-        """Return all rdf:type values for the header subject."""
-        return [o for (_, p, o) in self.triples if p == RDF.type]
 
 
     def add_triple(self, predicate: Node, obj: Node):

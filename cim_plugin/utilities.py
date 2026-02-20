@@ -1,3 +1,5 @@
+"""Various utility functions."""
+
 import uuid
 from rdflib import Graph, Dataset, URIRef, Node
 from rdflib.namespace import RDF, DCAT

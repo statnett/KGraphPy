@@ -1,3 +1,5 @@
+"""The log configuration."""
+
 LOG_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,

@@ -1,3 +1,5 @@
+"""Register the parser and serializer and set the default metadata object types."""
+
 from rdflib.plugin import register
 from rdflib.parser import Parser
 from rdflib.serializer import Serializer

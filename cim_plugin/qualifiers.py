@@ -1,3 +1,5 @@
+"""The classes handling the uuid qualifiers."""
+
 from abc import ABC, abstractmethod
 from rdflib import Node, URIRef
 from cim_plugin.namespaces import MODEL

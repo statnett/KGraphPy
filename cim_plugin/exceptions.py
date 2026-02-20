@@ -1,4 +1,4 @@
-
+"""Exceptions used in the package."""
 
 class CIMXMLParseError(Exception):
     def __init__(self, file_path, original_exception):
