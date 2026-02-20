@@ -7,6 +7,87 @@ from cim_plugin.header import CIMMetadataHeader
 from tests.fixtures import build_graph_with_blank_header
 
 
+# Unit tests .__init__
+def test_init_generatesuuidsubject() -> None:
+    h = CIMMetadataHeader()
+    assert isinstance(h.subject, URIRef)
+    assert str(h.subject).startswith("urn:uuid:")
+
+
+def test_init_providedsubject() -> None:
+    s = URIRef("urn:test")
+    h = CIMMetadataHeader(subject=s)
+    assert h.subject == s
+
+
+def test_init_triplesnone() -> None:
+    h = CIMMetadataHeader(triples=None)
+    assert h.triples == []
+
+
+def test_init_triplesinput() -> None:
+    triples = [(URIRef("a"), URIRef("b"), Literal("c"))]
+    h = CIMMetadataHeader(triples=triples)
+    assert h.triples == triples
+    assert h.triples is not triples  # must be a copy
+
+
+def test_init_metadataobjectsdefaults() -> None:
+    h = CIMMetadataHeader(metadata_objects=None)
+    assert h.metadata_objects == CIMMetadataHeader.DEFAULT_METADATA_OBJECTS
+    assert h.metadata_objects == {MD.FullModel, DCAT.Dataset}
+
+
+def test_init_metadataobjectsoverride() -> None:
+    objs = {URIRef("urn:meta")}
+    h = CIMMetadataHeader(metadata_objects=objs)
+    assert h.metadata_objects == objs
+    
+
+def test_init_reachablenodesdefault() -> None:
+    h = CIMMetadataHeader()
+    assert h.reachable_nodes == set()
+
+
+def test_init_reachablenodesoverride() -> None:
+    nodes: set[Node] = {URIRef("urn:x")}
+    h = CIMMetadataHeader(reachable_nodes=nodes)
+    assert h.reachable_nodes is nodes
+
+
+def test_init_profilepredicatesdefault() -> None:
+    h = CIMMetadataHeader()
+    assert h.profile_predicates == CIMMetadataHeader.DEFAULT_PROFILE_PREDICATES
+
+
+def test_init_profilepredicatesoverride() -> None:
+    preds: set[Node] = {URIRef("urn:test:profile")}
+    h = CIMMetadataHeader(profile_predicates=preds)
+    assert h.profile_predicates is preds
+
+
+@patch.object(CIMMetadataHeader, "collect_profile")
+def test_init_profilenone(mock_collect: MagicMock) -> None:
+    mock_collect.return_value = "profile"
+    h = CIMMetadataHeader(profile=None)
+    assert h.profile == "profile"
+    mock_collect.assert_called_once()
+
+
+def test_init_profileoverride() -> None:
+    h = CIMMetadataHeader(profile="manual")
+    assert h.profile == "manual"
+
+
+@patch.object(CIMMetadataHeader, "collect_profile")
+def test_init_profilepredicatesusedincollect(mock_collect: MagicMock) -> None:
+    preds: set[Node] = {URIRef("urn:test:profile")}
+    h = CIMMetadataHeader(profile=None, profile_predicates=preds)
+    mock_collect.assert_called_once()
+    assert h.profile_predicates is preds
+
+
+
 # Unit tests .from_graph
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_noheadertriples(mock_collect: MagicMock) -> None:
@@ -68,9 +149,9 @@ def test_from_graph_metadataobjectsoverride(mock_collect: MagicMock) -> None:
 
     mock_collect.return_value = (header, [], set())
 
-    result = CIMMetadataHeader.from_graph(g, metadata_objects=[URIRef("urn:custom:Type")])
+    result = CIMMetadataHeader.from_graph(g, metadata_objects={URIRef("urn:custom:Type")})
 
-    assert result.metadata_objects == [URIRef("urn:custom:Type")]
+    assert result.metadata_objects == {URIRef("urn:custom:Type")}
 
 
 # Integration tests .from_graph
@@ -99,6 +180,15 @@ def test_from_graph_integration_fullmodelheader() -> None:
     assert result.triples == [(header, RDF.type, MD.FullModel), (header, URIRef("urn:p"), URIRef("urn:o"))]
     assert result.reachable_nodes == reachable
 
+
+def test_from_graph_integration_specialheadernotinput() -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+    g.add((header, RDF.type, URIRef("urn:meta:Header")))
+    with pytest.raises(ValueError, match="No metadata header"):
+        CIMMetadataHeader.from_graph(g)
+    
+    
 def test_from_graph_integration_metadataobjectsoverride() -> None:
     g = Graph()
     header = URIRef("urn:header")

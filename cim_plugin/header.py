@@ -18,8 +18,9 @@ class CIMMetadataHeader:
     metadata triples so they can be inspected, edited, or serialized separately.
     """
 
-    # Default metadata object types (can be extended by user)
-    DEFAULT_METADATA_OBJECTS: List[URIRef] = []
+    # The defaults are added to the list in __init__.py
+    DEFAULT_METADATA_OBJECTS: Set[URIRef] = set()
+    DEFAULT_PROFILE_PREDICATES: Set[URIRef] = {MD["Model.profile"], DCTERMS.conformsTo}
 
     def __init__(
             self, 
@@ -27,6 +28,7 @@ class CIMMetadataHeader:
             triples: Optional[Sequence[Tuple[Node, Node, Node]]] = None, 
             metadata_objects: Optional[Iterable[URIRef]] = None, 
             reachable_nodes: Optional[Set[Node]] = set(),
+            profile_predicates: Optional[Set[Node]] = None,
             profile: Optional[str] = None
     ):
         if subject is None:
@@ -34,8 +36,9 @@ class CIMMetadataHeader:
 
         self.subject: URIRef = subject
         self.triples: List[Tuple[Node, Node, Node]] = list(triples) if triples else []
-        self.metadata_objects = list(metadata_objects) if metadata_objects else list(self.DEFAULT_METADATA_OBJECTS)
+        self.metadata_objects = set(metadata_objects) if metadata_objects else set(self.DEFAULT_METADATA_OBJECTS)
         self.reachable_nodes: Set[Node] = reachable_nodes if reachable_nodes else set()  # Blank nodes belonging to the header and therefore reachable through other header triples.
+        self.profile_predicates = profile_predicates or self.DEFAULT_PROFILE_PREDICATES
         self.profile: Optional[str] = profile or self.collect_profile()
 
     @classmethod

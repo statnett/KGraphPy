@@ -21,8 +21,8 @@ register(
 
 
 # Set the default metadata object types for CIM
-CIMMetadataHeader.DEFAULT_METADATA_OBJECTS = [
+CIMMetadataHeader.DEFAULT_METADATA_OBJECTS = {
     MD.FullModel,
     DCAT.Dataset
-]
+}
 
