@@ -3,14 +3,15 @@ from cim_plugin.cimxml_parser import (
     update_namespace_in_graph,
     ensure_correct_namespace_graph,
     find_slots_with_range,
-    detect_uri_collisions, 
+    # detect_uri_collisions, 
     _clean_uri,
+    fix_qualifier_for_all_uuids,
     cast_float,
     cast_bool
     # looks_like_cim_uri, 
 )
 import pytest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, MagicMock, mock_open, call
 # from pathlib import Path
 from rdflib import URIRef, Graph, Namespace, Literal, BNode
 import logging
@@ -473,191 +474,264 @@ def test_find_slots_with_range_attributeerrors(yaml: str, raises: bool) -> None:
 
 
 # Unit tests detect_uri_collisions
-@pytest.mark.parametrize(
-    "triples",
-    [
-        pytest.param([(URIRef("http://ex.com#a"), URIRef("p"), URIRef("http://ex.com#b"))],
-                     id="Completely different uris"),
-        pytest.param([(URIRef("http://ex.com#_a"), URIRef("p"), URIRef("http://ex.com#_b"))],
-                     id="Completely different, but require cleaning"),
-        pytest.param([
-            (URIRef("http://ex.com#_a"), URIRef("p"), URIRef("http://ex.com#_b")),
-            (URIRef("http://ex.com#_c"), URIRef("p"), URIRef("http://ex.com#_d")),
-        ], id="Several triples, no collision")
-    ]
-)
-def test_detect_uri_collisions_nocollision(triples: list) -> None:
-    g = Graph()
-    for s, p, o in triples:
-        g.add((s, p, o))
+# @pytest.mark.parametrize(
+#     "triples",
+#     [
+#         pytest.param([(URIRef("http://ex.com#a"), URIRef("p"), URIRef("http://ex.com#b"))],
+#                      id="Completely different uris"),
+#         pytest.param([(URIRef("http://ex.com#_a"), URIRef("p"), URIRef("http://ex.com#_b"))],
+#                      id="Completely different, but require cleaning"),
+#         pytest.param([
+#             (URIRef("http://ex.com#_a"), URIRef("p"), URIRef("http://ex.com#_b")),
+#             (URIRef("http://ex.com#_c"), URIRef("p"), URIRef("http://ex.com#_d")),
+#         ], id="Several triples, no collision")
+#     ]
+# )
+# def test_detect_uri_collisions_nocollision(triples: list) -> None:
+#     g = Graph()
+#     for s, p, o in triples:
+#         g.add((s, p, o))
 
-    id_set = {"a", "b", "c", "d"}
+#     id_set = {"a", "b", "c", "d"}
 
-    detect_uri_collisions(g, id_set)
-
-
-def test_detect_uri_collisions_multiple() -> None:
-    g = Graph()
-
-    g.add((URIRef("http://ex.com#_a"), URIRef("p"), URIRef("o")))
-    g.add((URIRef("http://other.com#a"), URIRef("p"), URIRef("o")))
-    g.add((URIRef("http://ex.com#_b"), URIRef("p"), URIRef("o")))
-    g.add((URIRef("http://other.com#b"), URIRef("p"), URIRef("o")))
-
-    id_set = {"a", "b"}
-
-    with pytest.raises(ValueError) as exc:
-        detect_uri_collisions(g, id_set)
-
-    msg = str(exc.value)
-
-    assert "http://ex.com#_a" in msg
-    assert "http://other.com#a" in msg
-    assert "urn:uuid:a" in msg
-
-    assert "http://ex.com#_b" in msg
-    assert "http://other.com#b" in msg
-    assert "urn:uuid:b" in msg
+#     detect_uri_collisions(g, id_set)
 
 
-def test_detect_uri_collisionsinobject() -> None:
-    g = Graph()
-    g.add((URIRef("s1"), URIRef("p"), URIRef("http://ex.com#_x")))
-    g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#x")))
+# def test_detect_uri_collisions_multiple() -> None:
+#     g = Graph()
 
-    id_set = {"x"}
+#     g.add((URIRef("http://ex.com#_a"), URIRef("p"), URIRef("o")))
+#     g.add((URIRef("http://other.com#a"), URIRef("p"), URIRef("o")))
+#     g.add((URIRef("http://ex.com#_b"), URIRef("p"), URIRef("o")))
+#     g.add((URIRef("http://other.com#b"), URIRef("p"), URIRef("o")))
 
-    with pytest.raises(ValueError) as exc:
-        detect_uri_collisions(g, id_set)
+#     id_set = {"a", "b"}
 
-    msg = str(exc.value)
-    assert "http://ex.com#_x" in msg
-    assert "http://other.com#x" in msg
-    assert "urn:uuid:x" in msg
+#     with pytest.raises(ValueError) as exc:
+#         detect_uri_collisions(g, id_set)
 
+#     msg = str(exc.value)
 
-def test_detect_uri_collisionssubjectvsobject() -> None:
-    g = Graph()
-    g.add((URIRef("http://ex.com#_x"), URIRef("p"), URIRef("o1")))
-    g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#x")))
+#     assert "http://ex.com#_a" in msg
+#     assert "http://other.com#a" in msg
+#     assert "urn:uuid:a" in msg
 
-    id_set = {"x"}
-
-    with pytest.raises(ValueError) as exc:
-        detect_uri_collisions(g, id_set)
-
-    msg = str(exc.value)
-    assert "http://ex.com#_x" in msg
-    assert "http://other.com#x" in msg
-    assert "urn:uuid:x" in msg
+#     assert "http://ex.com#_b" in msg
+#     assert "http://other.com#b" in msg
+#     assert "urn:uuid:b" in msg
 
 
-def test_detect_uri_collisionemptyfragments() -> None:
-    g = Graph()
-    g.add((URIRef("http://ex.com#_"), URIRef("p"), URIRef("o1")))
-    g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#__")))
+# def test_detect_uri_collisionsinobject() -> None:
+#     g = Graph()
+#     g.add((URIRef("s1"), URIRef("p"), URIRef("http://ex.com#_x")))
+#     g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#x")))
 
-    id_set = {"x"}
+#     id_set = {"x"}
 
-    with pytest.raises(ValueError) as exc:
-        detect_uri_collisions(g, id_set)
+#     with pytest.raises(ValueError) as exc:
+#         detect_uri_collisions(g, id_set)
 
-    msg = str(exc.value)
-    assert "http://ex.com#_" in msg
-    assert "http://other.com#__" in msg
-    assert "urn:uuid:" in msg
+#     msg = str(exc.value)
+#     assert "http://ex.com#_x" in msg
+#     assert "http://other.com#x" in msg
+#     assert "urn:uuid:x" in msg
+
+
+# def test_detect_uri_collisionssubjectvsobject() -> None:
+#     g = Graph()
+#     g.add((URIRef("http://ex.com#_x"), URIRef("p"), URIRef("o1")))
+#     g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#x")))
+
+#     id_set = {"x"}
+
+#     with pytest.raises(ValueError) as exc:
+#         detect_uri_collisions(g, id_set)
+
+#     msg = str(exc.value)
+#     assert "http://ex.com#_x" in msg
+#     assert "http://other.com#x" in msg
+#     assert "urn:uuid:x" in msg
+
+
+# def test_detect_uri_collisionemptyfragments() -> None:
+#     g = Graph()
+#     g.add((URIRef("http://ex.com#_"), URIRef("p"), URIRef("o1")))
+#     g.add((URIRef("s2"), URIRef("p"), URIRef("http://other.com#__")))
+
+#     id_set = {"x"}
+
+#     with pytest.raises(ValueError) as exc:
+#         detect_uri_collisions(g, id_set)
+
+#     msg = str(exc.value)
+#     assert "http://ex.com#_" in msg
+#     assert "http://other.com#__" in msg
+#     assert "urn:uuid:" in msg
 
 
 # Unit tests _clean_uri
 @pytest.mark.parametrize(
-    "uri,id_set,expected",
+    "uri,expected",
     [
-        pytest.param(URIRef("http://example.com/nohash"), {"id1"}, URIRef("http://example.com/nohash"),
-                     id="URI wo # → returned unchanged"),
-        pytest.param(URIRef("http://example.com#abc"), {"id1"}, URIRef("http://example.com#abc"),
-                     id="Fragment not in id_set and wo _ → returned unchanged"),
-        pytest.param(URIRef("http://example.com#_abc"), {"id1"}, URIRef("urn:uuid:abc"),
+        pytest.param(URIRef("http://example.com/nohash"), URIRef("http://example.com/nohash"),
+                     id="Not uuid → returned unchanged"),
+        pytest.param(URIRef("http://example.com#_00000000-0000-4000-8000-000000000001"), URIRef("urn:uuid:00000000-0000-4000-8000-000000000001"),
+                     id="Fragment with #_ → cleaned"),
+        pytest.param(URIRef("http://example.com#00000000-0000-4000-8000-000000000001"), URIRef("urn:uuid:00000000-0000-4000-8000-000000000001"),
+                     id="Fragment with # → cleaned"),
+        pytest.param(URIRef("http://example.com_00000000-0000-4000-8000-000000000001"), URIRef("urn:uuid:00000000-0000-4000-8000-000000000001"),
                      id="Fragment with _ → cleaned"),
-        pytest.param(URIRef("http://example.com#id1"), {"id1"}, URIRef("urn:uuid:id1"),
-                     id="Fragment in id_set wo _ → cleaned"),
-        pytest.param(URIRef("http://example.com#_id1"), {"id1"}, URIRef("urn:uuid:id1"),
-                     id="Fragment in id_set and has _ → cleaned"),
-        pytest.param(URIRef("http://example.com#"), {"id1"}, URIRef("http://example.com#"),
+        pytest.param(URIRef("http://example.com#"), URIRef("http://example.com#"),
                      id="No fragment → unchanged"),
-        pytest.param(URIRef("http://example.com#_"), {"id1"}, URIRef("urn:uuid:"),
-                     id="Just _ fragment → cleaned"),
-        pytest.param(URIRef("http://example.com#__id1"), {"id1"}, URIRef("urn:uuid:id1"),
-                     id="Fragment with 2+ _ → cleaned"),
+        pytest.param(URIRef("http://example.com#_"), URIRef("http://example.com#_"),
+                     id="Just _ fragment → unchanged"),
     ]
 )
-def test_clean_uri_basic(uri: URIRef, id_set: set[str], expected: URIRef) -> None:
+def test_clean_uri_basic(uri: URIRef, expected: URIRef) -> None:
     uri_map = {}
-    result = _clean_uri(uri, uri_map, id_set)
+    result = _clean_uri(uri, uri_map)
     assert result == expected
 
 def test_clean_uri_uses_cache() -> None:
-    uri = URIRef("http://example.com#_abc")
-    id_set = {"abc"}
+    uri = URIRef("http://example.com#_00000000-0000-4000-8000-000000000001")
     uri_map = {}
 
-    first = _clean_uri(uri, uri_map, id_set)
-    second = _clean_uri(uri, uri_map, id_set)
+    first = _clean_uri(uri, uri_map)
+    second = _clean_uri(uri, uri_map)
 
     assert first is second  # Same object → same uri_map
     assert list(uri_map.values()) == [first]    # uri_map should only have one entry
 
 def test_clean_uri_cacheonlyforcleaned() -> None:
-    uri = URIRef("http://example.com#not_in_set")
-    id_set = {"something_else"}
+    uri = URIRef("http://example.com#not_a_uuid")
     uri_map = {}
 
-    result = _clean_uri(uri, uri_map, id_set)
+    result = _clean_uri(uri, uri_map)
 
     assert uri_map == {} # No caching when nothing cleaned
     assert result == uri
 
-@pytest.mark.parametrize(
-        "input, ids, output",
-        [
-            pytest.param("http://example.com#a#b#_c", {"id"}, "urn:uuid:c", id="Cleaned because of _ in last fragment"),
-            pytest.param("http://example.com#_a#b#c", {"id"}, "http://example.com#_a#b#c", id="Not cleaned because _ in first fragment"),
-            pytest.param("http://example.com#a#_b#c", {"id"}, "http://example.com#a#_b#c", id="Not cleaned because _ in second fragment"),
-            pytest.param("http://example.com#a#b#c", {"id"}, "http://example.com#a#b#c", id="Not cleaned because there are no _"),
-            pytest.param("http://example.com#a#b#c", {"c"}, "urn:uuid:c", id="Cleaned because fragment in id_set"),
-            pytest.param("http://example.com#a#b#c", {"b"}, "http://example.com#a#b#c", id="Not cleaned because wrong fragment in id_set"),
-        ]
-)
-def test_clean_uri_multiplehashes(input: str, ids: set[str], output: str, caplog: LogCaptureFixture) -> None:
-    # These tests show what happends if there are multiple # in the URIRef.
-    # It relies on a warning being logged and manually checking that the result is correct.
-    # Consider if the function should fail instead.
-    uri = URIRef(input)
-    id_set = ids
-    uri_map = {}
-
-    result = _clean_uri(uri, uri_map, id_set)
-
-    assert result == URIRef(output)
-    assert f"{input} has more then one #" in caplog.text
-
 
 def test_clean_uri_multipleurissamefragments() -> None:
     # This test shows that two identical fragments with different URIs will end up the same object in the graph 
-    uri1 = URIRef("http://example.com#_abc")
-    uri2 = URIRef("http://other.com#_abc")
+    uri1 = URIRef("http://example.com#_00000000-0000-4000-8000-000000000001")
+    uri2 = URIRef("http://other.com#_00000000-0000-4000-8000-000000000001")
 
-    id_set = {"abc"}
     uri_map = {}
 
-    cleaned1 = _clean_uri(uri1, uri_map, id_set)
-    cleaned2 = _clean_uri(uri2, uri_map, id_set)
+    cleaned1 = _clean_uri(uri1, uri_map)
+    cleaned2 = _clean_uri(uri2, uri_map)
 
     assert cleaned1 is not cleaned2 # They are not the same object
     assert cleaned1 == cleaned2 # They look identical
-    assert cleaned1 == URIRef("urn:uuid:abc")
+    assert cleaned1 == URIRef("urn:uuid:00000000-0000-4000-8000-000000000001")
     assert len(uri_map) == 2
     assert set(uri_map.values()) == {cleaned1}
 
+
+@patch("cim_plugin.cimxml_parser.extract_uuid")
+def test_clean_uri_extractcalls(mock_extract: MagicMock) -> None:
+    mock_extract.return_value = "00000000-0000-4000-8000-000000000001"
+    uri1 = URIRef("http://example.com#_00000000-0000-4000-8000-000000000001")
+
+    uri_map = {}
+
+    cleaned1 = _clean_uri(uri1, uri_map)
+
+    assert cleaned1 == URIRef("urn:uuid:00000000-0000-4000-8000-000000000001")
+    assert set(uri_map.values()) == {cleaned1}
+    mock_extract.assert_called_once_with("http://example.com#_00000000-0000-4000-8000-000000000001")
+
+
+# Unit tests normalize_rdf_ids
+
+@pytest.mark.parametrize(
+        "s, o, calls",
+        [
+            pytest.param(URIRef("a"), Literal("b"), [call(URIRef("a"), {})], id="Only first call"),
+            pytest.param(URIRef("a"), URIRef("b"), [call(URIRef('a'), {}), call(URIRef('b'), {})], id="Both called"),
+            pytest.param(BNode("x"), Literal("b"),[], id="Subject is BNode → no calls"),
+            pytest.param(BNode("x"), URIRef("b"),[call(URIRef("b"), {})], id="Subject is BNode → object cleaned"),
+            pytest.param(URIRef("a"), BNode("x"), [call(URIRef("a"), {})], id="Object is BNode → only subject cleaned"),
+        ]
+)
+@patch("cim_plugin.cimxml_parser._clean_uri")
+def test_normalize_rdf_ids_callscleanuri(mock_clean: MagicMock, s: URIRef|BNode, o: Literal|URIRef|BNode, calls: list) -> None:
+    mock_clean.side_effect = lambda uri, *_: URIRef("urn:uuid:test")
+
+    g = Graph()
+    g.add((s, URIRef("p"), o))
+
+    fix_qualifier_for_all_uuids(g)
+
+    assert mock_clean.mock_calls == calls
+
+
+@patch("cim_plugin.cimxml_parser._clean_uri")
+def test_normalize_rdf_ids_mutatesgraph(mock_clean: MagicMock) -> None:
+    mock_clean.side_effect = [
+        URIRef("urn:uuid:a"),  # new_s
+        URIRef("urn:uuid:b"),  # new_o
+    ]
+
+    g = Graph()
+    s = URIRef("http://ex.com#_a")
+    p = URIRef("p")
+    o = URIRef("http://ex.com#_b")
+    g.add((s, p, o))
+
+    fix_qualifier_for_all_uuids(g)
+
+    triples = list(g)
+    assert len(triples) == 1
+    new_s, new_p, new_o = triples[0]
+    assert new_s == URIRef("urn:uuid:a")
+    assert new_o == URIRef("urn:uuid:b")
+    assert new_p == p
+
+
+def test_normalize_rdf_ids_withoutmocking() -> None:
+    g = Graph()
+
+    # Two triples sharing the same subject
+    s = URIRef("http://example.com#_00000000-0000-4000-8000-000000000001")
+    p = URIRef("p")
+    o1 = URIRef("http://example.com#_00000000-0000-4000-8000-000000000002")
+    o2 = URIRef("http://example.com#_00000000-0000-4000-8000-000000000003")
+
+    g.add((s, p, o1))
+    g.add((s, p, o2))
+
+    fix_qualifier_for_all_uuids(g)
+
+    assert all("urn:uuid:" in str(tr[0]) for tr in g)
+    assert all("http://example.com" not in str(tr[0]) for tr in g)
+    assert len(list(g)) == 2
+
+
+@patch("cim_plugin.cimxml_parser._clean_uri")
+def test_normalize_rdf_ids_reusesurimap(mock_clean: MagicMock) -> None:
+    mock_clean.side_effect = lambda uri, *_: URIRef("urn:uuid:test")
+
+    g = Graph()
+    s = URIRef("http://ex.com#_a")
+    o = URIRef("http://ex.com#_a")
+    p = URIRef("p")
+    g.add((s, p, o))
+    g.add((s, p, o))  # Same triple again
+
+    fix_qualifier_for_all_uuids(g)
+    assert mock_clean.call_count == 2 # _clean_uri should only be called once each for s and o
+
+
+@patch("cim_plugin.cimxml_parser._clean_uri")
+def test_normalize_rdf_ids_emptygraph(mock_clean: MagicMock) -> None:
+    g = Graph()
+
+    fix_qualifier_for_all_uuids(g)
+
+    mock_clean.assert_not_called()
+    
 
 # Unit tests cast_bool
 @pytest.mark.parametrize(

@@ -201,6 +201,8 @@ class CIMMetadataHeader:
             if p in self.profile_predicates:
                 if isinstance(o, Literal):
                     return str(o.value)
+                elif isinstance(o, URIRef):
+                    return str(o)
         return None
 
     

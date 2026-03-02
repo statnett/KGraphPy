@@ -64,8 +64,8 @@ def main():
     file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
     file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = collect_cimxml_to_dataset([file, file2], linkmlfile)
-    g3 = load_cimxml_graph(file3, linkmlfile)
+    ds = collect_cimxml_to_dataset([file, file2])
+    g3 = load_cimxml_graph(file3)
     # for prefix, namespace in g3.namespace_manager.store.namespaces():
     #     print(prefix, namespace)
     # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
@@ -77,7 +77,15 @@ def main():
     g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
     # g3 = ds.graph(URIRef('urn:uuid:ebef4527-f0bc-4c59-8870-950af8ed9041'))
     # for g in ds.graphs():
-    #     print(g.identifier, type(g), getattr(g, "metadata_header", None))
+        # print(g.identifier, type(g), getattr(g, "metadata_header", None))
+    counter = 0
+    for s, p, o in g3:
+        # if isinstance(o, Literal):
+        if "f1769a0e-9aeb-11e5-91da-b8763fd99c5f" in s:
+            print(s, p, o)
+            counter += 1
+            if counter == 5:
+                break
 
     # if g1.metadata_header:
     #     print(g1.metadata_header.triples)
@@ -87,7 +95,7 @@ def main():
     # print(g2.identifier)
     # for g in list(t.graphs()):
     #     print(g.identifier)
-    # for item in list(g1.triples((URIRef('urn:uuid:f1769b90-9aeb-11e5-91da-b8763fd99c5f'), None, None))):
+    # for item in list(g3.triples((URIRef('urn:uuid:f1769a0e-9aeb-11e5-91da-b8763fd99c5f'), None, None))):
     #     print(item)
     # for item in lis
     # for s, p, o in tgraph:
@@ -95,14 +103,14 @@ def main():
     #         print(s, p, o)
 
     # g1 = tgraph
-    output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq.xml"
-    g1.serialize(destination=str(output_file), format="cimxml")
+    # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
+    # g1.serialize(destination=str(output_file), format="cimxml")
 
-    output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh.xml"
-    g2.serialize(destination=str(output_file2), format="cimxml")
+    # output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh_parser_changed.xml"
+    # g2.serialize(destination=str(output_file2), format="cimxml")
 
-    output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er.xml"
-    g3.serialize(destination=str(output_file3), format="cimxml")
+    # output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er_parser_changed.xml"
+    # g3.serialize(destination=str(output_file3), format="cimxml")
 
 
     # output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"

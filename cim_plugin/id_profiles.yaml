@@ -60,7 +60,8 @@ profiles:
   "http://cim-profile.ucaiug.io/grid/SimulationSettings/1.0": []
 
   # Network Code:
-  "https://ap-voc.cim4.eu/EquipmentReliability/2.3":
+  # "https://ap-voc.cim4.eu/EquipmentReliability/2.3":  # Replaced by the one below
+  "https://ap.cim4.eu/EquipmentReliability/2.3":
     - cim:ControlArea
     - cim:DCBreaker
     - cim:DCBusbar

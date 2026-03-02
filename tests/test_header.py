@@ -594,7 +594,7 @@ def test_header_type_notriples() -> None:
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal("dcterms"))], "dcterms", id="Dcat header, dcterms profile"),
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(MD["Model.profile"]), Literal("model"))], "model", id="Dcat header, model profile"),
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.identifier), Literal("Not a profile"))], None, id="Profile not present"),
-            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), URIRef("Not a profile"))], None, id="URIRef"),
+            pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), URIRef("dcterms"))], "dcterms", id="URIRef"),
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), BNode("Not a profile"))], None, id="BNode"),
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal(42))], "42", id="Integer literal"),
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal("dcterms", lang="en"))], "dcterms", id="Literal with language"),

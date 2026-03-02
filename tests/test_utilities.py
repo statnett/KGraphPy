@@ -12,6 +12,7 @@ from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph
 from cim_plugin.utilities import (
+    extract_uuid,
     _extract_uuid_from_urn, 
     get_graph_uuid, 
     load_cimxml_graph, 
@@ -146,6 +147,39 @@ def test_get_graph_uuid_ignoresotherrdftypes() -> None:
 
     with pytest.raises(ValueError):
         get_graph_uuid(graph)
+
+# Unit tests extract_uuid
+@pytest.mark.parametrize("input_str, expected", [
+    pytest.param("550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000", id="Canonical uuid 1"),
+    pytest.param("3f1c2b8e-9a4d-4c3e-8b2f-1d9e7f6a2c11", "3f1c2b8e-9a4d-4c3e-8b2f-1d9e7f6a2c11", id="Canonical uuid 2"),
+    pytest.param("a8c1f0d2-4b3e-4f9a-9d1c-2e7b6a5c3f22", "a8c1f0d2-4b3e-4f9a-9d1c-2e7b6a5c3f22", id="Canonical uuid 3"),
+    pytest.param("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000001", id="Patterned uuid 1"),
+    pytest.param("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", id="Patterned uuid 2"),
+    pytest.param("http://example.com/cim#_550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000", id="With base#_"),
+    pytest.param("http://example.com/cim#550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000", id="With base#"),
+    pytest.param("http://example.com/cim_550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000", id="With base_"),
+    pytest.param("http://example.com/cim550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000", id="With base but no #"),
+    pytest.param("urn:uuid:3f1c2b8e-9a4d-4c3e-8b2f-1d9e7f6a2c11", "3f1c2b8e-9a4d-4c3e-8b2f-1d9e7f6a2c11", id="With urn:uuid:"),
+    pytest.param("#_a8c1f0d2-4b3e-4f9a-9d1c-2e7b6a5c3f22", "a8c1f0d2-4b3e-4f9a-9d1c-2e7b6a5c3f22", id="With #_"),
+])
+def test_extract_uuid_valid(input_str: str, expected: str) -> None:
+    assert extract_uuid(input_str) == expected
+
+
+@pytest.mark.parametrize("input_str", [
+    "not-a-uuid",
+    "12345",
+    "http://example.com/no-uuid-here",
+    "urn:uuid:not-a-real-uuid",
+    "",
+])
+def test_extract_uuid_invalid(input_str: str):
+    assert extract_uuid(input_str) is None
+
+def test_extract_uuid_fromnone() -> None:
+    with pytest.raises(TypeError):
+        # Pylance silenced to test wrong datatype
+        extract_uuid(None)  # type: ignore
 
 
 # Unit tests _extract_uuid_from_urn
@@ -454,7 +488,7 @@ def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: 
     assert len(named) == 0
 
 
-def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: pytest.LogCaptureFixture, cimxml_plugin: None) -> None:
+def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, cimxml_plugin: None) -> None:
     uuid = "12345678-1234-5678-1234-567812345678"
     subject = f"urn:uuid:{uuid}"
 
@@ -471,8 +505,7 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: 
     file_path = tmp_path / "model.xml"
     file_path.write_text(xml, encoding="utf-8")
 
-    with caplog.at_level("INFO"):
-        ds = collect_cimxml_to_dataset([str(file_path)], schema_path=None)
+    ds = collect_cimxml_to_dataset([str(file_path)], schema_path=None)
 
     named = ds.graph(URIRef(f"urn:uuid:{uuid}"))
     assert len(named) == 1
@@ -481,10 +514,6 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, caplog: 
     assert RDF.type in list(named.predicates())
     assert URIRef("https://cim.ucaiug.io/ns#ACLineSegment") in list(named.objects())
     assert len(ds.default_graph) == 0
-    assert any(
-        "Cannot perform post processing without the model" in msg
-        for msg in caplog.messages
-    )
 
 
 #Unit tests create_header_attribute

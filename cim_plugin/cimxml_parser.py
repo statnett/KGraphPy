@@ -12,6 +12,7 @@ from typing import Optional, cast   #, Any
 from urllib.parse import urlparse
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.namespaces import CIM, EU
+from cim_plugin.utilities import extract_uuid
 
 import io
 import contextlib
@@ -29,7 +30,6 @@ class CIMXMLParser(Parser):
         self.schemaview: SchemaView|None = None
         self.slot_index: dict|None = None
         self.class_index: dict|None = None
-        # self.model_uuid: uuid.UUID|None = None
         logger.info("CIMXMLParser loaded")
 
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
@@ -38,6 +38,10 @@ class CIMXMLParser(Parser):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):   
             rdfxml.parse(source, sink, **kwargs)
+        
+        # self.normalize_rdf_ids(sink)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
+        fix_qualifier_for_all_uuids(sink)
+
         if "schema_path" in kwargs:
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
@@ -46,17 +50,17 @@ class CIMXMLParser(Parser):
             # self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
             # self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
-            self.post_process(sink)
-        else:
-            logger.error("Cannot perform post processing without the model. Data parsed as RDF/XML.")
+            self.enrich_literal_datatypes(sink)    # Add datatypes from model
+            # self.post_process(sink)
+        # else:
+        #     logger.error("Cannot perform post processing without the model. Data parsed as RDF/XML.")
         
-    def post_process(self, graph: Graph) -> None:
-        logger.info("Running post-process")
-        # self.model_uuid = find_model_uuid(graph)    # Find uuid from md:FullModel or dcat:Dataset
-        self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
-        # ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
-        # ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
-        self.enrich_literal_datatypes(graph)    # Add datatypes from model
+    # def post_process(self, graph: Graph) -> None:
+    #     logger.info("Running post-process")
+    #     self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
+    #     # ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
+    #     # ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
+    #     self.enrich_literal_datatypes(graph)    # Add datatypes from model
 
 
     def ensure_correct_namespace_model(self, prefix: str, correct_namespace: str):
@@ -113,53 +117,44 @@ class CIMXMLParser(Parser):
                 logger.error(e)
                 raise
 
-    # def fix_rdf_ids(self, graph: Graph, by: str = "urn:uuid") -> None:
-    #     if by == "urn:uuid":
-    #         self.normalize_rdf_ids(graph)   # Fix rdf:IDs by removing _ and adding urn:uuid
-    #         logger.info("Filling in rdf:id with urn:uuid")
-    #     elif by == "prefix":
-    #         add_prefix_to_rdf_ids(graph)    # Fix rdf:IDs by adding prefix
-    #         logger.info("Filling in rdf:id with prefix")
-    #     else:
-    #         raise ValueError(f"'{by}' is not an approved method.")
 
-    def normalize_rdf_ids(self, graph: Graph) -> None: 
-        """Remove _ and replace prefix set by RDFXMLparser with urn:uuid.
+    # def normalize_rdf_ids(self, graph: Graph) -> None: 
+    #     """Remove _ and replace prefix set by RDFXMLparser with urn:uuid.
         
-        Parameters:
-            graph (Graph): The graph to be normalized.
+    #     Parameters:
+    #         graph (Graph): The graph to be normalized.
 
-        Raises:
-            ValueError: If normalization makes different URIs identical. List of URIs affected is given.
-        """
-        id_set = set()
+    #     Raises:
+    #         ValueError: If normalization makes different URIs identical. List of URIs affected is given.
+    #     """
+    #     id_set = set()
 
-        for s in graph.subjects(): # Collect all relevant subjects
-            s_str = str(s) 
-            if "#" in s_str: 
-                frag = s_str.split("#")[-1] 
-                id_set.add(frag.lstrip("_"))
+    #     for s in graph.subjects(): # Collect all relevant subjects
+    #         s_str = str(s) 
+    #         if "#" in s_str: 
+    #             frag = s_str.split("#")[-1] 
+    #             id_set.add(frag.lstrip("_"))
 
-        try:
-            detect_uri_collisions(graph, id_set)
-        except ValueError as e:
-            logger.error(e)
-            raise
+    #     try:
+    #         detect_uri_collisions(graph, id_set)
+    #     except ValueError as e:
+    #         logger.error(e)
+    #         raise
 
-        uri_map = {} 
-        for s, p, o in list(graph): 
-            if isinstance(s, URIRef):   # Clean subjects 
-                new_s = _clean_uri(s, uri_map, id_set) 
-                if new_s != s: 
-                    graph.remove((s, p, o)) 
-                    graph.add((new_s, p, o)) 
-                    s = new_s 
+    #     uri_map = {} 
+    #     for s, p, o in list(graph): 
+    #         if isinstance(s, URIRef):   # Clean subjects 
+    #             new_s = _clean_uri(s, uri_map, id_set) 
+    #             if new_s != s: 
+    #                 graph.remove((s, p, o)) 
+    #                 graph.add((new_s, p, o)) 
+    #                 s = new_s 
                                 
-            if isinstance(o, URIRef):   # Clean objects
-                new_o = _clean_uri(o, uri_map, id_set) 
-                if new_o != o: 
-                    graph.remove((s, p, o)) 
-                    graph.add((s, p, new_o))
+    #         if isinstance(o, URIRef):   # Clean objects
+    #             new_o = _clean_uri(o, uri_map, id_set) 
+    #             if new_o != o: 
+    #                 graph.remove((s, p, o)) 
+    #                 graph.add((s, p, new_o))
 
     def enrich_literal_datatypes(self, graph: Graph) -> Graph:
         """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
@@ -215,54 +210,6 @@ class CIMXMLParser(Parser):
         logger.info(f"Enriching done. Added datatypes to {updated_count} triples.")
 
         return graph
-
-    # def enrich_literal_datatypes(self, graph: Graph) -> Graph:
-    #     logger.info("Enriching literal datatypes")
-
-    #     if self.schemaview is None or self.slot_index is None:
-    #         logger.error("Missing schemaview or slot_index. Enriching not possible.")
-    #         return graph
-
-    #     triples_to_add = []
-    #     triples_to_remove = []
-
-    #     unfound_predicates = set()
-    #     casting_errors = []
-
-    #     for s, p, o in graph:
-    #         if isinstance(o, Literal) and o.datatype is None:
-    #             slot = self.slot_index.get(str(p))
-
-    #             if not slot: # Collecting predicates not found in the model
-    #                 unfound_predicates.add(str(p))
-    #                 continue
-
-    #             datatype_uri = resolve_datatype_from_slot(self.schemaview, slot)
-
-    #             if not datatype_uri:
-    #                 logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
-    #                 continue
-
-    #             try:
-    #                 new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
-    #             except LiteralCastingError as e:
-    #                 casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
-    #                 new_literal = o
-
-    #             triples_to_remove.append((s, p, o))
-    #             triples_to_add.append((s, p, new_literal))
-
-    #     if casting_errors:
-    #         logger.error("\n".join(casting_errors))
-
-    #     for t in triples_to_remove:
-    #         graph.remove(t)
-    #     for t in triples_to_add:
-    #         graph.add(t)
-
-    #     logger.info(f"Did not find these predicates in model: {unfound_predicates}")
-    #     logger.info(f"Enriching done. Added datatypes to {len(triples_to_add)} triples.")
-    #     return graph
 
 
 def _get_current_namespace_from_model(schemaview: SchemaView, prefix: str) -> Optional[str]:
@@ -503,78 +450,117 @@ def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
         schemaview.set_modified()
 
 
-def detect_uri_collisions(graph: Graph, id_set: set[str]) -> None:
-    """Scan the graph for URI collisions that will happen if they are cleaned with _clean_uri.
-   
-    Parameters:
-        graph (Graph): The graph to scan for collisions.
-        id_set (set[str]): A set of uri that should be cleaned.
-    
-    Raises: 
-        ValueError: with list of collisions if collisions are found.
-    """
-    uri_map = {}
-    reverse_map = {}
-    collisions = []
-
-    for s, p, o in graph:
-        # SUBJECT
-        if isinstance(s, URIRef):
-            new_s = _clean_uri(s, uri_map, id_set)
-            if new_s != s:
-                if new_s in reverse_map and reverse_map[new_s] != s:
-                    collisions.append((s, reverse_map[new_s], new_s))
-                else:
-                    reverse_map[new_s] = s
-
-        # OBJECT
-        if isinstance(o, URIRef):
-            new_o = _clean_uri(o, uri_map, id_set)
-            if new_o != o:
-                if new_o in reverse_map and reverse_map[new_o] != o:
-                    collisions.append((o, reverse_map[new_o], new_o))
-                else:
-                    reverse_map[new_o] = o
-
-    if collisions:
-        msg_lines = ["IRI collisions detected:"]
-        for old, existing, new in collisions:
-            msg_lines.append(f"  {old} and {existing} both map to {new}")
-        raise ValueError("\n".join(msg_lines))
-
-
-def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef], id_set: set[str]) -> URIRef:
-    """Clean a uri for _ and # with everything before it, and add urn:uuid: as prefix.
-
-    The uri is cleaned if:
-        - It contains _ at the beginning of the fragment (after #)
-        - It is in id_set
+def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef]) -> URIRef:
+    """Clean uri uuid to a urn:uuid: format.
     
     Parameters:
-        uri (URIRef): The uri to be cleaned.
-        uri_map (dict[str, URIRef]): A map keeping track of cleaned uri.
-        id_set (set[str]): A set of uri fragments that should be cleaned even if they don't contain _.
+        uri (URIRef): The uri with the uuid to clean.
+        uri_map: A map to keep track of which uuid has been clean (for caching).
 
     Returns:
-        URIRef: The cleaned uri.
+        URIRef: The uuid with urn:uuid: qualifier.
     """
     uri_str = str(uri)
-
-    if "#" not in uri_str:
+    uuid_val = extract_uuid(uri_str)
+    if not uuid_val:
         return uri
 
-    if len(uri_str.split("#")) > 2:
-        logger.warning(f"{uri_str} has more then one #")
+    if uri_str not in uri_map:
+        uri_map[uri_str] = URIRef(f"urn:uuid:{uuid_val}")
 
-    fragment = uri_str.split("#")[-1]
-    if fragment not in id_set and not fragment.startswith("_"): 
-        return uri
-
-    clean = fragment.lstrip("_")
-    if uri_str not in uri_map: 
-        uri_map[uri_str] = URIRef(f"urn:uuid:{clean}") 
-        
     return uri_map[uri_str]
+
+def fix_qualifier_for_all_uuids(graph: Graph) -> None:
+    """Fix the qualifier for all uuids in graph to urn:uuid: format. 
+    
+    Ex. http://example.com#_00000000-0000-4000-8000-000000000001 is fixed to urn:uuid:00000000-0000-4000-8000-000000000001.
+
+    Parameters:
+        graph (Graph): The Graph to be modified.
+    """
+    uri_map = {}
+
+    for s, p, o in list(graph):
+        new_s = _clean_uri(s, uri_map) if isinstance(s, URIRef) else s
+        new_o = _clean_uri(o, uri_map) if isinstance(o, URIRef) else o
+
+        if (new_s, p, new_o) != (s, p, o):
+            graph.remove((s, p, o))
+            graph.add((new_s, p, new_o))
+
+
+# def detect_uri_collisions(graph: Graph, id_set: set[str]) -> None:
+#     """Scan the graph for URI collisions that will happen if they are cleaned with _clean_uri.
+   
+#     Parameters:
+#         graph (Graph): The graph to scan for collisions.
+#         id_set (set[str]): A set of uri that should be cleaned.
+    
+#     Raises: 
+#         ValueError: with list of collisions if collisions are found.
+#     """
+#     uri_map = {}
+#     reverse_map = {}
+#     collisions = []
+
+#     for s, p, o in graph:
+#         # SUBJECT
+#         if isinstance(s, URIRef):
+#             new_s = _clean_uri(s, uri_map, id_set)
+#             if new_s != s:
+#                 if new_s in reverse_map and reverse_map[new_s] != s:
+#                     collisions.append((s, reverse_map[new_s], new_s))
+#                 else:
+#                     reverse_map[new_s] = s
+
+#         # OBJECT
+#         if isinstance(o, URIRef):
+#             new_o = _clean_uri(o, uri_map, id_set)
+#             if new_o != o:
+#                 if new_o in reverse_map and reverse_map[new_o] != o:
+#                     collisions.append((o, reverse_map[new_o], new_o))
+#                 else:
+#                     reverse_map[new_o] = o
+
+#     if collisions:
+#         msg_lines = ["IRI collisions detected:"]
+#         for old, existing, new in collisions:
+#             msg_lines.append(f"  {old} and {existing} both map to {new}")
+#         raise ValueError("\n".join(msg_lines))
+
+
+# def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef], id_set: set[str]) -> URIRef:
+#     """Clean a uri for _ and # with everything before it, and add urn:uuid: as prefix.
+
+#     The uri is cleaned if:
+#         - It contains _ at the beginning of the fragment (after #)
+#         - It is in id_set
+    
+#     Parameters:
+#         uri (URIRef): The uri to be cleaned.
+#         uri_map (dict[str, URIRef]): A map keeping track of cleaned uri.
+#         id_set (set[str]): A set of uri fragments that should be cleaned even if they don't contain _.
+
+#     Returns:
+#         URIRef: The cleaned uri.
+#     """
+#     uri_str = str(uri)
+
+#     if "#" not in uri_str:
+#         return uri
+
+#     if len(uri_str.split("#")) > 2:
+#         logger.warning(f"{uri_str} has more then one #")
+
+#     fragment = uri_str.split("#")[-1]
+#     if fragment not in id_set and not fragment.startswith("_"): 
+#         return uri
+
+#     clean = fragment.lstrip("_")
+#     if uri_str not in uri_map: 
+#         uri_map[uri_str] = URIRef(f"urn:uuid:{clean}") 
+        
+#     return uri_map[uri_str]
 
 
 def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:

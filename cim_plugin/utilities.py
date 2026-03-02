@@ -1,6 +1,7 @@
 """Various utility functions."""
 
 import uuid
+import re
 from rdflib import Graph, Dataset, URIRef, Node
 from rdflib.namespace import RDF, DCAT
 from rdflib.exceptions import ParserError
@@ -36,6 +37,27 @@ def get_graph_uuid(graph: Graph) -> uuid.UUID:
         return _extract_uuid_from_urn(str(s)) 
     
     raise ValueError("Did not find md:FullModel or dcat:Dataset in the graf.")
+
+
+UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}"
+)
+
+def extract_uuid(uri: str) -> str | None:
+    """Extract uuid from string using regex.
+    
+    Parameters:
+        uri (str): The string to extract uuid from.
+
+    Returns:
+        str|None: The uuid if there is one, else None.
+    """
+    m = UUID_RE.search(uri)
+    return m.group(0).lower() if m else None
 
 
 def _extract_uuid_from_urn(urn: str) -> uuid.UUID: 
