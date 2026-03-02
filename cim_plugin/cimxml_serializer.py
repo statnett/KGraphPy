@@ -159,7 +159,7 @@ class CIMXMLSerializer(Serializer):
 
         subject = header.subject
         try:
-            subject_type = header.main_type
+            subject_type = header.header_type
         except ValueError as e:
             logger.error(f"Header type missing: {e}")
             subject_type = URIRef("MALFORMED")

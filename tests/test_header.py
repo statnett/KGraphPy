@@ -1,3 +1,4 @@
+from typing import Iterable
 import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import Graph, URIRef, Literal, BNode, Node
@@ -547,6 +548,43 @@ def test_repair_blank_header_subject_norepairneeded(mock_repair: MagicMock, head
     mock_repair.assert_not_called()
 
 
+# Unit tests .header_type
+@pytest.mark.parametrize(
+        "triples, metadata_objects, expected",
+        [
+            pytest.param([(RDF.type, MD.FullModel)], None, MD.FullModel, id="Fullmodel header"),
+            pytest.param([(RDF.type, DCAT.Dataset)], None, DCAT.Dataset, id="Dcat header"),
+            pytest.param([(RDF.type, URIRef("www.custom.org/type"))], [URIRef("www.custom.org/type")], URIRef("www.custom.org/type"), id="Custom type header"),
+            pytest.param([(RDF.type, MD.FullModel), (RDF.type, DCAT.Dataset)], None, MD.FullModel, id="Multiple header types -> First encountered wins"),
+        ]
+)
+def test_header_type_success(triples: tuple, metadata_objects: Iterable|None, expected: str) -> None:
+    header = CIMMetadataHeader.empty(URIRef("s1"), metadata_objects=metadata_objects)
+    for predicate, obj in triples:
+        header.add_triple(predicate, obj)
+    
+    result = header.header_type
+    assert result == expected
+
+
+def test_header_type_noheadertype() -> None:
+    header = CIMMetadataHeader.empty(URIRef("s1"))
+    header.add_triple(URIRef("www.example.org/p"), URIRef("www.example.org/o"))
+
+    with pytest.raises(ValueError) as exc:
+        header.header_type
+
+    assert "No triple with rdf:type found in header." in str(exc.value)
+
+
+def test_header_type_notriples() -> None:
+    header = CIMMetadataHeader.empty(URIRef("s1"))
+
+    with pytest.raises(ValueError) as exc:
+        header.header_type
+
+    assert "No triple with rdf:type found in header." in str(exc.value)
+
 # Unit tests .collect_profile
 @pytest.mark.parametrize(
         "triples, expected",
@@ -562,7 +600,7 @@ def test_repair_blank_header_subject_norepairneeded(mock_repair: MagicMock, head
             pytest.param([(RDF.type, DCAT.Dataset), (URIRef(DCTERMS.conformsTo), Literal("dcterms", lang="en"))], "dcterms", id="Literal with language"),
         ]
 )
-def test_collect_profile_success(triples: tuple, expected: str) -> None:
+def test_collect_profile_success(triples: list[tuple], expected: str) -> None:
     header = CIMMetadataHeader.empty(URIRef("s1"))
     for predicate, obj in triples:
         header.add_triple(predicate, obj)

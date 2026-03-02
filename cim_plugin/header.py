@@ -176,11 +176,19 @@ class CIMMetadataHeader:
         return URIRef(f"urn:uuid:{new_id}")
 
     @property
-    def main_type(self) -> Node:
+    def header_type(self) -> Node:
+        """The object node of the rdf:type triple.
+        
+        Raises:
+            ValueError: If rdf:type is not found in any of the triples.
+
+        Returns:
+            Node: The object node.
+        """
         for (_, p, o) in self.triples:
             if p == RDF.type and o in self.metadata_objects:
                 return o
-        raise ValueError("No metadata-object rdf:type found in header")
+        raise ValueError("No triple with rdf:type found in header.")
 
 
     def collect_profile(self) -> str | None:
@@ -195,9 +203,11 @@ class CIMMetadataHeader:
                     return str(o.value)
         return None
 
-
+    
     def set_subject(self, new_subject: URIRef):
-        # Rewrite all triples that use the old subject
+        """Rewrite all triples that use the old subject.
+        NB! Untested method.
+        """
         old_subject = self.subject
         self.subject = new_subject
 
@@ -212,28 +222,29 @@ class CIMMetadataHeader:
 
 
     def iter_predicates(self):
-        """Yield (predicate, object) pairs for writing."""
+        """Yield (predicate, object) pairs for writing.
+        NB! Untested method.
+        """
         for _, p, o in self.triples:
             yield p, o
 
 
     def add_triple(self, predicate: Node, obj: Node):
-        """Add a metadata triple."""
+        """Add a metadata triple.
+        NB! Untested method.
+        """
         self.triples.append((self.subject, predicate, obj))
 
 
     def remove_triple(self, predicate: Node, obj: Optional[Node] = None):
-        """Remove metadata triples matching predicate (and optionally object)."""
+        """Remove metadata triples matching predicate (and optionally object).
+        NB! Untested method.
+        """
         self.triples = [
             (s, p, o)
             for (s, p, o) in self.triples
             if not (p == predicate and (obj is None or o == obj))
         ]
-
-
-    def to_triples(self) -> List[Tuple[Node, Node, Node]]:
-        """Return all metadata triples."""
-        return list(self.triples)
                 
 
 
