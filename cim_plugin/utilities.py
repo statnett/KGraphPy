@@ -2,7 +2,7 @@
 
 import uuid
 import re
-from rdflib import Graph, Dataset, URIRef, Node
+from rdflib import Graph, URIRef, Node
 from rdflib.namespace import RDF, DCAT
 from rdflib.exceptions import ParserError
 import logging

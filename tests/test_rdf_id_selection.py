@@ -9,7 +9,10 @@ from cim_plugin.rdf_id_selection import find_rdf_id_or_about
         pytest.param("Different_profile", "cim:wrong_pred", "about", id="Neither match"),
         pytest.param("http://iec.ch/TC57/ns/CIM/Operation-EU/3.0", "cim:wrong_pred", "ID", id="Profile match"),
         pytest.param("http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0", "cim:PetersenCoil", "about", id="Both match"),
-        pytest.param("https://ap-voc.cim4.eu/EquipmentReliability/2.3", "cim:DCGround", "about", id="Both match, item further down in the file"),
+        pytest.param("https://ap.cim4.eu/EquipmentReliability/2.3", "cim:DCGround", "about", id="Both match, item further down in the file"),
+        pytest.param("https://ap-voc.cim4.eu/EquipmentReliability/2.3", "cim:wrong_pred", "ID", id="Old profile name"),
+        pytest.param("https://ap-voc.cim4.eu/EquipmentReliability/2.3", "cim:DCGround", "about", id="Old profile name with exception"),
+        pytest.param("http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0", "cim:wrong_pred", "ID", id="Old profile name with empty exceptions list"),
         pytest.param(None, "cim:wrong_pred", "about", id="Profile None"),
     ]
 )

@@ -1,19 +1,18 @@
 """Serializer for writing graphs to CIMXML files."""
 
-import uuid
+# import uuid
 from rdflib.serializer import Serializer
 from rdflib.graph import Graph
-from rdflib.term import URIRef, Identifier, Literal, Node, BNode
+from rdflib.term import URIRef, Literal, Node, BNode
 from rdflib.namespace import RDF, DCAT
 from xml.sax.saxutils import quoteattr, escape
 import logging
-# from cim_plugin import header
-from typing import IO, Any, Generator, Tuple, Dict, Optional
-from cim_plugin.utilities import extract_subjects_by_object_type, group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
+from typing import IO, Any, Dict, Optional
+from cim_plugin.utilities import group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
 from cim_plugin.namespaces import MD
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.graph import CIMGraph
+# from cim_plugin.graph import CIMGraph
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
 
 logger = logging.getLogger('cimxml_logger')

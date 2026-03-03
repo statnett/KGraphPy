@@ -9,9 +9,7 @@ from linkml_runtime.linkml_model.meta import TypeDefinition
 import yaml
 import logging
 from typing import Optional, cast   #, Any
-from urllib.parse import urlparse
 from cim_plugin.exceptions import LiteralCastingError
-from cim_plugin.namespaces import CIM, EU
 from cim_plugin.utilities import extract_uuid
 
 import io
@@ -117,44 +115,6 @@ class CIMXMLParser(Parser):
                 logger.error(e)
                 raise
 
-
-    # def normalize_rdf_ids(self, graph: Graph) -> None: 
-    #     """Remove _ and replace prefix set by RDFXMLparser with urn:uuid.
-        
-    #     Parameters:
-    #         graph (Graph): The graph to be normalized.
-
-    #     Raises:
-    #         ValueError: If normalization makes different URIs identical. List of URIs affected is given.
-    #     """
-    #     id_set = set()
-
-    #     for s in graph.subjects(): # Collect all relevant subjects
-    #         s_str = str(s) 
-    #         if "#" in s_str: 
-    #             frag = s_str.split("#")[-1] 
-    #             id_set.add(frag.lstrip("_"))
-
-    #     try:
-    #         detect_uri_collisions(graph, id_set)
-    #     except ValueError as e:
-    #         logger.error(e)
-    #         raise
-
-    #     uri_map = {} 
-    #     for s, p, o in list(graph): 
-    #         if isinstance(s, URIRef):   # Clean subjects 
-    #             new_s = _clean_uri(s, uri_map, id_set) 
-    #             if new_s != s: 
-    #                 graph.remove((s, p, o)) 
-    #                 graph.add((new_s, p, o)) 
-    #                 s = new_s 
-                                
-    #         if isinstance(o, URIRef):   # Clean objects
-    #             new_o = _clean_uri(o, uri_map, id_set) 
-    #             if new_o != o: 
-    #                 graph.remove((s, p, o)) 
-    #                 graph.add((s, p, new_o))
 
     def enrich_literal_datatypes(self, graph: Graph) -> Graph:
         """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
@@ -473,7 +433,8 @@ def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef]) -> URIRef:
 def fix_qualifier_for_all_uuids(graph: Graph) -> None:
     """Fix the qualifier for all uuids in graph to urn:uuid: format. 
     
-    Ex. http://example.com#_00000000-0000-4000-8000-000000000001 is fixed to urn:uuid:00000000-0000-4000-8000-000000000001.
+        Ex. http://example.com#_00000000-0000-4000-8000-000000000001 is fixed to 
+        urn:uuid:00000000-0000-4000-8000-000000000001.
 
     Parameters:
         graph (Graph): The Graph to be modified.
@@ -487,80 +448,6 @@ def fix_qualifier_for_all_uuids(graph: Graph) -> None:
         if (new_s, p, new_o) != (s, p, o):
             graph.remove((s, p, o))
             graph.add((new_s, p, new_o))
-
-
-# def detect_uri_collisions(graph: Graph, id_set: set[str]) -> None:
-#     """Scan the graph for URI collisions that will happen if they are cleaned with _clean_uri.
-   
-#     Parameters:
-#         graph (Graph): The graph to scan for collisions.
-#         id_set (set[str]): A set of uri that should be cleaned.
-    
-#     Raises: 
-#         ValueError: with list of collisions if collisions are found.
-#     """
-#     uri_map = {}
-#     reverse_map = {}
-#     collisions = []
-
-#     for s, p, o in graph:
-#         # SUBJECT
-#         if isinstance(s, URIRef):
-#             new_s = _clean_uri(s, uri_map, id_set)
-#             if new_s != s:
-#                 if new_s in reverse_map and reverse_map[new_s] != s:
-#                     collisions.append((s, reverse_map[new_s], new_s))
-#                 else:
-#                     reverse_map[new_s] = s
-
-#         # OBJECT
-#         if isinstance(o, URIRef):
-#             new_o = _clean_uri(o, uri_map, id_set)
-#             if new_o != o:
-#                 if new_o in reverse_map and reverse_map[new_o] != o:
-#                     collisions.append((o, reverse_map[new_o], new_o))
-#                 else:
-#                     reverse_map[new_o] = o
-
-#     if collisions:
-#         msg_lines = ["IRI collisions detected:"]
-#         for old, existing, new in collisions:
-#             msg_lines.append(f"  {old} and {existing} both map to {new}")
-#         raise ValueError("\n".join(msg_lines))
-
-
-# def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef], id_set: set[str]) -> URIRef:
-#     """Clean a uri for _ and # with everything before it, and add urn:uuid: as prefix.
-
-#     The uri is cleaned if:
-#         - It contains _ at the beginning of the fragment (after #)
-#         - It is in id_set
-    
-#     Parameters:
-#         uri (URIRef): The uri to be cleaned.
-#         uri_map (dict[str, URIRef]): A map keeping track of cleaned uri.
-#         id_set (set[str]): A set of uri fragments that should be cleaned even if they don't contain _.
-
-#     Returns:
-#         URIRef: The cleaned uri.
-#     """
-#     uri_str = str(uri)
-
-#     if "#" not in uri_str:
-#         return uri
-
-#     if len(uri_str.split("#")) > 2:
-#         logger.warning(f"{uri_str} has more then one #")
-
-#     fragment = uri_str.split("#")[-1]
-#     if fragment not in id_set and not fragment.startswith("_"): 
-#         return uri
-
-#     clean = fragment.lstrip("_")
-#     if uri_str not in uri_map: 
-#         uri_map[uri_str] = URIRef(f"urn:uuid:{clean}") 
-        
-#     return uri_map[uri_str]
 
 
 def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:
@@ -711,38 +598,6 @@ def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) 
     return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
 
 
-# def create_typed_literal(value, datatype_uri, schemaview):
-#     if datatype_uri is not None: 
-#         datatype_uri = str(datatype_uri)
-    
-#     if datatype_uri and ":" in datatype_uri and not datatype_uri.startswith("http"):
-#         datatype_uri = schemaview.expand_curie(datatype_uri)
-
-#     caster = CASTERS.get(datatype_uri)
-#     if caster:
-#         try:
-#             value = caster(value)
-#         except (ValueError, TypeError) as e:
-#             logger.warning(f"Failed to cast {value} to datatype {datatype_uri}: {e}")
-#             return Literal(value)
-        
-#     return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
-
-
-# def create_typed_literal(value: Any, datatype_uri: str, schemaview: SchemaView) -> Literal:
-#     # 1. Expand CURIE if needed
-#     if ":" in datatype_uri and not datatype_uri.startswith("http"):
-#         datatype_uri = schemaview.expand_curie(datatype_uri)
-
-#     # 2. Cast lexical form based on datatype
-#     if datatype_uri == str(XSD.float):
-#         value = float(value)
-#     elif datatype_uri == str(XSD.integer):
-#         value = int(value)
-
-#     return Literal(value, datatype=URIRef(datatype_uri))
-
-
 def slots_equal(slot1: SlotDefinition, slot2: SlotDefinition) -> bool:
     """Show whether two SlotDefinition objects contain the same keys and values.
 
@@ -800,143 +655,5 @@ def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
     return slot_index, class_index
 
 
-
-# def get_cim_base(schemaview):
-#     """
-#     Returnerer CIM-base-URI fra en LinkML SchemaView.
-#     Søker etter prefix_reference som inneholder 'CIM'.
-#     Faller tilbake til første prefix som slutter med '#'.
-#     """
-#     prefixes = schemaview.schema.prefixes
-
-#     # Førstevalg: prefix som inneholder 'CIM'
-#     for pfx, prefix_obj in prefixes.items():
-#         ref = prefix_obj.prefix_reference
-#         if ref and "CIM" in ref:
-#             return ref
-
-#     # Andrevalg: første prefix som slutter med '#'
-#     for pfx, prefix_obj in prefixes.items():
-#         ref = prefix_obj.prefix_reference
-#         if ref and ref.endswith("#"):
-#             return ref
-
-#     raise ValueError("Fant ingen CIM-base i schema prefixes")
-
-
-# def get_cim_base_from_graph(graph: Graph) -> str:
-#     """
-#     Finn CIM-base-URI fra namespaces i grafen.
-
-#     Strategi:
-#     1. Hvis det finnes et prefix som heter 'cim' → bruk det.
-#     2. Ellers: feile eksplisitt, så du ikke gjetter feil.
-#     """
-#     ns_map = dict(graph.namespaces())
-
-#     # 1. Eksakt 'cim' er det vi stoler på
-#     if "cim" in ns_map:
-#         return str(ns_map["cim"])
-
-#     # Hvis du vil være streng, stopper du her:
-#     raise ValueError("Fant ikke 'cim' prefix i grafen. Kan ikke bestemme CIM-base.")
-
-
-# def add_prefix_to_rdf_ids(graph):
-#     cim_base = get_cim_base_from_graph(graph).rstrip("#") + "#"
-
-#     candidates = []
-#     for node in graph.all_nodes():
-#         if isinstance(node, URIRef) and "#" in node:
-#             base, frag = node.rsplit("#", 1)
-
-#             # Hopp over hvis den allerede er i CIM-namespace
-#             if base.startswith(cim_base.rstrip("#")):
-#                 continue
-
-#             candidates.append((node, frag))
-
-    # for old_uri, frag in candidates:
-    #     new_uri = URIRef(f"{cim_base}{frag}")
-
-    #     # Flytt triples der old_uri er subjekt
-    #     for p, o in list(graph.predicate_objects(old_uri)):
-    #         graph.add((new_uri, p, o))
-    #         graph.remove((old_uri, p, o))
-
-    #     # Flytt triples der old_uri er objekt
-    #     for s, p in list(graph.subject_predicates(old_uri)):
-    #         graph.add((s, p, new_uri))
-    #         graph.remove((s, p, old_uri))
-
-
-# def graph_uses_canonical_namespace(graph, canonical_ns):
-#     for _, uri in graph.namespaces():
-#         if str(uri).rstrip("#/") == canonical_ns.rstrip("#/"):
-#             return True
-#     return False
-
-
-# def detect_cim_namespace(schemaview):
-#     prefixes = schemaview.schema.prefixes
-
-#     if "cim" in prefixes:
-#         pref = prefixes["cim"]
-
-#         # LinkML Prefix object → extract actual URI string
-#         if hasattr(pref, "prefix_reference"):
-#             ns = pref.prefix_reference
-#         elif hasattr(pref, "uri"):
-#             ns = pref.uri
-#         else:
-#             raise ValueError("Prefix object has no usable URI field")
-
-#         # Normalize
-#         if not ns.endswith("#"):
-#             ns = ns.rstrip("/") + "#"
-
-#         return ns
-
-#     raise ValueError("Model has no 'cim' prefix defined")
-
-# def normalize_cim_uris(graph, canonical_ns):
-#     if graph_uses_canonical_namespace(graph, canonical_ns):
-#         print("CIM namespace matches model. Skip normalisation")
-#         return
-    
-#     print("Normalising CIM namespaces...")
-#     triples = list(graph)
-#     for s, p, o in triples:
-#         new_s = normalize_uri(s, canonical_ns)
-#         new_p = normalize_uri(p, canonical_ns)
-#         new_o = normalize_uri(o, canonical_ns)
-
-#         if (s, p, o) != (new_s, new_p, new_o):
-#             graph.remove((s, p, o))
-#             graph.add((new_s, new_p, new_o))
-
-# def normalize_uri(term, canonical_ns):
-#     if not isinstance(term, URIRef):
-#         return term
-#     uri = str(term)
-#     if looks_like_cim_uri(uri):
-#         local = uri.split("#")[-1]
-#         return URIRef(canonical_ns + local)
-#     return term
-
-# def looks_like_cim_uri(uri: str) -> bool:
-#     u = uri.lower()
-#     return (
-#         "cim" in u or
-#         "tc57" in u or
-#         "ucaiug" in u or
-#         "entsoe" in u
-#     )
-
-
 if __name__ == "__main__":
     print("cimxml plugin for rdflib")
-    # filepath = "../CoreEquipment.linkml.yaml"
-    # sv = SchemaView(filepath)
-    # slots, classes = _build_slot_index(sv)
-    # print(slots.get('http://iec.ch/TC57/CIM100#VsConverter.CapabilityCurve'))

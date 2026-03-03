@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from cim_plugin.cimxml_parser import CIMXMLParser, LiteralCastingError
 from pytest import LogCaptureFixture
 from typing import Callable

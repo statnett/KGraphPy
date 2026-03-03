@@ -3,7 +3,6 @@ import pytest
 from pytest import LogCaptureFixture
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import (
-    SchemaDefinition, 
     Prefix, 
     TypeDefinition, 
     SlotDefinition, 
@@ -11,7 +10,7 @@ from linkml_runtime.linkml_model.meta import (
     EnumDefinition,
     PermissibleValue,
 )
-from typing import Callable, Any    #, Optional, Dict
+from typing import Callable, Any
 from rdflib import Literal, URIRef
 from rdflib.namespace import XSD
 from datetime import date, datetime
@@ -19,7 +18,7 @@ import copy
 from collections import defaultdict
 from tests.fixtures import make_schemaview, PatchMocks, mock_patch_integer_ranges, set_prefixes
 import logging
-
+from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.cimxml_parser import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,
@@ -30,7 +29,6 @@ from cim_plugin.cimxml_parser import (
     _resolve_type,
     resolve_datatype_from_slot,
     create_typed_literal,
-    LiteralCastingError
 )
 
 logger = logging.getLogger("cimxml_logger")

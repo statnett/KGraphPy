@@ -43,14 +43,12 @@ profiles:
   # IEC 61970-452:2021:
   "http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0": []
   "http://iec.ch/TC57/ns/CIM/Operation/4.0": []
-  "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": []
-  # "http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0": []   Repeated above. Same as http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0
+  "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": &shortcircuit_4_0 []
+
 
   #IEC 61970-456:2021:
-  "http://iec.ch/TC57/ns/CIM/StateVariables/5.0": []
-  # "http://iec.ch/TC57/ns/CIM/StateVariables-EU/3.0": [] Repeated above. Same as http://iec.ch/TC57/ns/CIM/StateVariables/5.0
-  "http://iec.ch/TC57/ns/CIM/Topology/5.0": []
-  # "http://iec.ch/TC57/ns/CIM/Topology-EU/3.0": []  Repeated above. Same as http://iec.ch/TC57/ns/CIM/Topology/5.0
+  "http://iec.ch/TC57/ns/CIM/StateVariables/5.0": &statevariables_5_0 []
+  "http://iec.ch/TC57/ns/CIM/Topology/5.0": &topology_5_0 []
 
   # IEC 61970-457:2024:
   "http://cim-profile.ucaiug.io/grid/DetailedModelConfiguration/1.0": []
@@ -60,8 +58,7 @@ profiles:
   "http://cim-profile.ucaiug.io/grid/SimulationSettings/1.0": []
 
   # Network Code:
-  # "https://ap-voc.cim4.eu/EquipmentReliability/2.3":  # Replaced by the one below
-  "https://ap.cim4.eu/EquipmentReliability/2.3":
+  "https://ap.cim4.eu/EquipmentReliability/2.3": &equipmentreliability_2_3
     - cim:ControlArea
     - cim:DCBreaker
     - cim:DCBusbar
@@ -89,13 +86,23 @@ profiles:
     - cim:TapChanger
     - cim:TieFlow
     - nc:PTCTriggeredEquipment
-  "https://ap-voc.cim4.eu/GridDisturbance/1.1":
+  "https://ap.cim4.eu/GridDisturbance/1.1": &griddisturbance_1_1
     - cim:Equipment
-  "https://ap-voc.cim4.eu/RemedialAction/2.3":
+  "https://ap.cim4.eu/RemedialAction/2.3": &remedialaction_2_3
     - cim:Line
     - cim:Substation
     - nc:PowerShiftKeyStrategy
-  "https://ap-voc.cim4.eu/RemedialActionSchedule/2.3":
+  "https://ap.cim4.eu/RemedialActionSchedule/2.3": &remedialactionschedule_2_3
     - nc:AvailabilitySchedule
     - nc:RemedialActionSchemeSchedule
     - nc:SchemeRemedialAction
+
+
+  # Old profile names
+  "http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0": *shortcircuit_4_0
+  "http://iec.ch/TC57/ns/CIM/StateVariables-EU/3.0": *statevariables_5_0
+  "http://iec.ch/TC57/ns/CIM/Topology-EU/3.0": *topology_5_0
+  "https://ap-voc.cim4.eu/EquipmentReliability/2.3": *equipmentreliability_2_3
+  "https://ap-voc.cim4.eu/GridDisturbance/1.1": *griddisturbance_1_1
+  "https://ap-voc.cim4.eu/RemedialAction/2.3": *remedialaction_2_3
+  "https://ap-voc.cim4.eu/RemedialActionSchedule/2.3": *remedialactionschedule_2_3

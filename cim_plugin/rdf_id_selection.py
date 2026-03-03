@@ -1,6 +1,7 @@
 """
 Functions for finding whether rdf:ID or rdf:about should be used for each uuid.
 This file must be completely rewritten when that information is moved into linkML files.
+Therefore these functions have only the most basic tests.
 """
 
 import yaml

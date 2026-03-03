@@ -627,5 +627,55 @@ def test_collect_profile_multipleprofiles() -> None:
     result = header.collect_profile()
     assert result == "model1"   # First encountered wins
 
+
+# Unit tests .set_subject
+@pytest.mark.parametrize(
+        "new_subject",
+        [
+            pytest.param("h2", id="Simple replace"),
+            pytest.param("h1", id="New is same as old")
+        ]
+)
+def test_set_subject_basic(new_subject: str) -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(DCTERMS.conformsTo, Literal("model1"))
+    header.add_triple(DCTERMS.contributor, Literal("contributor1"))
+    header.add_triple(DCTERMS.contributor, URIRef("h1"))
+    
+    header.set_subject(URIRef(new_subject))
+
+    assert header.subject == URIRef(new_subject)
+    assert len(header.triples) == 4
+    assert (URIRef(new_subject), DCTERMS.contributor, URIRef("h1")) in header.triples
+    for s, p, o in header.triples:
+        assert s == URIRef(new_subject)
+
+
+def test_set_subject_emptyheader() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+
+    header.set_subject(URIRef("h2"))
+
+    assert header.subject == URIRef("h2")
+    assert len(header.triples) == 0
+
+
+def test_set_subject_multiplecalls() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    header.add_triple(DCTERMS.conformsTo, Literal("model1"))
+    header.add_triple(DCTERMS.contributor, Literal("contributor1"))
+    header.add_triple(DCTERMS.contributor, Literal("contributor2"))
+    
+    header.set_subject(URIRef("h2"))
+    header.set_subject(URIRef("h3"))
+
+    assert header.subject == URIRef("h3")
+    assert len(header.triples) == 4
+    for s, p, o in header.triples:
+        assert s == URIRef("h3")
+
+
 if __name__ == "__main__":
     pytest.main()
