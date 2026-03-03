@@ -8,7 +8,7 @@ from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Optional, cast   #, Any
+from typing import Optional, cast
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.utilities import extract_uuid
 
@@ -37,28 +37,14 @@ class CIMXMLParser(Parser):
         with contextlib.redirect_stdout(buf):   
             rdfxml.parse(source, sink, **kwargs)
         
-        # self.normalize_rdf_ids(sink)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
         fix_qualifier_for_all_uuids(sink)
 
         if "schema_path" in kwargs:
             self.schema_path = kwargs["schema_path"]
         if self.schema_path and self.schemaview is None:    # Load model from linkML file
             self.schemaview = SchemaView(self.schema_path)
-            # self.ensure_correct_namespace_model(prefix="cim", correct_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
-            # self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
-            # self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.enrich_literal_datatypes(sink)    # Add datatypes from model
-            # self.post_process(sink)
-        # else:
-        #     logger.error("Cannot perform post processing without the model. Data parsed as RDF/XML.")
-        
-    # def post_process(self, graph: Graph) -> None:
-    #     logger.info("Running post-process")
-    #     self.normalize_rdf_ids(graph)     # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
-    #     # ensure_correct_namespace_graph(graph, prefix="cim", correct_namespace=CIM)  # Ensures that data has correct namespace for the cim prefix
-    #     # ensure_correct_namespace_graph(graph, prefix="eu", correct_namespace=EU)    # Ensures that data has correct namespace for the eu prefix
-    #     self.enrich_literal_datatypes(graph)    # Add datatypes from model
 
 
     def ensure_correct_namespace_model(self, prefix: str, correct_namespace: str):
@@ -303,7 +289,6 @@ def ensure_correct_namespace_graph(graph: Graph, prefix: str, correct_namespace:
 
     if current is None:
         return
-        # raise ValueError(f"No namespace is called by this prefix: '{prefix}'.")
 
     if current == stripped_namespace:
         logger.info(f"Graph has correct namespace for {prefix}.")

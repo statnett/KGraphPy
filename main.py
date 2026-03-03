@@ -1,14 +1,12 @@
 import rdflib
+from pathlib import Path
 from rdflib.graph import Graph, Dataset
 from rdflib import URIRef, Literal, XSD, BNode
-from rdflib.compare import to_isomorphic, graph_diff
-import cim_plugin
+import cim_plugin   # If this is removed the cim parser and serializer will no longer work
 import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
-from pathlib import Path
 from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph
-from cim_plugin.cimxml_serializer import CIMXMLSerializer
 
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
@@ -56,53 +54,35 @@ def normalize_strings(g):
     return new
 
 def main():
-    # check_plugin_registered("cimxml", "Serializer")
-    # file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
+    # Here follows example usage
+
+    # These files are not included
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
-    # g = Graph()
-    # g.parse(file, "xml")
     file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
     file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = collect_cimxml_to_dataset([file, file2])
-    g3 = load_cimxml_graph(file3)
-    # for prefix, namespace in g3.namespace_manager.store.namespaces():
-    #     print(prefix, namespace)
-    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
-    # t = Dataset()
-    # t.parse(tfile, format="trig")
-    # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
-    # t_normalized = normalize_strings(tgraph)
+    ds = collect_cimxml_to_dataset([file, file2], schema_path=linkmlfile)
+    g3 = load_cimxml_graph(file3, schema_path=None)   # Has different namespace for cim, so must be loaded separetely from the others
+    
+    # Select individual graphs by name
     g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
-    # g3 = ds.graph(URIRef('urn:uuid:ebef4527-f0bc-4c59-8870-950af8ed9041'))
-    # for g in ds.graphs():
-        # print(g.identifier, type(g), getattr(g, "metadata_header", None))
+    for g in ds.graphs():
+        print(g.identifier) # Find the names by printing the identifiers of the graphs
+
     counter = 0
-    for s, p, o in g3:
-        # if isinstance(o, Literal):
-        if "f1769a0e-9aeb-11e5-91da-b8763fd99c5f" in s:
-            print(s, p, o)
+    for s, p, o in g2:  # Show random triples
+        if isinstance(o, Literal):
+            print(s, p, o, o.datatype)
             counter += 1
             if counter == 5:
                 break
 
-    # if g1.metadata_header:
-    #     print(g1.metadata_header.triples)
-    # g2 = ds.graph(URIRef('urn:uuid:ade44b65-0bfa-41e0-95c5-2ccb345a6fed'))
-    # gs = CIMXMLSerializer(g1)
-    # print(g1.identifier)
-    # print(g2.identifier)
-    # for g in list(t.graphs()):
-    #     print(g.identifier)
-    # for item in list(g3.triples((URIRef('urn:uuid:f1769a0e-9aeb-11e5-91da-b8763fd99c5f'), None, None))):
-    #     print(item)
-    # for item in lis
-    # for s, p, o in tgraph:
-    #     if isinstance(s, BNode):
-    #         print(s, p, o)
+    # How to look at the header
+    if g1.metadata_header:
+        print(g1.metadata_header.triples)
 
-    # g1 = tgraph
+    # Examples of how to serialise to cimxml
     # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
     # g1.serialize(destination=str(output_file), format="cimxml")
 
@@ -110,64 +90,9 @@ def main():
     # g2.serialize(destination=str(output_file2), format="cimxml")
 
     # output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er_parser_changed.xml"
-    # g3.serialize(destination=str(output_file3), format="cimxml")
+    # g3.serialize(destination=str(output_file3), format="cimxml", qualifier="urn")
 
 
-    # output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
-    # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
-
-    # print("Version:", rdflib.__version__) 
-    # print("File:", rdflib.__file__)
-    # count = 0
-    # for s, p, o in g1:
-    #     print(s, "->", p, "->", o)
-    #     if isinstance(o, Literal): # and "integer" in o.datatype:
-    #         print(o.datatype)
-
-    #     count += 1
-    #     if count == 10:
-    #         break
-
-    # g_test = g
-    # t_test = t_normalized
-    # print(f"CIMXML: {len(g_test)}")
-    # for item in list(g_test.triples((URIRef('urn:uuid:f1769d28-9aeb-11e5-91da-b8763fd99c5f'), URIRef('https://cim.ucaiug.io/ns#Equipment.normallyInService'), None))):
-    #     print(item)
-
-    # print(f"Trig: {len(t_test)}")
-    # for item in list(t_test.triples((URIRef('urn:uuid:f1769d28-9aeb-11e5-91da-b8763fd99c5f'), URIRef('https://cim.ucaiug.io/ns#Equipment.normallyInService'), None))):
-    #     print(item)
-
-    # isoC = to_isomorphic(g_test)
-    # isoT = to_isomorphic(t_test)
-    # print(isoC==isoT)
-    # in_both, in_cim, in_trig = graph_diff(g_test, t_test)
-    # print(f"In cim: {len(in_cim)}, in trig: {len(in_trig)}")
-    # # for pfx, ns in g.namespace_manager.namespaces():
-    # #     print(pfx, ns)
-    # print("cim:")
-    # count = 0
-    # for s, p, o in in_cim:
-    #     if isinstance(o, Literal):
-    #         print(s, p, o, o.datatype)
-    #         count += 1
-    #         if count == 5:
-    #             break
-    
-    # print("trig:")
-    # count = 0
-    # for s, p, o in in_trig:
-    #     if not isinstance(o, Literal):
-    #         print(s, p, o)
-    #         count += 1
-    #         if count == 5:
-    #             break
-
-
-
-
-    # output_file = Path.cwd().parent / "Nordic44-HV_EQ_rdfxml.xml"
-    # tgraph.serialize(destination=str(output_file), format="xml")
 
 if __name__ == "__main__":
     main()
