@@ -2,7 +2,7 @@
 
 import uuid
 import re
-from rdflib import Graph, URIRef, Node
+from rdflib import Graph, URIRef, Node, Dataset
 from rdflib.namespace import RDF, DCAT
 from rdflib.exceptions import ParserError
 import logging
@@ -10,7 +10,8 @@ from xml.sax import SAXParseException
 from cim_plugin.exceptions import CIMXMLParseError
 from cim_plugin.namespaces import MD
 from cim_plugin.graph import CIMDataset, CIMGraph
-from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.header import CIMMetadataHeader, create_header_attribute
+from cim_plugin.processor import CIMProcessor
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -143,27 +144,6 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
     return ds
 
 
-def create_header_attribute(graph: Graph) -> CIMMetadataHeader:
-    """Create a header from a graph.
-    
-    The header will be extracted from the graph. 
-    If there are no header triples in the graph, an empty header object will be created with a random subject uuid.
-
-    Parameters:
-        graph (Graph or CIMGraph): The graph to extract the header from.
-
-    Returns:
-        CIMMetadataHeader: The header object.
-    """
-    try:
-        header = CIMMetadataHeader.from_graph(graph)
-    except ValueError as e:
-        header = CIMMetadataHeader.empty()
-        logger.error(f"{e}: Random id generated for graph: {str(header.subject)}")
-
-    return header
-
-
 def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> list[Node]: 
     """Extract subjects with predicate rdf:type and matching specified objects.
 
@@ -208,6 +188,57 @@ def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[s
         groups.setdefault(t_qname, []).append(s)
 
     return groups
+
+
+def load_graphs_from_trig(filepath: str) -> list[CIMProcessor]:
+    """Load graphs from trig file into individual CIMProcessor objects.
+    
+    Parameters:
+        file_path (str): Path to trig file.
+
+    Returns:
+        list[CIMProcessor]: List of CIMProcessor objects.
+    """
+    processors: list[CIMProcessor] = []
+    
+    ds = Dataset()
+    ds.parse(filepath, format="trig")
+
+    for ctx in ds.graphs():
+        if "default" in ctx.identifier and len(ctx) == 0:
+            continue
+        cim = CIMGraph(identifier=ctx.identifier)
+        for prefix, uri in ctx.namespace_manager.namespaces():
+            cim.namespace_manager.bind(prefix, uri)
+        cim += ctx
+
+        processor = CIMProcessor(cim)
+        processors.append(processor)
+
+    return processors
+
+
+def load_graphs_from_cimxml(files: list[str]) -> list[CIMProcessor]:
+    processors: list[CIMProcessor] = []
+    
+    for file_path in files:
+        try:
+            graph = load_cimxml_graph(file_path, schema_path=None)
+        except (CIMXMLParseError) as e:
+            logger.error(e)
+            continue
+
+        header = create_header_attribute(graph)            
+        cim = CIMGraph(identifier=URIRef(header.subject))
+        for prefix, uri in graph.namespace_manager.namespaces():
+            cim.namespace_manager.bind(prefix, uri)
+        cim += graph
+
+        processor = CIMProcessor(cim)
+        processors.append(processor)
+
+    return processors
+
 
 
 if __name__ == "__main__":

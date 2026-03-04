@@ -7,7 +7,7 @@ import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
 from pathlib import Path
-from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph
+from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph, load_graphs_from_trig, load_graphs_from_cimxml
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
 
 dictConfig(LOG_CONFIG)
@@ -58,34 +58,52 @@ def normalize_strings(g):
 def main():
     # check_plugin_registered("cimxml", "Serializer")
     # file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
-    file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
+    # file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     # g = Graph()
     # g.parse(file, "xml")
-    file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
-    file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
-    linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = collect_cimxml_to_dataset([file, file2])
-    g3 = load_cimxml_graph(file3)
+    # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
+    # file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
+    # linkmlfile = "../CoreEquipment.linkml.yaml"
+    # ds = collect_cimxml_to_dataset([file, file2])
+    # g3 = load_cimxml_graph(file3)
+    # g = load_graph_from_cimxml(file)
     # for prefix, namespace in g3.namespace_manager.store.namespaces():
     #     print(prefix, namespace)
-    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    t = load_graphs_from_trig(tfile)
+    for g in t:
+        print(g.graph.identifier)
+    # g.extract_header()
+    # counter = 0
+    # for s, p, o in g.graph:
+    #     if s == g.graph.identifier:
+    #         print(s, p, o)
+    #         counter += 1
+    #         if counter == 10:
+    #             break
+    # print("header:")
+    # for triple in g.graph.metadata_header.triples:
+    #     print(triple)
     # t = Dataset()
     # t.parse(tfile, format="trig")
     # tgraph = t.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
     # t_normalized = normalize_strings(tgraph)
-    g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
-    g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
+    # g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
+    # g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
     # g3 = ds.graph(URIRef('urn:uuid:ebef4527-f0bc-4c59-8870-950af8ed9041'))
     # for g in ds.graphs():
         # print(g.identifier, type(g), getattr(g, "metadata_header", None))
-    counter = 0
-    for s, p, o in g3:
-        # if isinstance(o, Literal):
-        if "f1769a0e-9aeb-11e5-91da-b8763fd99c5f" in s:
-            print(s, p, o)
-            counter += 1
-            if counter == 5:
-                break
+    # for g in t.graphs():
+    #     print(g.identifier)
+    #     if "default" in g.identifier:
+    #         print("This is default")
+    #     counter = 0
+    #     for s, p, o in g:
+    #         if isinstance(o, Literal):
+    #             print(s, p, o)
+    #             counter += 1
+    #             if counter == 2:
+    #                 break
 
     # if g1.metadata_header:
     #     print(g1.metadata_header.triples)
@@ -113,8 +131,8 @@ def main():
     # g3.serialize(destination=str(output_file3), format="cimxml")
 
 
-    # output_file3 = Path.cwd().parent / "cimxml_test_ns.xml"
-    # g1.serialize(destination=str(output_file3), format="cimxml", qualifier="namespace")
+    # output_file3 = Path.cwd().parent / "fromtrig_grid_eq.xml"
+    # t[0].graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
 
     # print("Version:", rdflib.__version__) 
     # print("File:", rdflib.__file__)
@@ -164,8 +182,7 @@ def main():
     #             break
 
 
-
-
+    print(Path.cwd())
     # output_file = Path.cwd().parent / "Nordic44-HV_EQ_rdfxml.xml"
     # tgraph.serialize(destination=str(output_file), format="xml")
 

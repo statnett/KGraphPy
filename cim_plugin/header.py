@@ -250,5 +250,26 @@ class CIMMetadataHeader:
                 
 
 
+def create_header_attribute(graph: Graph) -> CIMMetadataHeader:
+    """Create a header from a graph.
+    
+    The header will be extracted from the graph. 
+    If there are no header triples in the graph, an empty header object will be created with a random subject uuid.
+
+    Parameters:
+        graph (Graph or CIMGraph): The graph to extract the header from.
+
+    Returns:
+        CIMMetadataHeader: The header object.
+    """
+    try:
+        header = CIMMetadataHeader.from_graph(graph)
+    except ValueError as e:
+        header = CIMMetadataHeader.empty()
+        logger.error(f"{e}: Random id generated for graph: {str(header.subject)}")
+
+    return header
+
+
 if __name__ == "__main__":
     print("metadata header for cimxml graph")

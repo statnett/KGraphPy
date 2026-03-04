@@ -4,8 +4,11 @@ from unittest.mock import patch, MagicMock
 from rdflib import Graph, URIRef, Literal, BNode, Node
 from rdflib.namespace import DCAT, DCTERMS, RDF
 from cim_plugin.namespaces import MD
-from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.header import CIMMetadataHeader, create_header_attribute
 from tests.fixtures import build_graph_with_blank_header
+import logging
+
+logger = logging.getLogger('cimxml_logger')
 
 
 # Unit tests .__init__
@@ -675,6 +678,51 @@ def test_set_subject_multiplecalls() -> None:
     assert len(header.triples) == 4
     for s, p, o in header.triples:
         assert s == URIRef("h3")
+
+
+#Unit tests create_header_attribute
+def test_create_header_attribute_fromgraph() -> None:
+    graph = MagicMock()
+    fake_header = MagicMock()
+
+    with patch.object(CIMMetadataHeader, "from_graph", return_value=fake_header) as mock_from_graph, \
+         patch.object(CIMMetadataHeader, "empty") as mock_empty, \
+         patch.object(logger, "error") as mock_log:
+
+        result = create_header_attribute(graph)
+
+    assert result is fake_header
+    mock_from_graph.assert_called_once_with(graph)
+    mock_empty.assert_not_called()
+    mock_log.assert_not_called()
+
+
+def test_create_header_attribute_valueerror(caplog: pytest.LogCaptureFixture) -> None:
+    graph = MagicMock()
+    fake_empty_header = MagicMock()
+    fake_empty_header.subject = "generated-id"
+
+    with patch.object(CIMMetadataHeader, "from_graph", side_effect=ValueError("oops")) as mock_from_graph, \
+         patch.object(CIMMetadataHeader, "empty", return_value=fake_empty_header) as mock_empty:
+        result = create_header_attribute(graph)
+
+    assert result is fake_empty_header
+    mock_from_graph.assert_called_once_with(graph)
+    mock_empty.assert_called_once()
+    
+    assert len(caplog.records) == 1 
+    record = caplog.records[0] 
+    assert record.levelname == "ERROR" 
+    assert "oops" in record.message 
+    assert "generated-id" in record.message
+
+
+def test_create_header_attribute_otherexceptions() -> None:
+    graph = Graph()
+
+    with patch.object(CIMMetadataHeader, "from_graph", side_effect=TypeError("boom")):
+        with pytest.raises(TypeError):
+            create_header_attribute(graph)
 
 
 if __name__ == "__main__":
