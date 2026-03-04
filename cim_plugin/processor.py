@@ -1,6 +1,6 @@
 from linkml_runtime.utils.schemaview import SchemaView
 from cim_plugin.graph import CIMGraph
-from cim_plugin.header import create_header_attribute
+from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 import logging
 from typing import Optional
 
@@ -15,7 +15,15 @@ class CIMProcessor:
         if filepath:
             self.schema = SchemaView(filepath)
 
+    def replace_header(self, header: CIMMetadataHeader|None = None) -> None:
+        self.graph.metadata_header = header
+
     def extract_header(self) -> None:
+        """Move header triples from graph to the metadata_header attribute."""
+        if self.graph.metadata_header:
+            logger.error("Metadata header already exist. Use .replace_header instead.")
+            return
+        
         header = create_header_attribute(self.graph)
         self.graph.metadata_header = header
         self.graph.remove((header.subject, None, None))
