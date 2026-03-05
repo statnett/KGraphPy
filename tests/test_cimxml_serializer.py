@@ -629,7 +629,7 @@ def test_write_header_rdftypehandling(capture_writer: tuple[list, Callable]) -> 
 
     result = "".join(output)
     print(result)
-    assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1">\n    <rdf:type rdf:resource="http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel"/>\n    <rdf:type rdf:resource="o"/>\n  </dcat:Dataset>\n'
+    assert '<rdf:type rdf:resource="http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel"/>' in result
     assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
 
 

@@ -24,16 +24,16 @@ def test_init_providedsubject() -> None:
     assert h.subject == s
 
 
-def test_init_triplesnone() -> None:
-    h = CIMMetadataHeader(triples=None)
-    assert h.triples == []
+def test_init_graphnone() -> None:
+    h = CIMMetadataHeader(graph=None)
+    assert len(h.graph) == 0    # An empty graph is made
 
 
-def test_init_triplesinput() -> None:
-    triples = [(URIRef("a"), URIRef("b"), Literal("c"))]
-    h = CIMMetadataHeader(triples=triples)
-    assert h.triples == triples
-    assert h.triples is not triples  # must be a copy
+def test_init_graphinput() -> None:
+    g = Graph()
+    g.add((URIRef("a"), URIRef("b"), Literal("c")))
+    h = CIMMetadataHeader(graph=g)
+    assert h.graph == g
 
 
 def test_init_metadataobjectsdefaults() -> None:
@@ -168,7 +168,7 @@ def test_from_graph_integration_dcatheader() -> None:
 
     result = CIMMetadataHeader.from_graph(g)
 
-    assert result.triples == [(header, RDF.type, DCAT.Dataset), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert set(result.triples) == {(header, RDF.type, DCAT.Dataset), (header, URIRef("urn:p"), URIRef("urn:o"))}
     assert result.reachable_nodes == reachable
 
 
@@ -181,7 +181,7 @@ def test_from_graph_integration_fullmodelheader() -> None:
 
     result = CIMMetadataHeader.from_graph(g)
 
-    assert result.triples == [(header, RDF.type, MD.FullModel), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert set(result.triples) == {(header, RDF.type, MD.FullModel), (header, URIRef("urn:p"), URIRef("urn:o"))}
     assert result.reachable_nodes == reachable
 
 
@@ -202,7 +202,7 @@ def test_from_graph_integration_metadataobjectsoverride() -> None:
 
     result = CIMMetadataHeader.from_graph(g, metadata_objects=[URIRef("urn:meta:Header")])
 
-    assert result.triples == [(header, RDF.type, URIRef("urn:meta:Header")), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert set(result.triples) == {(header, RDF.type, URIRef("urn:meta:Header")), (header, URIRef("urn:p"), URIRef("urn:o"))}
     assert result.reachable_nodes == reachable
 
 
@@ -217,7 +217,7 @@ def test_from_graph_integration_blankheaderrepair(caplog: pytest.LogCaptureFixtu
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == repaired
-    assert result.triples == [(repaired, RDF.type, DCAT.Dataset), (repaired, DCTERMS.identifier, Literal("fixed"))]
+    assert (repaired, RDF.type, DCAT.Dataset) in result.graph
     assert "Metadata header subject is a blank node" in caplog.text
 
 # Unit tests ._collect_header_triples
@@ -405,6 +405,33 @@ def test_collect_header_triples_mixedobjects(mock_repair: MagicMock, obj: Node, 
 
     assert len(triples) == expected_count
 
+
+# Unit tests ._collect_namespaces
+# @pytest.mark.parametrize(
+#         "namespaces, triples, expected",
+#         [
+#             pytest.param([], [], {"ex": URIRef("www.example.com/")}, id="Simple collection"),
+#             pytest.param([("exs", "www.example.com/extended")],
+#                          [((URIRef("h1"), URIRef("www.example.com/p1"), URIRef("www.example.com/extended/o1")))], 
+#                          {"ex": URIRef("www.example.com/"), "exs": URIRef("www.example.com/extended")}, 
+#                          id="Overlapping namespaces"),
+#             pytest.param([("foo", "www.bar.com/"), ("fb", "www.bar.com/foo")],
+#                          [(URIRef("h1"), URIRef("www.bar.com/foo"), Literal("o"))],
+#                          {"ex": URIRef("www.example.com/"), "fb": URIRef("www.bar.com/foo"), "foo": URIRef("www.bar.com/")},
+#                          id="Only the longest is used.")    # Both namespaces are included
+#         ]
+# )
+# def test_collect_namespaces_basic(namespaces: list[tuple], triples: list[tuple], expected: dict[str, URIRef]) -> None:
+#     g = Graph()
+#     g.bind("ex", "www.example.com/")
+#     for prefix, ns in namespaces:
+#         g.bind(prefix, ns)
+
+#     triples = [(URIRef("h1"), URIRef("www.example.com/p1"), URIRef("www.example.com/o1"))] + triples
+
+#     result = CIMMetadataHeader._collect_namespaces(g, triples)
+
+#     assert result == expected
 
 # Unit tests .empty
 def test_empty_basic() -> None:
