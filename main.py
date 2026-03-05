@@ -58,7 +58,7 @@ def normalize_strings(g):
 def main():
     # check_plugin_registered("cimxml", "Serializer")
     # file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
-    # file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
+    file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     # g = Graph()
     # g.parse(file, "xml")
     # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
@@ -66,21 +66,22 @@ def main():
     # linkmlfile = "../CoreEquipment.linkml.yaml"
     # ds = collect_cimxml_to_dataset([file, file2])
     # g3 = load_cimxml_graph(file3)
-    # g = load_graph_from_cimxml(file)
+    g = load_graphs_from_cimxml([file])
     # for prefix, namespace in g3.namespace_manager.store.namespaces():
     #     print(prefix, namespace)
-    tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
-    t = load_graphs_from_trig(tfile)
-    for g in t:
-        print(g.graph.identifier)
-    # g.extract_header()
-    # counter = 0
-    # for s, p, o in g.graph:
+    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    # t = load_graphs_from_trig(tfile)
+    # for g in t:
+    #     print(g.graph.identifier)
+    g1 = g[0]
+    g1.extract_header()
+    counter = 0
+    for s, p, o in g1.graph:
     #     if s == g.graph.identifier:
-    #         print(s, p, o)
-    #         counter += 1
-    #         if counter == 10:
-    #             break
+        print(s, p, o)
+        counter += 1
+        if counter == 10:
+            break
     # print("header:")
     # for triple in g.graph.metadata_header.triples:
     #     print(triple)
@@ -121,8 +122,8 @@ def main():
     #         print(s, p, o)
 
     # g1 = tgraph
-    # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
-    # g1.serialize(destination=str(output_file), format="cimxml")
+    output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
+    g1.graph.serialize(destination=str(output_file), format="cimxml")
 
     # output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh_parser_changed.xml"
     # g2.serialize(destination=str(output_file2), format="cimxml")

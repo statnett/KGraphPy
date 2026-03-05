@@ -15,7 +15,25 @@ class CIMProcessor:
         if filepath:
             self.schema = SchemaView(filepath)
 
-    def replace_header(self, header: CIMMetadataHeader|None = None) -> None:
+    # def replace_header(self, header: CIMMetadataHeader|None = None) -> None:
+    #     self.graph.metadata_header = header
+
+    def replace_header(self, header: CIMMetadataHeader | None = None) -> None:
+        if header is None:
+            self.graph.metadata_header = None
+            return
+
+        # Check for namespace prefix collisions
+        main_nm = self.graph.namespace_manager
+        header_nm = header.graph.namespace_manager
+
+        for prefix, header_ns in header_nm.namespaces():
+            if prefix in dict(main_nm.namespaces()):
+                main_ns = dict(main_nm.namespaces())[prefix]
+                if main_ns != header_ns:
+                    logger.warning(f"Namespace for '{prefix}' differs between graph ({main_ns}) and new header ({header_ns}).")
+
+        # Replace header
         self.graph.metadata_header = header
 
     def extract_header(self) -> None:

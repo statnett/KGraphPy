@@ -76,6 +76,7 @@ def make_cimgraph():
 
     # Create metadata header
     header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+    header.graph.bind("ex", Namespace("http://example.com/"))
     header.add_triple(RDF.type, DCAT.Dataset)
     g.metadata_header = header
 

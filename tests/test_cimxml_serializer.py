@@ -108,7 +108,7 @@ def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
         ("http://bar.org/Value", "bar"),
     ],
 )
-def test__collect_used_namespaces_onlyregisterednamespaces(make_cimgraph: CIMGraph, uri: str, expected_prefix: str) -> None:
+def test_collect_used_namespaces_onlyregisterednamespaces(make_cimgraph: CIMGraph, uri: str, expected_prefix: str) -> None:
     # Collecting namespace if it exist in the namespace_manager
     g = make_cimgraph
     g.add((URIRef(uri), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
@@ -143,7 +143,7 @@ def test_collect_used_namespaces_unregisterednamespaces(make_cimgraph: CIMGraph,
     assert all(not str(ns).startswith(uri.rsplit("/", 1)[0]) for ns in ns_list.values())
     
 
-def test_urns_are_ignored(make_cimgraph: CIMGraph) -> None:
+def test_collect_used_namespaces_urnsignored(make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
     g.add((URIRef("urn:uuid:1234"), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
 
@@ -159,6 +159,7 @@ def test_collect_used_namespaces_headertriples(make_cimgraph: CIMGraph) -> None:
 
     # Add header triples
     assert g.metadata_header    # Without this pylance reacts to add_triple
+    g.metadata_header.graph.bind("foo", "http://foo.org/ns#")
     g.metadata_header.add_triple(
         URIRef("http://foo.org/ns#headerPredicate"),
         URIRef("http://foo.org/ns#headerObject"),
@@ -247,6 +248,24 @@ def test_collect_used_namespaces_overlappingnamespaces() -> None:
     assert "ex" in ns_list
     assert "exns" in ns_list
     assert str(ns_list["ex"]) == "http://example.com/"
+    assert str(ns_list["exns"]) == "http://example.com/ns/"
+
+
+def test_collect_used_namespaces_overlappingnamespacesshortnotused() -> None:
+    g = CIMGraph()
+    g.bind("ex", Namespace("http://example.com/"))
+    g.bind("exns", Namespace("http://example.com/ns/"))
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/ns/header"))
+    g.add((
+        URIRef("http://example.com/ns/Thing"),
+        URIRef("http://example.com/ns/p"),
+        URIRef("http://example.com/ns/Object")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+    assert "ex" not in ns_list
+    assert "exns" in ns_list
     assert str(ns_list["exns"]) == "http://example.com/ns/"
 
 
