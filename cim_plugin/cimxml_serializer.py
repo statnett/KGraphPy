@@ -8,8 +8,8 @@ from rdflib.namespace import RDF, DCAT
 from xml.sax.saxutils import quoteattr, escape
 import logging
 from typing import IO, Any, Dict, Optional
-from cim_plugin.utilities import group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute, collect_specific_namespaces
-from cim_plugin.namespaces import MD
+from cim_plugin.utilities import group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
+from cim_plugin.namespaces import MD, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 # from cim_plugin.graph import CIMGraph
