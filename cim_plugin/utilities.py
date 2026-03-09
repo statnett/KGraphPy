@@ -258,7 +258,7 @@ def collect_specific_namespaces(triples: list[tuple[Node, Node, Node]], namespac
 
     # Sort namespaces longest-first to ensure specific ones match first. Prevents overlapping namespaces from being lost.
     known = sorted(namespace_manager.namespaces(), key=lambda item: len(str(item[1])), reverse=True)
-
+    
     used = {}
 
     for uri in used_uris:
@@ -267,7 +267,7 @@ def collect_specific_namespaces(triples: list[tuple[Node, Node, Node]], namespac
             if uri.startswith(ns_str):
                 used[prefix] = ns_uri
                 break
-
+    
     return used
 
 

@@ -86,6 +86,7 @@ class CIMMetadataHeader:
         )
 
         # Build a new graph for the header
+        # Add a filtering so only used namespaces are in the namespace_manager
         header_graph = Graph()
         header_graph.namespace_manager = graph.namespace_manager
 

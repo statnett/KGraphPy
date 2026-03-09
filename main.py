@@ -69,19 +69,45 @@ def main():
     g = load_graphs_from_cimxml([file])
     # for prefix, namespace in g3.namespace_manager.store.namespaces():
     #     print(prefix, namespace)
-    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
-    # t = load_graphs_from_trig(tfile)
+    tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    t = load_graphs_from_trig(tfile)
+    t1 = t[0]
+    t1.extract_header()
+    # print("Trig header")
+    # for s, p, o in t1.graph.metadata_header.triples:
+    #     print(s, p, o)
     # for g in t:
     #     print(g.graph.identifier)
     g1 = g[0]
     g1.extract_header()
-    counter = 0
-    for s, p, o in g1.graph:
-    #     if s == g.graph.identifier:
-        print(s, p, o)
-        counter += 1
-        if counter == 10:
-            break
+    # print("cimxml header")
+    # for s, p, o in g1.graph.metadata_header.triples:
+    #     print(s, p, o)
+
+
+    t1.replace_header(g1.graph.metadata_header)
+    # print("Trig header after swap")
+    # for s, p, o in t1.graph.metadata_header.triples:
+    #     print(s, p, o)
+
+    print("Trig namespaces")
+    print(len(list(t1.graph.namespace_manager.store.namespaces())))
+    print(t1.graph.namespace_manager.store.namespace("cim"))
+    # for prefix, ns in t1.graph.namespace_manager.store.namespaces():
+    #     print(prefix, ns)
+
+    print("Trig header namespaces")
+    print(len(list(t1.graph.metadata_header.graph.namespace_manager.store.namespaces())))
+    print(t1.graph.metadata_header.graph.namespace_manager.store.namespace("cim"))
+    # for prefix, ns in t1.graph.metadata_header.graph.namespace_manager.store.namespaces():
+    #     print(prefix, ns)
+    # counter = 0
+    # for s, p, o in g1.graph:
+    # #     if s == g.graph.identifier:
+    #     print(s, p, o)
+    #     counter += 1
+    #     if counter == 10:
+    #         break
     # print("header:")
     # for triple in g.graph.metadata_header.triples:
     #     print(triple)
@@ -122,8 +148,8 @@ def main():
     #         print(s, p, o)
 
     # g1 = tgraph
-    output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
-    g1.graph.serialize(destination=str(output_file), format="cimxml")
+    # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
+    # g1.graph.serialize(destination=str(output_file), format="cimxml")
 
     # output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh_parser_changed.xml"
     # g2.serialize(destination=str(output_file2), format="cimxml")
@@ -132,8 +158,8 @@ def main():
     # g3.serialize(destination=str(output_file3), format="cimxml")
 
 
-    # output_file3 = Path.cwd().parent / "fromtrig_grid_eq.xml"
-    # t[0].graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
+    output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
+    t[0].graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
 
     # print("Version:", rdflib.__version__) 
     # print("File:", rdflib.__file__)

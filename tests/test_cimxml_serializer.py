@@ -270,11 +270,15 @@ def test_collect_used_namespaces_overlappingnamespacesshortnotused() -> None:
 
 
 def test_collect_used_namespaces_collisions() -> None:
+    # This test just shows that g.bind decides which prefix is kept with namespace collisions.
+    # Should possibly be removed.
+
     g = CIMGraph()
 
-    # Two prefixes bound to the same namespace URI
-    g.bind("ex", Namespace("http://example.com/"))
-    g.bind("alt", Namespace("http://example.com/"))
+    # Three prefixes bound to the same namespace URI in different ways
+    g.bind("ex0", Namespace("http://example.com/"))
+    g.bind("ex", Namespace("http://example.com/"), override=True) # New prefix replaces old
+    g.bind("alt", Namespace("http://example.com/"), override=False) # Old prefix kept, new not added
 
     g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
 
@@ -289,8 +293,32 @@ def test_collect_used_namespaces_collisions() -> None:
     print(ns_list)
 
     assert len(ns_list) == 1    # Only one prefix should survive
-    assert list(ns_list.values())[0] == URIRef("http://example.com/")   # It must map to the correct namespace URI
-    assert list(ns_list.keys())[0] in {"ex", "alt"} # And the prefix must be one of the registered ones
+    assert "ex" in ns_list
+    assert ns_list["ex"] == URIRef("http://example.com/")   # It must map to the correct namespace URI
+
+
+def test_collect_used_namespaces_collisionsfromdifferentsources() -> None:
+    # This test shows what this function does with namespace collisions.
+    g = CIMGraph()
+    g.bind("ex", Namespace("http://example.com/"))
+
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+    g.metadata_header.graph.bind("alt", Namespace("http://example.com/"))
+    g.metadata_header.add_triple(URIRef("http://example.com/p"), Literal("o"))
+
+    g.add((
+        URIRef("http://example.com/Thing"),
+        URIRef("http://example.com/p"),
+        URIRef("http://example.com/o")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert len(ns_list) == 2    # Both namespaces are collected
+    assert "alt" in ns_list
+    assert "ex" in ns_list
+    assert ns_list["ex"] == ns_list["alt"]  # Both prefixes points to the same namespace
 
 
 def test_collect_used_namespaces_rebindingnamespace() -> None:

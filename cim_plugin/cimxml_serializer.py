@@ -68,6 +68,7 @@ class CIMXMLSerializer(Serializer):
                 header.graph.namespace_manager
             )
             namespaces.update(header_ns)
+            # print("Header: ", namespaces)
 
         # --- Data namespaces ---
         data_triples = list(self.store.triples((None, None, None)))
@@ -76,6 +77,7 @@ class CIMXMLSerializer(Serializer):
             self.store.namespace_manager
         )
         namespaces.update(data_ns)
+        # print("With data: ", namespaces)
 
         # Stable output
         return sorted(namespaces.items())
