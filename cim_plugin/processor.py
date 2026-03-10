@@ -1,6 +1,7 @@
 from linkml_runtime.utils.schemaview import SchemaView
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
+from cim_plugin.namespaces import update_namespace_in_triples
 from rdflib import URIRef
 from rdflib.namespace import NamespaceManager
 import logging
@@ -114,8 +115,38 @@ class CIMProcessor:
             list: If any not identical, else None.
         """
 
-    def update_namespace(self) -> None:
-        """Update namespace in graph and header."""
+    def update_namespace(self, prefix: str, namespace: str) -> None:
+        """Update namespace in graph and header.
+        
+        The namespace manager and all the triples in both the main graph and the header are given the new namespace.
+        If the prefix do not exist in the namespace managers it will not be added. 
+        Use the standard Graph.bind for adding new prefix - namespace pairs.
+
+        Parameters:
+            prefix (str): The prefix which will be given a new namespace.
+            namespace (str): The new namespace.
+
+        Raises:
+            ValueError: If namespace is None or empty. 
+        """
+
+        stripped_namespace = str(namespace).strip()
+        if not namespace or not stripped_namespace:
+            raise ValueError("Namespace cannot be empty.")
+        
+        if self.graph.metadata_header:
+            header = self.graph.metadata_header.graph
+            header_old_namespace = header.namespace_manager.store.namespace(prefix)
+            if header_old_namespace and str(header_old_namespace) != stripped_namespace:
+                header.bind(prefix, stripped_namespace, override=True, replace=True)
+                update_namespace_in_triples(header, header_old_namespace, stripped_namespace)
+                
+        old_namespace = self.graph.namespace_manager.store.namespace(prefix)
+        if old_namespace and str(old_namespace) != stripped_namespace:
+            self.graph.bind(prefix, stripped_namespace, override=True, replace=True)
+            update_namespace_in_triples(self.graph, old_namespace, stripped_namespace)
+
+        
 
     def enrich_datatypes(self):
         """Use self.schema to enrich self.graph with datatypes."""

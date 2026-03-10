@@ -445,6 +445,215 @@ def test_merge_header_emptyheader() -> None:
     ns_after = pr.graph.namespace_manager.store
     assert ns_after.namespace("md") == URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')
 
+
+# Unit tests .update_namespace
+@pytest.mark.parametrize(
+    "prefix, new_namespace",
+    [
+        pytest.param("ex", "www.new.com/", id="New namespace as string"),
+        pytest.param("ex", URIRef("www.new.com/"), id="New namespace as URIRef"),
+        pytest.param("ex", " www.new.com/ ", id="Whitespace"),
+        pytest.param("ex", "www.new.com#", id="With #"),
+        pytest.param("ex", "www.new.com", id="Missing /"),
+        pytest.param("ex", "https://exAMPLE.com/", id="Same as old, but with uppercase"),
+    ]
+)
+def test_update_namespace_various(prefix: str, new_namespace: str|URIRef) -> None:
+    header = CIMMetadataHeader.empty(URIRef("https://example.com/h1"))
+    header.graph.bind("ex", "https://example.com/")
+    header.add_triple(URIRef("https://example.com/ph"), URIRef("https://example.com/oh"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)
+    pr.update_namespace(prefix=prefix, namespace=new_namespace)
+
+    new_namespace = str(new_namespace).strip()
+    assert pr.graph.metadata_header
+    assert pr.graph.namespace_manager.store.namespace(prefix) == URIRef(new_namespace)
+    assert pr.graph.metadata_header.graph.namespace_manager.store.namespace(prefix) == URIRef(new_namespace)
+    assert (URIRef(f"{new_namespace}s1"), URIRef(f"{new_namespace}p1"), URIRef(f"{new_namespace}o1")) in pr.graph
+    assert (URIRef(f"{new_namespace}h1"), URIRef(f"{new_namespace}ph"), URIRef(f"{new_namespace}oh")) in pr.graph.metadata_header.graph
+
+
+@pytest.mark.parametrize(
+    "prefix, new_namespace",
+    [
+        pytest.param("ex", "https://example.com/", id="Same as old"),
+        pytest.param("new", "www.new.com/", id="New prefix"),
+        pytest.param("EX", "https://example.com/", id="Uppercase prefix, seen as new"),
+        pytest.param(None, "www.new.com/", id="None prefix"),
+        pytest.param(" ", "www.new.com/", id="Empty prefix"),
+    ]
+)
+@patch("cim_plugin.processor.update_namespace_in_triples")
+def test_update_namespace_nochanges(mock_update: MagicMock, prefix: str, new_namespace: str|URIRef) -> None:
+    header = CIMMetadataHeader.empty(URIRef("https://example.com/h1"))
+    header.graph.bind("ex", "https://example.com/")
+    header.add_triple(URIRef("https://example.com/ph"), URIRef("https://example.com/oh"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)
+    pr.update_namespace(prefix=prefix, namespace=new_namespace)
+
+    assert pr.graph.metadata_header
+    data_ns = pr.graph.namespace_manager.store
+    header_ns = pr.graph.metadata_header.graph.namespace_manager.store
+
+    assert data_ns.namespace("ex") == URIRef("https://example.com/")
+    assert header_ns.namespace("ex") == URIRef("https://example.com/")
+    mock_update.assert_not_called()
+    
+    if prefix != "ex":
+        assert data_ns.namespace(prefix) == None
+        assert header_ns.namespace(prefix) == None
+
+
+@pytest.mark.parametrize(
+    "prefix, new_namespace, which_changed",
+    [
+        pytest.param("ex", "www.new.com/", "graph", id="Graph changed"),
+        pytest.param("foo", "www.new.com/", "header", id="Header changed"),
+    ]
+)
+def test_update_namespace_onlyonechanged(prefix: str, new_namespace: str|URIRef, which_changed: str) -> None:
+    header = CIMMetadataHeader.empty(URIRef("https://bar.com/h1"))
+    header.graph.bind("foo", "https://bar.com/")
+    header.add_triple(URIRef("https://bar.com/ph"), URIRef("https://bar.com/oh"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)
+    pr.update_namespace(prefix=prefix, namespace=new_namespace)
+
+    new_namespace = str(new_namespace).strip()
+    assert pr.graph.metadata_header
+
+    data_ns = pr.graph.namespace_manager.store
+    header_ns = pr.graph.metadata_header.graph.namespace_manager.store
+
+    if which_changed == "graph":
+        assert data_ns.namespace(prefix) == URIRef(new_namespace)
+        assert (URIRef(f"{new_namespace}s1"), URIRef(f"{new_namespace}p1"), URIRef(f"{new_namespace}o1")) in pr.graph
+        assert header_ns.namespace("foo") == URIRef("https://bar.com/")
+        assert (URIRef("https://bar.com/h1"), URIRef("https://bar.com/ph"), URIRef("https://bar.com/oh")) in pr.graph.metadata_header.graph
+    elif which_changed == "header":
+        assert pr.graph.metadata_header.graph.namespace_manager.store.namespace(prefix) == URIRef(new_namespace)
+        assert (URIRef(f"{new_namespace}h1"), URIRef(f"{new_namespace}ph"), URIRef(f"{new_namespace}oh")) in pr.graph.metadata_header.graph
+        assert data_ns.namespace("ex") == URIRef("https://example.com/")
+        assert (URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")) in pr.graph
+
+
+def test_update_namespace_graphfixed() -> None:
+    header = CIMMetadataHeader.empty(URIRef("https://example.com/h1"))
+    header.graph.bind("ex", "https://example.com/")
+    header.add_triple(URIRef("https://example.com/ph"), URIRef("https://example.com/oh"))
+    g = CIMGraph()
+    g.bind("ex", "https://ex.com/")
+    g.add((URIRef("https://ex.com/s1"), URIRef("https://ex.com/p1"), URIRef("https://ex.com/o1")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)
+    pr.update_namespace(prefix="ex", namespace="https://example.com/")
+
+    assert pr.graph.metadata_header
+    assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("https://example.com/")
+    assert pr.graph.metadata_header.graph.namespace_manager.store.namespace("ex") == URIRef("https://example.com/")
+    assert (URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")) in pr.graph
+    assert (URIRef("https://example.com/h1"), URIRef("https://example.com/ph"), URIRef("https://example.com/oh")) in pr.graph.metadata_header.graph
+
+
+@patch("cim_plugin.processor.update_namespace_in_triples")
+def test_update_namespace_emptystringnamespace(mock_update) -> None:
+    header = CIMMetadataHeader.empty(URIRef("https://bar.com/h1"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)
+    
+    with pytest.raises(ValueError) as exc:
+        pr.update_namespace(prefix="ex", namespace=" ")
+    
+    assert "Namespace cannot be empty." in str(exc.value)
+    mock_update.assert_not_called()
+
+
+@patch("cim_plugin.processor.update_namespace_in_triples")
+def test_update_namespace_namespacenone(mock_update) -> None:
+    header = CIMMetadataHeader.empty(URIRef("https://bar.com/h1"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)
+    
+    with pytest.raises(ValueError) as exc:
+        # Pylance silenced to allow wrong input type
+        pr.update_namespace(prefix="ex", namespace=None)    # type: ignore
+    
+    assert "Namespace cannot be empty." in str(exc.value)
+    mock_update.assert_not_called()
+
+
+@patch("cim_plugin.processor.update_namespace_in_triples")
+def test_update_namespace_noheader(mock_update: MagicMock) -> None:
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.metadata_header = None
+    
+    pr = CIMProcessor(g)
+    pr.update_namespace(prefix="ex", namespace="www.new.com/")
+
+    assert pr.graph.metadata_header is None
+    assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
+    assert mock_update.call_count == 1
+
+
+@patch("cim_plugin.processor.update_namespace_in_triples")
+def test_update_namespace_emptyheader(mock_update: MagicMock) -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.add((URIRef("https://example.com/s2"), URIRef("https://example.com/p2"), URIRef("https://example.com/o2")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)    
+    pr.update_namespace(prefix="ex", namespace="www.new.com/")
+    
+    assert pr.graph.metadata_header is header
+    assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
+    assert mock_update.call_count == 1
+
+
+def test_update_namespace_multipletriples() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
+    g.add((URIRef("https://example.com/s2"), URIRef("https://example.com/p2"), URIRef("https://example.com/o2")))
+    g.metadata_header = header
+    
+    pr = CIMProcessor(g)    
+    pr.update_namespace(prefix="ex", namespace="www.new.com/")
+    
+    assert pr.graph.metadata_header is header
+    assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
+    assert len(pr.graph) == 2
+    assert (URIRef("www.new.com/s1"), URIRef("www.new.com/p1"), URIRef("www.new.com/o1")) in pr.graph
+    assert (URIRef("www.new.com/s2"), URIRef("www.new.com/p2"), URIRef("www.new.com/o2")) in pr.graph
+
 # Unit tests merge_namespace_managers
 def test_merge_namespace_managers_nodiffs() -> None:
     # No new namespaces, but the rdflib defaults are there

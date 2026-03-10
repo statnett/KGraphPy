@@ -157,11 +157,13 @@ def main():
     # output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er_parser_changed.xml"
     # g3.serialize(destination=str(output_file3), format="cimxml")
 
+    t1.update_namespace("cim", str(g1.graph.namespace_manager.store.namespace("cim")))
+    t1.update_namespace("eu", str(g1.graph.namespace_manager.store.namespace("eu")))
 
-    # output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
-    # t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
+    output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
+    t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
 
-    t1.merge_header()
+    t1.merge_header()    
     output_file_trig = Path.cwd().parent / "fromtrig_totrig_grid_eq_header_swapped.xml"
     t1.graph.serialize(destination=str(output_file_trig), format="trig")
     
