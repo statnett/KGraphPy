@@ -158,9 +158,13 @@ def main():
     # g3.serialize(destination=str(output_file3), format="cimxml")
 
 
-    output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
-    t[0].graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
+    # output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
+    # t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
 
+    t1.merge_header()
+    output_file_trig = Path.cwd().parent / "fromtrig_totrig_grid_eq_header_swapped.xml"
+    t1.graph.serialize(destination=str(output_file_trig), format="trig")
+    
     # print("Version:", rdflib.__version__) 
     # print("File:", rdflib.__file__)
     # count = 0

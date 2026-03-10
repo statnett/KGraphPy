@@ -65,12 +65,45 @@ class CIMProcessor:
         for subject_node in header.reachable_nodes:
             self.graph.remove((subject_node, None, None))
 
-    def merge_header(self):
+    def merge_header(self) -> None:
         """Merge header back into graph.
-        Find a way to deal with namespaces.
+        
+        The namespaces of the header are added to the namespaces of the graph. 
+        Namespace collisions are resolved by keeping the graph's namespace.
+
+        WARNING:
+        The header namespace manager keeps its' own namespace for the prefix when there are collisions with the graph.
+        This may cause problems for later serialisations. An error message warns when this happends. Use .update_namespace
+        before .merge_headers to fix the issue.
         """
         if self.graph.metadata_header:
-            self.graph += self.graph.metadata_header.triples
+            header = self.graph.metadata_header
+            self.graph += header.graph
+            merge_namespace_managers(self.graph.namespace_manager, header.graph.namespace_manager)
+
+
+    # Keeping this commented out for now, in case sorting header triples first becomes necessary
+    # def merge_header(self):
+    #     """Merge header back into graph with header triples first."""
+    #     header = self.graph.metadata_header
+    #     if not header:
+    #         return
+
+    #     # Extract existing triples
+    #     original_triples = list(self.graph.triples((None, None, None)))
+
+    #     # Clear graph
+    #     self.graph.remove((None, None, None))
+
+    #     # Insert header triples first
+    #     for t in header.triples:
+    #         self.graph.add(t)
+
+    #     # Insert the rest
+    #     for t in original_triples:
+    #         self.graph.add(t)
+
+
             
 
     def are_namespaces_identical_with_model(self) -> list|None:

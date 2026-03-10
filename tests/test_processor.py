@@ -259,6 +259,192 @@ def test_extract_header_bnodes() -> None:
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
 
 
+# Unit tests .merge_header
+@patch("cim_plugin.processor.merge_namespace_managers")
+def test_merge_header_headernone(mock_merge: MagicMock) -> None:
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = None
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    assert len(pr.graph) == 1
+    assert (URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")) in pr.graph
+    mock_merge.assert_not_called()
+
+def test_merge_header_basic() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.add_triple(RDF.type, DCAT.Dataset)
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = header
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    assert (URIRef("h1"), RDF.type, DCAT.Dataset) in pr.graph
+    assert len(pr.graph) == 2
+
+@patch("cim_plugin.processor.merge_namespace_managers")
+def test_merge_header_mergecalled(mock_merge: MagicMock) -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("foo", "www.bar.org/")
+    header.graph.bind("md", MD)
+    header.add_triple(RDF.type, MD.Fullmodel)
+    header.add_triple(URIRef("www.bar.org/p"), Literal("oh"))
+    g = CIMGraph()
+    g.bind("md", MD)
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = header
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    assert pr.graph.metadata_header
+    assert (URIRef("h1"), RDF.type, MD.Fullmodel) in pr.graph
+    assert (URIRef("h1"), URIRef("www.bar.org/p"), Literal("oh")) in pr.graph
+    assert len(pr.graph) == 3
+    ns = pr.graph.namespace_manager.store
+    assert ("md", URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')) in list(ns.namespaces())
+    # The namespaces are not merged when merge_namespace_managers is mocked
+    assert ("foo", URIRef("www.bar.org/")) not in list(ns.namespaces())
+    mock_merge.assert_called_once_with(pr.graph.namespace_manager, pr.graph.metadata_header.graph.namespace_manager)
+
+def test_merge_header_namespaces() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("foo", "www.bar.org/")
+    header.graph.bind("md", MD)
+    header.add_triple(RDF.type, MD.Fullmodel)
+    header.add_triple(URIRef("www.bar.org/p"), Literal("oh"))
+    g = CIMGraph()
+    g.bind("md", MD)
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = header # Using this line to add the header to the graph
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    assert (URIRef("h1"), RDF.type, MD.Fullmodel) in pr.graph
+    assert (URIRef("h1"), URIRef("www.bar.org/p"), Literal("oh")) in pr.graph
+    assert len(pr.graph) == 3
+    ns = pr.graph.namespace_manager.store
+    assert ("md", URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')) in list(ns.namespaces())
+    # Header namespaces automatically transferred
+    assert ("foo", URIRef("www.bar.org/")) in list(ns.namespaces())
+
+def test_merge_header_usingreplaceheader() -> None:
+    # This test gives same result as the one above. 
+    # merge_namespace_managers ensures namespaces will not have duplicates, even though it is run twice when .replace_header has been used.
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("foo", "www.bar.org/")
+    header.graph.bind("md", MD)
+    header.add_triple(RDF.type, MD.Fullmodel)
+    header.add_triple(URIRef("www.bar.org/p"), Literal("oh"))
+    g = CIMGraph()
+    g.bind("md", MD)
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    # g.metadata_header = header    # Using .replace_header instead
+    ns_before = list(g.namespace_manager.store.namespaces())
+
+    pr = CIMProcessor(g)
+    pr.replace_header(header)
+    pr.merge_header()
+
+    assert (URIRef("h1"), RDF.type, MD.Fullmodel) in pr.graph
+    assert (URIRef("h1"), URIRef("www.bar.org/p"), Literal("oh")) in pr.graph
+    assert len(pr.graph) == 3
+    ns_after = pr.graph.namespace_manager.store
+    assert ("foo", URIRef("www.bar.org/")) not in ns_before
+    assert len(list(ns_after.namespaces())) == len(ns_before) + 1 # Only one namespace has been added
+    assert ("md", URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')) in list(ns_after.namespaces())
+    assert ("foo", URIRef("www.bar.org/")) in list(ns_after.namespaces())
+
+
+def test_merge_header_idempotency() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("md", MD)
+    header.add_triple(RDF.type, MD.Fullmodel)
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = header
+    ns_before = list(g.namespace_manager.store.namespaces())
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+    pr.merge_header()
+
+    assert (URIRef("h1"), RDF.type, MD.Fullmodel) in pr.graph
+    assert len(pr.graph) == 2   # No duplicate triples
+    ns_after = pr.graph.namespace_manager.store
+    assert len(list(ns_after.namespaces())) == len(ns_before) + 1 # Only one namespace has been added
+    assert ("md", URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')) in list(ns_after.namespaces())
+
+
+def test_merge_header_noduplicatetriples() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("md", MD)
+    header.add_triple(RDF.type, MD.Fullmodel)
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.bind("md", MD)
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.add((URIRef("h1"), RDF.type, MD.Fullmodel))   # Header triple already in graph
+    g.metadata_header = header
+    ns_before = list(g.namespace_manager.store.namespaces())
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    assert (URIRef("h1"), RDF.type, MD.Fullmodel) in pr.graph
+    assert len(pr.graph) == 2   # No duplicate triples
+    ns_after = pr.graph.namespace_manager.store
+    assert len(list(ns_after.namespaces())) == len(ns_before) # No new namespace has been added
+
+
+def test_merge_header_namespacecollision(caplog: pytest.LogCaptureFixture) -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("ex", "www.new.com/")
+    header.add_triple(URIRef("www.new.com/p1"), Literal("oh"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = header
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    # The triples uses the header namespace for ex, not the graph namespace
+    assert (URIRef("h1"), URIRef("www.new.com/p1"), Literal("oh")) in pr.graph
+    assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("https://example.com/")
+    assert pr.graph.metadata_header
+    assert pr.graph.metadata_header.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
+    assert len(pr.graph) == 2
+    assert caplog.records[0].levelname == "ERROR"
+    assert "Namespace for 'ex' differs between graphs (https://example.com/ vs www.new.com/). https://example.com/ is kept." in caplog.text
+
+
+def test_merge_header_emptyheader() -> None:
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.graph.bind("md", MD)
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
+    g.metadata_header = header
+
+    pr = CIMProcessor(g)
+    pr.merge_header()
+
+    assert len(pr.graph) == 1   # No added triples
+    ns_after = pr.graph.namespace_manager.store
+    assert ns_after.namespace("md") == URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')
+
 # Unit tests merge_namespace_managers
 def test_merge_namespace_managers_nodiffs() -> None:
     # No new namespaces, but the rdflib defaults are there
