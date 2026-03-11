@@ -12,7 +12,7 @@ from typing import Optional, cast   #, Any
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.utilities import extract_uuid
 from cim_plugin.namespaces import update_namespace_in_triples
-from cim_plugin.enriching import slots_equal, _build_slot_index
+from cim_plugin.enriching import _build_slot_index, create_typed_literal, resolve_datatype_from_slot
 import io
 import contextlib
 
@@ -49,7 +49,7 @@ class CIMXMLParser(Parser):
             # self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
             # self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
             self.slot_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
-            self.enrich_literal_datatypes(sink)    # Add datatypes from model
+            # self.enrich_literal_datatypes(sink)    # Add datatypes from model
             # self.post_process(sink)
         # else:
         #     logger.error("Cannot perform post processing without the model. Data parsed as RDF/XML.")
@@ -116,7 +116,7 @@ class CIMXMLParser(Parser):
                 logger.error(e)
                 raise
 
-
+    # Has been copied to processor
     def enrich_literal_datatypes(self, graph: Graph) -> Graph:
         """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
         
@@ -416,153 +416,6 @@ def fix_qualifier_for_all_uuids(graph: Graph) -> None:
             graph.remove((s, p, o))
             graph.add((new_s, p, new_o))
 
-
-def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:
-    """Resolve a LinkML type name to its canonical datatype.
-    
-    Works for both declared types and built-in primitives.
-    
-    Parameters:
-        schemaview (SchemaView): The SchemaView to get the datatype from.
-        type_name (str): Name of type.
-
-    Returns:
-        str: The datatype, either as a uri or base name. Last resort returns type_name.
-    """
-    t = schemaview.get_type(type_name)
-    if t is None:
-        return None
-
-    if t.uri:
-        return t.uri
-
-    if t.base:
-        return _resolve_type(schemaview, t.base)
-
-    return type_name
-
-
-def resolve_datatype_from_slot(schemaview: SchemaView, slot: SlotDefinition) -> str|None:
-    """Resolve primitive datatype by collecting range from linkML slots.
-    
-    If range is a custom type, the primitive type of the custom type will be returned.
-
-    This function should only be used on predicates whos object are literals.
-    If the object is a URI, the return could be erronous.
-
-    Parameters:
-        schemaview (SchemaView): The linkML SchemaView to collect the datatype from.
-        slot (SlotDefinition): The slot which contains the datatype range.
-
-    Returns:
-        str: The datatype if found.
-        None: If range is nonexistent or a class.
-    """
-    rng = slot.range
-    if not rng:
-        return None
-
-    # Case 1: range is a declared type or primitive
-    resolved = _resolve_type(schemaview, rng)
-    if resolved:
-        return resolved
-
-    # Case 2: range is an enum
-    if rng in schemaview.all_enums():
-        enum = schemaview.get_enum(rng)
-
-        # If any permissible value has a meaning (URI), then enum values are URIs
-        has_meaning = any(
-            pv.meaning for pv in (enum.permissible_values or {}).values()   # type: ignore
-        )
-
-        if has_meaning:
-            # Enum values will appear as URIs, not literals
-            logger.warning(f"Literal encountered for enum {rng} with meaning. Literal enums should not have meaning. Is object a URI?")
-
-        return "xsd:string"
-    
-    # Case 3: range is a class → literals should never appear 
-    if rng in schemaview.all_classes(): 
-        logger.warning( f"slot.range '{rng}' is a class. Is object a URI?" ) 
-        return None
-
-    return rng
-
-
-def cast_float(value: str) -> float:
-    """Cast string value to float.
-
-    Corrects the common error of using , as decimal point (3,14 -> 3.14).
-    
-    Parameters:
-        value (str): The value to be cast.
-    
-    Raises:
-        ValueError: If input is not possible to cast.
-    """
-    s = str(value).strip()
-
-    if "," in s and "." not in s:
-        s = s.replace(",", ".")
-
-    try:
-        return float(s)
-    except ValueError:
-        raise ValueError(f"Invalid float: {value}")
-
-
-def cast_bool(value: str) -> bool:
-    """Cast string value to boolean.
-    
-    Parameters:
-        value (str): The value to be cast.
-    
-    Raises:
-        ValueError: If input does not match true or false.
-    """
-    s = str(value).lower()
-    if s in ("true", "1"):
-        return True
-    if s in ("false", "0"):
-        return False
-    raise ValueError(f"Invalid boolean lexical form: {value}")
-
-
-CASTERS = {
-    str(XSD.integer): int,
-    str(XSD.float): cast_float,
-    str(XSD.boolean): cast_bool,
-    str(XSD.date): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-    str(XSD.dateTime): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-}
-
-
-def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) -> Literal:
-    """Cast Literal to correct format based on datatype uri.
-    
-    Parameters:
-        value (str): The value to be cast.
-        datatype_uri (str): The datatype in format "prefix:datatype".
-    
-    Raises:
-        LiteralCastingError: If the casting fails.
-
-    Returns:
-        Literal with the new value format and datatype set.
-    """
-    if datatype_uri and ":" in datatype_uri and not datatype_uri.startswith("http"):
-        datatype_uri = schemaview.expand_curie(datatype_uri)
-
-    caster = CASTERS.get(datatype_uri)
-    if caster:
-        try:
-            value = caster(value)
-        except (ValueError, TypeError):
-            raise LiteralCastingError(f"{value}, {datatype_uri}")
-
-    # RDFLib will set .value = None for unknown datatypes
-    return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
 
 
 # Moved to enriching.py and class_index removed

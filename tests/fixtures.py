@@ -1,7 +1,7 @@
 import pytest
 from typing import Callable, Generator
 from linkml_runtime import SchemaView
-from linkml_runtime.linkml_model.meta import SchemaDefinition
+from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
 from rdflib import Graph, URIRef, Namespace, BNode, Literal
 from rdflib.namespace import RDF, DCAT
 from dataclasses import dataclass
@@ -37,6 +37,24 @@ def make_schemaview() -> Callable[..., SchemaView]:
         return SchemaView(schema=schema) # type: ignore
 
     return _factory
+
+@pytest.fixture
+def make_slot_index() -> Callable[..., dict]:
+    """Factory for creating a slot_index."""
+
+    def _factory(slots: list[dict[str, str]]) -> dict:
+        slot_dict: dict = {}
+        for d in slots:
+            for key, value in d.items():
+                slot_def = SlotDefinition(name=key, range=value)
+                # temp_dict["name"] = key
+                # temp_dict["range"] = value
+                slot_dict[key] = slot_def
+        
+        return slot_dict
+
+    return _factory
+            
 
 
 # Graph making fixtures

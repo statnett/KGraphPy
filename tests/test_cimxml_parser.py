@@ -1,12 +1,12 @@
 from cim_plugin.cimxml_parser import (
     _get_current_namespace_from_graph,
-    update_namespace_in_triples,
+    # update_namespace_in_triples,
     ensure_correct_namespace_graph,
     find_slots_with_range,
     _clean_uri,
     fix_qualifier_for_all_uuids,
-    cast_float,
-    cast_bool
+    # cast_float,
+    # cast_bool
 )
 import pytest
 from unittest.mock import patch, MagicMock, mock_open, call
@@ -450,57 +450,6 @@ def test_normalize_rdf_ids_emptygraph(mock_clean: MagicMock) -> None:
 
     mock_clean.assert_not_called()
     
-
-# Unit tests cast_bool
-@pytest.mark.parametrize(
-    "input, output",
-    [
-        pytest.param("true", True, id="Input 'true'"),
-        pytest.param("1", True, id="Input '1'"),
-        pytest.param("false", False, id="Input 'false'"),
-        pytest.param("0", False, id="Input '0'"),
-        pytest.param("gibberish", None, id="Nonsense"),
-        pytest.param("123", None, id="Numeric nonsense"),
-        pytest.param(True, True, id="Input boolean True"),
-        pytest.param(False, False, id="Input boolean False"),
-        pytest.param("True", True, id="Upper case True"),
-        pytest.param("FALSE", False, id="Upper case False"),
-        pytest.param(1, True, id="Integer"),
-        pytest.param(123, None, id="Wrong integer")
-    ]
-)
-def test_cast_bool_various(input: str|bool, output: bool) -> None:
-    if output is None:
-        with pytest.raises(ValueError, match="Invalid boolean lexical form"):
-            cast_bool(input)
-    else:
-        # Pylance silenced to test incorrect input type
-        assert cast_bool(input) == output   # type: ignore
-
-
-
-# Unit tests cast_float
-@pytest.mark.parametrize(
-    "input, output",
-    [
-        pytest.param("1", 1.0, id="Input '1'"),
-        pytest.param("0.5", 0.5, id="Input '0.5'"),
-        pytest.param("0,5", 0.5, id="Comma error"),
-        pytest.param("1,567.89", None, id="Comma as thousand mark"),
-        pytest.param("123", 123.0, id="Hundreds"),
-        pytest.param(True, None, id="Input boolean True"),
-        pytest.param("Hey", None, id="Invalid float string"),
-        pytest.param(123, 123.0, id="Integer input")
-    ]
-)
-def test_cast_float_various(input: Any, output: float|None) -> None:
-    if output is None:
-        with pytest.raises(ValueError, match="Invalid float"):
-            cast_float(input)
-    else:
-        # Pylance silenced to test incorrect input type
-        assert cast_float(input) == output   # type: ignore
-
 
 if __name__ == "__main__":
     pytest.main()

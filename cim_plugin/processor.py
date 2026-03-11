@@ -2,8 +2,9 @@ from linkml_runtime.utils.schemaview import SchemaView
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.namespaces import update_namespace_in_triples
-from cim_plugin.enriching import _build_slot_index
-from rdflib import URIRef
+from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
+from cim_plugin.exceptions import LiteralCastingError
+from rdflib import URIRef, Literal
 from rdflib.namespace import NamespaceManager
 import logging
 from typing import Optional
@@ -173,27 +174,73 @@ class CIMProcessor:
 
         
 
-    def enrich_datatypes(self):
-        """Use self.schema to enrich self.graph with datatypes."""
+    def enrich_literal_datatypes(self) -> None:
+        """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
+        
+        - Cast value to correct format and log error when that is not possible.
+        - Tag with the full URI of the primitive datatype.
 
-    def process(self, *, enrich_datatypes=False):
-        """Run the full CIM processing pipeline."""
-        self.extract_header()
-        if enrich_datatypes:
-            if not self.schema:
-                logger.error("Set schema before datatype enriching.")
-            else:
-                self.enrich_datatypes()
-        # other CIM-specific transformations can be added here
+        """
+        logger.info("Enriching literal datatypes")
 
-    def prepare_for_serialization(self, *, enrich_datatypes=False):
-        """Prepare the graph for output formats."""
-        if enrich_datatypes:
-            if not self.schema:
-                logger.error("Set schema before datatype enriching.")
-            else:
-                self.enrich_datatypes()
-        self.merge_header()
+        if not self.schema or not self.slot_index:
+            logger.error("Missing schemaview or slot_index. Enriching not possible.")
+            return
+
+        unfound_predicates = set()
+        casting_errors = []
+        updated_count = 0
+
+        for s, p, o in list(self.graph):
+            if not isinstance(o, Literal) or o.datatype is not None or o.language is not None:
+                continue
+
+            slot = self.slot_index.get(str(p))
+            if not slot:
+                unfound_predicates.add(str(p))
+                continue
+
+            datatype_uri = resolve_datatype_from_slot(self.schema, slot)
+            if not datatype_uri:
+                logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
+                continue
+
+            try:
+                new_literal = create_typed_literal(o.value, datatype_uri, self.schema)
+            except LiteralCastingError as e:
+                casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
+                continue
+
+            self.graph.remove((s, p, o))
+            self.graph.add((s, p, new_literal))
+            updated_count += 1
+
+        if casting_errors:
+            logger.error("\n".join(casting_errors))
+
+        if unfound_predicates:
+            logger.info(f"Did not find these predicates in model: {unfound_predicates}")
+        logger.info(f"Enriching done. Added datatypes to {updated_count} triples.")
+
+
+    # def process(self, *, enrich_datatypes=False):
+    #     """Run the full CIM processing pipeline."""
+    #     self.extract_header()
+    #     if enrich_datatypes:
+    #         if not self.schema:
+    #             logger.error("Set schema before datatype enriching.")
+    #         else:
+    #             self.enrich_datatypes()
+    #     # other CIM-specific transformations can be added here
+
+    # def prepare_for_serialization(self, *, enrich_datatypes=False):
+    #     """Prepare the graph for output formats."""
+    #     if enrich_datatypes:
+    #         if not self.schema:
+    #             logger.error("Set schema before datatype enriching.")
+    #         else:
+    #             self.enrich_datatypes()
+    #     self.merge_header()
 
 
 def _check_for_namespace_collisions(namespaces1: NamespaceManager, namespaces2: NamespaceManager) -> bool:

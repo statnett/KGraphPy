@@ -5,10 +5,15 @@ from cim_plugin.processor import CIMProcessor, merge_namespace_managers
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD
+from cim_plugin.exceptions import LiteralCastingError
 from rdflib.namespace import DCAT, RDF
 from linkml_runtime import SchemaView
-from tests.fixtures import make_schemaview
+from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition
+from tests.fixtures import make_schemaview, make_slot_index
 from typing import Callable
+import logging
+
+logger = logging.getLogger('cimxml_logger')
 
 # Unit tests .replace_header
 @patch("cim_plugin.processor.merge_namespace_managers")
@@ -766,6 +771,226 @@ def test_update_namespace_multipletriples() -> None:
     assert len(pr.graph) == 2
     assert (URIRef("www.new.com/s1"), URIRef("www.new.com/p1"), URIRef("www.new.com/o1")) in pr.graph
     assert (URIRef("www.new.com/s2"), URIRef("www.new.com/p2"), URIRef("www.new.com/o2")) in pr.graph
+
+# Unit tests .enrich_literal_datatypes
+# class DummySlot:
+#     def __init__(self, name, range):
+#         self.name = name
+#         self.range = range
+
+@pytest.mark.parametrize("schemaview, slot_dict", [
+    pytest.param(None, [{"p": "string"}], id="Schemaview missing"),
+    pytest.param("dummy", None, id="slot_index missing"),
+])
+@patch("cim_plugin.processor.resolve_datatype_from_slot")
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, mock_resolve: MagicMock, schemaview: SchemaView|None, slot_dict: list[dict]|None, make_slot_index: Callable[..., dict], caplog: pytest.LogCaptureFixture) -> None:
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), Literal("x")
+    g.add((s, p, o))
+
+    slot_index = make_slot_index(slot_dict) if slot_dict else None
+
+    inst = CIMProcessor(g)
+    inst.schema = schemaview
+    inst.slot_index = slot_index
+
+    inst.enrich_literal_datatypes()
+
+    assert list(inst.graph) == [(s, p, o)]
+    assert "Missing schemaview or slot_index. Enriching not possible." in caplog.text
+    mock_resolve.assert_not_called()
+    mock_create.assert_not_called()
+
+
+@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), Literal("x")
+    g.add((s, p, o))
+    
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": None}])
+    
+    inst.enrich_literal_datatypes()
+
+    mock_resolve.assert_called_once()
+    mock_create.assert_not_called()
+    assert list(inst.graph) == [(s, p, o)]
+    assert "No datatype found for range: None, for p" in caplog.text
+
+
+@pytest.mark.parametrize("object, resolved", [
+    pytest.param(Literal("x"), True, id="Literal without datatype"),
+    pytest.param(Literal("x", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string')), False, id="Literal with datatype"),
+    pytest.param(Literal("x", lang="en"), False, id="Literal with language. Datatype is implicitly string."),
+    pytest.param(BNode("x"), False, id="Blank node."),
+    pytest.param(URIRef("x"), False, id="URI object")
+])
+@patch("cim_plugin.processor.resolve_datatype_from_slot")
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_resolve: MagicMock, object: Literal|BNode|URIRef, resolved: bool, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView]) -> None:
+    mock_resolve.return_value = "xsd:string"
+    mock_create.return_value = object
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), object
+    g.add((s, p, o))
+
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": "string"}])
+
+    inst.enrich_literal_datatypes()
+    if resolved:
+        mock_resolve.assert_called_once()
+        mock_create.assert_called_once()
+        assert len(list(inst.graph)) == 1   # Size of graph is not affected
+    else:
+        mock_resolve.assert_not_called()
+        mock_create.assert_not_called()
+        assert len(list(inst.graph)) == 1   # Size of graph is not affected
+
+@patch("cim_plugin.processor.resolve_datatype_from_slot")
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    logger.setLevel("INFO")
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("first_unknown"), Literal("42")
+    s2, p2, o2 = URIRef("s2"), URIRef("also_unknown"), Literal("42")
+    g.add((s, p, o))
+    g.add((s2, p2, o2))
+
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": "string"}])
+
+    inst.enrich_literal_datatypes()
+    assert sorted(inst.graph) == sorted([(s, p, o), (s2, p2, o2)])
+    assert "also_unknown" in caplog.text
+    assert "first_unknown" in caplog.text
+    mock_resolve.assert_not_called()
+    mock_create.assert_not_called()
+
+@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    logger.setLevel("INFO")
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), Literal("hello")
+    g.add((s, p, o))
+
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": "string"}])
+
+    inst.enrich_literal_datatypes()
+
+    assert list(inst.graph) == [(s, p, o)]
+    mock_resolve.assert_called_once_with(inst.schema, inst.slot_index["p"])
+    mock_create.assert_not_called()
+    assert "No datatype found for range: string, for p" in caplog.text
+
+
+@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), Literal("hello")
+    g.add((s, p, o))
+
+    new_lit = Literal("hello", datatype=URIRef("xsd:string"))
+    mock_create.return_value = new_lit
+
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": "string"}])
+
+    inst.enrich_literal_datatypes()
+
+    triples = list(inst.graph)
+    assert len(triples) == 1
+    assert triples[0] == (s, p, new_lit)
+
+    mock_resolve.assert_called_once()
+    mock_create.assert_called_once_with("hello", URIRef("xsd:string"), inst.schema)
+    assert "Enriching done. Added datatypes to 1 triples." in caplog.text
+
+
+@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:int"))
+@patch("cim_plugin.processor.create_typed_literal", side_effect=LiteralCastingError("bad cast"))
+def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), Literal("not_an_int")
+    s2, p2, o2 = URIRef("s2"), URIRef("p"), Literal("also_not_int")
+    g.add((s, p, o))
+    g.add((s2, p2, o2))
+
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": "string"}])
+
+    inst.enrich_literal_datatypes()
+    
+    result = inst.graph
+    assert len(list(result)) == 2
+    assert (s, p, o) in list(result)
+    assert (s2, p2, o2) in list(result)
+    assert mock_resolve.call_count == 2
+    assert mock_create.call_count == 2
+    assert any("Error casting" in rec.message for rec in caplog.records)
+    assert "Error casting also_not_int for s2, p: bad cast\n" in caplog.text
+    assert "Error casting not_an_int for s, p: bad cast\n"  in caplog.text
+
+
+def test_enrich_literal_datatypes_integrated(make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    classes = {"A": ClassDefinition(name="A", attributes={"c1": SlotDefinition(name="c1", range="string"),
+                                                          "c2": SlotDefinition(name="c2", range="Custom")})}
+    types = {"Custom": TypeDefinition(name="Custom", base="integer", uri="xsd:integer")}
+    prefixes = {"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}}
+    sv = make_schemaview(classes=classes, types=types, prefixes=prefixes)
+    
+    g = CIMGraph()
+    g.add((URIRef("s"), URIRef("c1"), Literal("hello")))
+    g.add((URIRef("s"), URIRef("c1"), Literal("hei", lang="no")))
+    g.add((URIRef("s"), URIRef("c2"), Literal("1")))
+    g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
+
+    inst = CIMProcessor(g)
+    inst.schema = sv
+    inst.slot_index = make_slot_index([{"c1": "string"}, {"c2": "Custom"}])
+    
+    inst.enrich_literal_datatypes()
+    
+    result = inst.graph
+    assert (URIRef("s"), URIRef("c1"), Literal("hello", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string'))) in list(result)
+    assert (URIRef("s"), URIRef("c1"), Literal("hei", lang="no")) in list(result)   # Literals with language tag is not given datatype
+    assert (URIRef("s"), URIRef("c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
+    assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(result)
+    assert "Enriching done. Added datatypes to 2 triples." in caplog.text
+
+
+def test_enrich_literal_datatypes_noupdates(make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    classes = {"A": ClassDefinition(name="A", attributes={"c1": SlotDefinition(name="c1", range="string"),
+                                                          "c2": SlotDefinition(name="c2", range="Custom")})}
+    types = {"Custom": TypeDefinition(name="Custom", base="integer", uri="xsd:integer")}
+    prefixes = {"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}}
+    sv = make_schemaview(classes=classes, types=types, prefixes=prefixes)
+    g = CIMGraph()
+    g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
+    inst = CIMProcessor(g)
+    inst.schema = sv
+    inst.slot_index = make_slot_index([{"c1": "string"}, {"c2": "Custom"}])
+    
+    inst.enrich_literal_datatypes()
+
+    assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(inst.graph)
+    assert "Enriching done. Added datatypes to 0 triples." in caplog.text
 
 # Unit tests merge_namespace_managers
 def test_merge_namespace_managers_nodiffs() -> None:
