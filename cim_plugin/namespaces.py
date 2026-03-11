@@ -77,3 +77,6 @@ def update_namespace_in_triples(graph: Graph, old_namespace: str, new_namespace:
         
     for triple in to_add: 
         graph.add(triple)
+
+if __name__ == "__main__":
+    print("Namespaces for cim graphs.")

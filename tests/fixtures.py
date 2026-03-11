@@ -1,7 +1,6 @@
 import pytest
 from typing import Callable, Generator
 from linkml_runtime import SchemaView
-from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition
 from rdflib import Graph, URIRef, Namespace, BNode, Literal
 from rdflib.namespace import RDF, DCAT

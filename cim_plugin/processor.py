@@ -2,6 +2,7 @@ from linkml_runtime.utils.schemaview import SchemaView
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.namespaces import update_namespace_in_triples
+from cim_plugin.enriching import _build_slot_index
 from rdflib import URIRef
 from rdflib.namespace import NamespaceManager
 import logging
@@ -13,11 +14,12 @@ class CIMProcessor:
     def __init__(self, graph: CIMGraph):
         self.graph: CIMGraph = graph
         self.schema: Optional[SchemaView] = None
+        self.slot_index: Optional[dict] = None
 
-    def set_schema(self, filepath: Optional[str]) -> None:
-        if filepath:
-            self.schema = SchemaView(filepath)
-
+    def set_schema(self, filepath: str) -> None:
+        self.schema = SchemaView(filepath)
+        self.slot_index = _build_slot_index(self.schema)
+        
 
     def replace_header(self, header: CIMMetadataHeader | None = None) -> None:
         """Replace the header of the graph.
@@ -105,15 +107,38 @@ class CIMProcessor:
     #         self.graph.add(t)
 
 
-            
+    def namespaces_different_from_model(self) -> set[tuple[str, URIRef]]|None:
+        """Checking if all namespaces in graph and header are identical with namespaces in model.
+        
+        Model is the ground truth. Checks only prefixes that are the same for both.
 
-    def are_namespaces_identical_with_model(self) -> list|None:
-        """Checking if all namespaces in graph are identical with namespaces in model.
-        Model is the ground truth. Check only prefixes that are the same for both.
+        Raises:
+            AttributeError: If no linkML schema has been imported.
 
         Returns:
-            list: If any not identical, else None.
+            set[tuple[str, URIRef]]: The graph/header namespaces that are different if any, else None.
         """
+        if not self.schema:
+            raise AttributeError("No schema detected. Import a linkML schema using .set_schema()")
+
+        not_identical: set = set()
+
+        graph_ns = set(self.graph.namespace_manager.store.namespaces())
+        if self.graph.metadata_header:
+            header = self.graph.metadata_header.graph
+            if header:
+                graph_ns |= set(header.namespace_manager.store.namespaces())
+        schema_ns = dict(self.schema.namespaces())
+        
+        for prx, ns in graph_ns:
+            schema_namespace = schema_ns.get(prx, None)
+            if schema_namespace:
+                if schema_namespace != ns:
+                    not_identical.add((prx, ns))       
+
+        if not_identical:
+            return not_identical
+
 
     def update_namespace(self, prefix: str, namespace: str) -> None:
         """Update namespace in graph and header.

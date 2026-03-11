@@ -1,5 +1,3 @@
-from sys import prefix
-
 import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import URIRef, Literal, BNode
@@ -8,6 +6,9 @@ from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD
 from rdflib.namespace import DCAT, RDF
+from linkml_runtime import SchemaView
+from tests.fixtures import make_schemaview
+from typing import Callable
 
 # Unit tests .replace_header
 @patch("cim_plugin.processor.merge_namespace_managers")
@@ -444,6 +445,118 @@ def test_merge_header_emptyheader() -> None:
     assert len(pr.graph) == 1   # No added triples
     ns_after = pr.graph.namespace_manager.store
     assert ns_after.namespace("md") == URIRef('http://iec.ch/TC57/61970-552/ModelDescription/1#')
+
+# Unit tests .namespaces_different_from_model
+def test_namespaces_different_from_model_noschema() -> None:
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    pr = CIMProcessor(g)
+    with pytest.raises(AttributeError) as exc:
+        pr.namespaces_different_from_model()
+    
+    assert "No schema detected. Import a linkML schema using .set_schema()" in str(exc.value)
+
+
+def test_namespaces_different_from_model_emptygraph(make_schemaview: Callable[..., SchemaView]) -> None:
+    schema = make_schemaview()
+    g = CIMGraph()
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == None
+
+def test_namespaces_different_from_model_emptyschema(make_schemaview: Callable[..., SchemaView]) -> None:
+    schema = make_schemaview(prefixes={})
+    g = CIMGraph()
+    g.bind("ex", "https://example.com")
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == None
+
+
+@pytest.mark.parametrize(
+        "graph_prefix, schema_ns, graph_ns, expected",
+        [
+            pytest.param("ex", "https://example.com/", "https://example.com/", None, id="No differences"),
+            pytest.param("foo", "", "https://bar.com/", None, id="Prefix not shared"), # foo is not in schema and ex is not in graph
+            pytest.param("ex", "https://example.com/", "https://new.com", {("ex", URIRef("https://new.com"))}, id="Different namespace"),
+            pytest.param("ex", "https://example.com/", "https://example.com/ ", {("ex", URIRef("https://example.com/ "))}, id="Whitespace in graph"),
+            # pytest.param("ex", "https://example.com/ ", "https://example.com/", {("ex", URIRef("https://example.com/"))}, id="Whitespace in schema"), # linkML does not allow whitespace in namespaces
+            pytest.param("ex", "https://example.com/", "https://example.com", {("ex", URIRef("https://example.com"))}, id="Missing /"),
+            pytest.param("ex", "https://example.com/", "https://EXAMPLE.com/", {("ex", URIRef("https://EXAMPLE.com/"))}, id="Uppercase"),
+            pytest.param("ex", "https://example.com#", "https://example.com", {("ex", URIRef("https://example.com"))}, id="Missing #"),
+        ]
+)
+def test_namespaces_different_from_model_various(graph_prefix: str, schema_ns: str, graph_ns: str, expected: set|None, make_schemaview: Callable[..., SchemaView]) -> None:
+    schema = make_schemaview(prefixes={"ex": schema_ns})
+    g = CIMGraph()
+    g.bind(graph_prefix, graph_ns)
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == expected
+
+
+def test_namespaces_different_from_model_header(make_schemaview: Callable[..., SchemaView]) -> None:
+    # Namespaces in the header is also checked with the schema
+    schema = make_schemaview(prefixes={"ex": "https://example.com/", "foo": "www.bar.com#"})
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.add_triple(URIRef("www.bar.com/ph"), Literal("oh"))
+    header.graph.bind("foo", "www.bar.com/")
+    g = CIMGraph()
+    g.bind("ex", "https://example.com")
+    g.metadata_header = header
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == {("foo", URIRef("www.bar.com/")), ("ex", URIRef("https://example.com"))}
+
+def test_namespaces_different_from_model_emptyheader(make_schemaview: Callable[..., SchemaView]) -> None:
+    schema = make_schemaview(prefixes={"ex": "https://example.com/"})
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    g = CIMGraph()
+    g.bind("ex", "https://example.com")
+    g.metadata_header = header
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == {("ex", URIRef("https://example.com"))}
+
+
+@pytest.mark.parametrize(
+        "header_ns, graph_ns, expected_result",
+        [
+            pytest.param("www.bar.com/", "www.bar.com#", {("foo", URIRef("www.bar.com#"))}, id="Graph wrong, header correct"),
+            pytest.param("www.bar.com#", "www.bar.com/", {("foo", URIRef("www.bar.com#"))}, id="Graph correct, header wrong"),
+            pytest.param("www.bar.com#", "www.bar.com#", {("foo", URIRef("www.bar.com#"))}, id="Both wrong, same issue"),
+            pytest.param("www.bar.com#", "www.bar.com", {("foo", URIRef("www.bar.com#")), ("foo", URIRef("www.bar.com"))}, id="Both wrong, different issues")
+        ]
+)
+def test_namespaces_different_from_model_headervsgraph(header_ns: str, graph_ns: str, expected_result: set[tuple[str, URIRef]], make_schemaview: Callable[..., SchemaView]) -> None:
+    schema = make_schemaview(prefixes={"foo": "www.bar.com/"})
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.add_triple(URIRef("www.bar.com/ph"), Literal("oh"))
+    header.graph.bind("foo", header_ns)
+    g = CIMGraph()
+    g.bind("foo", graph_ns)
+    g.metadata_header = header
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == expected_result
+
+
+def test_namespaces_different_from_model_multiplebindings(make_schemaview: Callable[..., SchemaView]) -> None:
+    # Namespaces in the header is also checked with the schema
+    schema = make_schemaview(prefixes={"ex": "https://example.com/"})
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.bind("ex", "https://new.com", replace=True)
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == {("ex", URIRef("https://new.com"))}
 
 
 # Unit tests .update_namespace

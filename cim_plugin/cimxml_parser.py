@@ -12,6 +12,7 @@ from typing import Optional, cast   #, Any
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.utilities import extract_uuid
 from cim_plugin.namespaces import update_namespace_in_triples
+from cim_plugin.enriching import slots_equal, _build_slot_index
 import io
 import contextlib
 
@@ -27,7 +28,7 @@ class CIMXMLParser(Parser):
         self.schema_path: str|None = schema_path
         self.schemaview: SchemaView|None = None
         self.slot_index: dict|None = None
-        self.class_index: dict|None = None
+        # self.class_index: dict|None = None
         logger.info("CIMXMLParser loaded")
 
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
@@ -47,7 +48,7 @@ class CIMXMLParser(Parser):
             # self.ensure_correct_namespace_model(prefix="cim", correct_namespace=CIM)  # Ensures that the linkML has correct namespace for the cim prefix
             # self.ensure_correct_namespace_model(prefix="eu", correct_namespace=EU)  # Ensures that the linkML has correct namespace for the eu prefix
             # self.patch_missing_datatypes_in_model() # If linkML does not contain all necessary types, it is fixed here
-            self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
+            self.slot_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
             self.enrich_literal_datatypes(sink)    # Add datatypes from model
             # self.post_process(sink)
         # else:
@@ -564,61 +565,43 @@ def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) 
     return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
 
 
-def slots_equal(slot1: SlotDefinition, slot2: SlotDefinition) -> bool:
-    """Show whether two SlotDefinition objects contain the same keys and values.
-
-    Internal attributes are ignored (starts with _).
-
-    Parameters:
-        slot1 (SlotDefinition): First slot.
-        slot2 (SlotDefinition): Second slot.
+# Moved to enriching.py and class_index removed
+# def _build_slot_and_class_index(schemaview: SchemaView) -> tuple[dict, dict]:
+#     """Build an index of classes and slots from a SchemaView.
     
-    Returns:
-        bool: True if slot1 and slot2 are the identical.
+#     Parameters:
+#         schemaview (SchemaView): The schemaview to build the index from.
 
-    """
-    d1 = {k: v for k, v in slot1.__dict__.items() if not k.startswith("_")}
-    d2 = {k: v for k, v in slot2.__dict__.items() if not k.startswith("_")}
+#     Returns:
+#         tuple[dict, dict]: The slot index and the class index in that order.
+#     """
+#     slot_index = {}
 
-    return d1 == d2
+#     for cls_name, cls in schemaview.all_classes().items():
+#         if not isinstance(cls.attributes, dict):
+#             continue
 
+#         for slot_name, slot in cls.attributes.items():
+#             slot = cast(SlotDefinition, slot)
+#             if not slot.slot_uri:
+#                 continue
 
-def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
-    """Build an index of classes and slots from a SchemaView.
-    
-    Parameters:
-        schemaview (SchemaView): The schemaview to build the index from.
+#             expanded = schemaview.expand_curie(slot.slot_uri)
 
-    Returns:
-        tuple[dict, dict]: The slot index and the class index in that order.
-    """
-    slot_index = {}
+#             if expanded not in slot_index:
+#                 slot_index[expanded] = slot
+#                 continue
 
-    for cls_name, cls in schemaview.all_classes().items():
-        if not isinstance(cls.attributes, dict):
-            continue
+#             existing = slot_index[expanded]
 
-        for slot_name, slot in cls.attributes.items():
-            slot = cast(SlotDefinition, slot)
-            if not slot.slot_uri:
-                continue
+#             if slots_equal(existing, slot):
+#                 continue
 
-            expanded = schemaview.expand_curie(slot.slot_uri)
+#             logger.warning(f"Slot for URI '{expanded}' is overwritten by class slot '{slot_name}'.")
+#             slot_index[expanded] = slot
 
-            if expanded not in slot_index:
-                slot_index[expanded] = slot
-                continue
-
-            existing = slot_index[expanded]
-
-            if slots_equal(existing, slot):
-                continue
-
-            logger.warning(f"Slot for URI '{expanded}' is overwritten by class slot '{slot_name}'.")
-            slot_index[expanded] = slot
-
-    class_index = {name: cls for name, cls in schemaview.all_classes().items()}
-    return slot_index, class_index
+#     class_index = {name: cls for name, cls in schemaview.all_classes().items()}
+#     return slot_index, class_index
 
 
 if __name__ == "__main__":
