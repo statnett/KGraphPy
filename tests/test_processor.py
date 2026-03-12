@@ -6,9 +6,10 @@ from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD
 from cim_plugin.exceptions import LiteralCastingError
+from cim_plugin.enriching import _build_slot_index
 from rdflib.namespace import DCAT, RDF
 from linkml_runtime import SchemaView
-from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition
+from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition, Prefix
 from tests.fixtures import make_schemaview, make_slot_index
 from typing import Callable
 import logging
@@ -485,12 +486,12 @@ def test_namespaces_different_from_model_emptyschema(make_schemaview: Callable[.
         [
             pytest.param("ex", "https://example.com/", "https://example.com/", None, id="No differences"),
             pytest.param("foo", "", "https://bar.com/", None, id="Prefix not shared"), # foo is not in schema and ex is not in graph
-            pytest.param("ex", "https://example.com/", "https://new.com", {("ex", URIRef("https://new.com"))}, id="Different namespace"),
-            pytest.param("ex", "https://example.com/", "https://example.com/ ", {("ex", URIRef("https://example.com/ "))}, id="Whitespace in graph"),
-            # pytest.param("ex", "https://example.com/ ", "https://example.com/", {("ex", URIRef("https://example.com/"))}, id="Whitespace in schema"), # linkML does not allow whitespace in namespaces
-            pytest.param("ex", "https://example.com/", "https://example.com", {("ex", URIRef("https://example.com"))}, id="Missing /"),
-            pytest.param("ex", "https://example.com/", "https://EXAMPLE.com/", {("ex", URIRef("https://EXAMPLE.com/"))}, id="Uppercase"),
-            pytest.param("ex", "https://example.com#", "https://example.com", {("ex", URIRef("https://example.com"))}, id="Missing #"),
+            pytest.param("ex", "https://example.com/", "https://new.com", {("ex", "https://new.com", "https://example.com/")}, id="Different namespace"),
+            pytest.param("ex", "https://example.com/", "https://example.com/ ", {("ex", "https://example.com/ ", "https://example.com/")}, id="Whitespace in graph"),
+            # pytest.param("ex", "https://example.com/ ", "https://example.com/", {("ex", "https://example.com/", "https://example.com/")}, id="Whitespace in schema"), # linkML does not allow whitespace in namespaces
+            pytest.param("ex", "https://example.com/", "https://example.com", {("ex", "https://example.com", "https://example.com/")}, id="Missing /"),
+            pytest.param("ex", "https://example.com/", "https://EXAMPLE.com/", {("ex", "https://EXAMPLE.com/", "https://example.com/")}, id="Uppercase"),
+            pytest.param("ex", "https://example.com#", "https://example.com", {("ex", "https://example.com", "https://example.com#")}, id="Missing #"),
         ]
 )
 def test_namespaces_different_from_model_various(graph_prefix: str, schema_ns: str, graph_ns: str, expected: set|None, make_schemaview: Callable[..., SchemaView]) -> None:
@@ -515,7 +516,7 @@ def test_namespaces_different_from_model_header(make_schemaview: Callable[..., S
     pr = CIMProcessor(g)
     pr.schema = schema
     result = pr.namespaces_different_from_model()
-    assert result == {("foo", URIRef("www.bar.com/")), ("ex", URIRef("https://example.com"))}
+    assert result == {("foo", "www.bar.com/", "www.bar.com#"), ("ex", "https://example.com", "https://example.com/")}
 
 def test_namespaces_different_from_model_emptyheader(make_schemaview: Callable[..., SchemaView]) -> None:
     schema = make_schemaview(prefixes={"ex": "https://example.com/"})
@@ -526,16 +527,16 @@ def test_namespaces_different_from_model_emptyheader(make_schemaview: Callable[.
     pr = CIMProcessor(g)
     pr.schema = schema
     result = pr.namespaces_different_from_model()
-    assert result == {("ex", URIRef("https://example.com"))}
+    assert result == {("ex", "https://example.com", "https://example.com/")}
 
 
 @pytest.mark.parametrize(
         "header_ns, graph_ns, expected_result",
         [
-            pytest.param("www.bar.com/", "www.bar.com#", {("foo", URIRef("www.bar.com#"))}, id="Graph wrong, header correct"),
-            pytest.param("www.bar.com#", "www.bar.com/", {("foo", URIRef("www.bar.com#"))}, id="Graph correct, header wrong"),
-            pytest.param("www.bar.com#", "www.bar.com#", {("foo", URIRef("www.bar.com#"))}, id="Both wrong, same issue"),
-            pytest.param("www.bar.com#", "www.bar.com", {("foo", URIRef("www.bar.com#")), ("foo", URIRef("www.bar.com"))}, id="Both wrong, different issues")
+            pytest.param("www.bar.com/", "www.bar.com#", {("foo", "www.bar.com#", "www.bar.com/")}, id="Graph wrong, header correct"),
+            pytest.param("www.bar.com#", "www.bar.com/", {("foo", "www.bar.com#", "www.bar.com/")}, id="Graph correct, header wrong"),
+            pytest.param("www.bar.com#", "www.bar.com#", {("foo", "www.bar.com#", "www.bar.com/")}, id="Both wrong, same issue"),
+            pytest.param("www.bar.com#", "www.bar.com", {("foo", "www.bar.com#", "www.bar.com/"), ("foo", "www.bar.com", "www.bar.com/")}, id="Both wrong, different issues")
         ]
 )
 def test_namespaces_different_from_model_headervsgraph(header_ns: str, graph_ns: str, expected_result: set[tuple[str, URIRef]], make_schemaview: Callable[..., SchemaView]) -> None:
@@ -561,8 +562,21 @@ def test_namespaces_different_from_model_multiplebindings(make_schemaview: Calla
     pr = CIMProcessor(g)
     pr.schema = schema
     result = pr.namespaces_different_from_model()
-    assert result == {("ex", URIRef("https://new.com"))}
+    assert result == {("ex", "https://new.com", "https://example.com/")}
 
+def test_namespaces_different_from_model_schemaprefixesalist(make_schemaview: Callable[..., SchemaView]) -> None:
+    # The namespaces in the SchemaView is in the form of a list
+    schema = make_schemaview(prefixes=[Prefix(prefix_prefix="ex", prefix_reference="https://example.com/"), Prefix(prefix_prefix="foo", prefix_reference="www.bar.com#")])
+    header = CIMMetadataHeader.empty(URIRef("h1"))
+    header.add_triple(URIRef("www.bar.com/ph"), Literal("oh"))
+    header.graph.bind("foo", "www.bar.com/")
+    g = CIMGraph()
+    g.bind("ex", "https://example.com")
+    g.metadata_header = header
+    pr = CIMProcessor(g)
+    pr.schema = schema
+    result = pr.namespaces_different_from_model()
+    assert result == {("foo", "www.bar.com/", "www.bar.com#"), ("ex", "https://example.com", "https://example.com/")}
 
 # Unit tests .update_namespace
 @pytest.mark.parametrize(
@@ -773,18 +787,15 @@ def test_update_namespace_multipletriples() -> None:
     assert (URIRef("www.new.com/s2"), URIRef("www.new.com/p2"), URIRef("www.new.com/o2")) in pr.graph
 
 # Unit tests .enrich_literal_datatypes
-# class DummySlot:
-#     def __init__(self, name, range):
-#         self.name = name
-#         self.range = range
 
 @pytest.mark.parametrize("schemaview, slot_dict", [
     pytest.param(None, [{"p": "string"}], id="Schemaview missing"),
     pytest.param("dummy", None, id="slot_index missing"),
 ])
+@patch("cim_plugin.processor._replace_namespace")
 @patch("cim_plugin.processor.resolve_datatype_from_slot")
 @patch("cim_plugin.processor.create_typed_literal")
-def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, mock_resolve: MagicMock, schemaview: SchemaView|None, slot_dict: list[dict]|None, make_slot_index: Callable[..., dict], caplog: pytest.LogCaptureFixture) -> None:
+def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, mock_resolve: MagicMock, mock_replace: MagicMock, schemaview: SchemaView|None, slot_dict: list[dict]|None, make_slot_index: Callable[..., dict], caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
     s, p, o = URIRef("s"), URIRef("p"), Literal("x")
     g.add((s, p, o))
@@ -795,12 +806,13 @@ def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, m
     inst.schema = schemaview
     inst.slot_index = slot_index
 
-    inst.enrich_literal_datatypes()
+    inst.enrich_literal_datatypes(allow_different_namespaces=True)
 
     assert list(inst.graph) == [(s, p, o)]
     assert "Missing schemaview or slot_index. Enriching not possible." in caplog.text
     mock_resolve.assert_not_called()
     mock_create.assert_not_called()
+    mock_replace.assert_not_called()
 
 
 @patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
@@ -946,30 +958,105 @@ def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_reso
     assert "Error casting not_an_int for s, p: bad cast\n"  in caplog.text
 
 
-def test_enrich_literal_datatypes_integrated(make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+@pytest.mark.parametrize("allow, returned", 
+        [
+            pytest.param(False, None, id="Different namespaces not allowed"), 
+            pytest.param(True, None, id="Different namespaces allowed, none found"),
+            pytest.param(True, {("ex", "example.com", "example.org")}, id="Different namespaces allowed, some found"),
+        ]
+)
+@patch("cim_plugin.processor._replace_namespace", return_value="p")
+@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
+@patch("cim_plugin.processor.create_typed_literal")
+def test_enrich_literal_datatypes_allownamespaces(mock_create: MagicMock, mock_resolve: MagicMock, mock_replace: MagicMock, allow: bool, returned: set[tuple[str, str, str]]|None, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView]) -> None:
+    g = CIMGraph()
+    s, p, o = URIRef("s"), URIRef("p"), Literal("hello")
+    g.add((s, p, o))
+
+    new_lit = Literal("hello", datatype=URIRef("xsd:string"))
+    mock_create.return_value = new_lit
+
+    inst = CIMProcessor(g)
+    inst.schema = make_schemaview()
+    inst.slot_index = make_slot_index([{"p": "string"}])
+    inst.namespaces_different_from_model = MagicMock(return_value = returned)
+
+    inst.enrich_literal_datatypes(allow_different_namespaces=allow)
+
+    triples = list(inst.graph)
+    assert len(triples) == 1
+    assert triples[0] == (s, p, new_lit)
+
+    mock_resolve.assert_called_once()
+    mock_create.assert_called_once_with("hello", URIRef("xsd:string"), inst.schema)
+
+    if allow:
+        inst.namespaces_different_from_model.assert_called_once()
+        if returned:
+            mock_replace.assert_called()
+        else:
+            mock_replace.assert_not_called()
+    else:
+        inst.namespaces_different_from_model.assert_not_called()
+        mock_replace.assert_not_called()
+
+
+def test_enrich_literal_datatypes_integrated(make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("INFO")
-    classes = {"A": ClassDefinition(name="A", attributes={"c1": SlotDefinition(name="c1", range="string"),
-                                                          "c2": SlotDefinition(name="c2", range="Custom")})}
+    classes = {"A": ClassDefinition(name="A", attributes={"http://www.example.com/c1": SlotDefinition(name="http://www.example.com/c1", range="string"),
+                                                          "http://www.example.com/c2": SlotDefinition(name="http://www.example.com/c2", range="Custom")})}
     types = {"Custom": TypeDefinition(name="Custom", base="integer", uri="xsd:integer")}
-    prefixes = {"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}}
+    prefixes = {"ex": {"prefix_prefix": "ex", "prefix_reference": "http://www.example.com/"}}
     sv = make_schemaview(classes=classes, types=types, prefixes=prefixes)
     
     g = CIMGraph()
-    g.add((URIRef("s"), URIRef("c1"), Literal("hello")))
-    g.add((URIRef("s"), URIRef("c1"), Literal("hei", lang="no")))
-    g.add((URIRef("s"), URIRef("c2"), Literal("1")))
+    g.bind("ex", "www.example.com/")
+    g.add((URIRef("s"), URIRef("http://www.example.com/c1"), Literal("hello")))
+    g.add((URIRef("s"), URIRef("http://www.example.com/c1"), Literal("hei", lang="no")))
+    g.add((URIRef("s"), URIRef("http://www.example.com/c2"), Literal("1")))
     g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
 
     inst = CIMProcessor(g)
     inst.schema = sv
-    inst.slot_index = make_slot_index([{"c1": "string"}, {"c2": "Custom"}])
+    inst.slot_index = {"http://www.example.com/c1": SlotDefinition(name="c1", range="string"), "http://www.example.com/c2": SlotDefinition(name="c2", range="Custom")}
     
-    inst.enrich_literal_datatypes()
+    inst.enrich_literal_datatypes(allow_different_namespaces=False)
+
+    result = inst.graph
+    assert (URIRef("s"), URIRef("http://www.example.com/c1"), Literal("hello", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string'))) in list(result)
+    assert (URIRef("s"), URIRef("http://www.example.com/c1"), Literal("hei", lang="no")) in list(result)   # Literals with language tag is not given datatype
+    assert (URIRef("s"), URIRef("http://www.example.com/c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
+    assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(result)
+    assert "Enriching done. Added datatypes to 2 triples." in caplog.text
+
+
+def test_enrich_literal_datatypes_integrateddifferentnamespaces(make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    classes = {"A": ClassDefinition(name="A", attributes={"http://www.example.com/c1": SlotDefinition(name="http://www.example.com/c1", range="string"),
+                                                          "http://www.example.com/c2": SlotDefinition(name="http://www.example.com/c2", range="Custom")})}
+    types = {"Custom": TypeDefinition(name="Custom", base="integer", uri="xsd:integer")}
+    prefixes = {"ex": {"prefix_prefix": "ex", "prefix_reference": "http://www.example.com/"}}   # Schema namespace is slightly different from graph namespace
+    sv = make_schemaview(classes=classes, types=types, prefixes=prefixes)
+    
+    g = CIMGraph()
+    g.bind("ex", "www.example.org/")
+    g.add((URIRef("s"), URIRef("www.example.org/c1"), Literal("hello")))
+    g.add((URIRef("s"), URIRef("www.example.org/c1"), Literal("hei", lang="no")))
+    g.add((URIRef("s"), URIRef("www.example.org/c2"), Literal("1")))
+    g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
+
+    inst = CIMProcessor(g)
+    inst.schema = sv
+    
+    inst.slot_index = {"http://www.example.com/c1": SlotDefinition(name="c1", range="string"), "http://www.example.com/c2": SlotDefinition(name="c2", range="Custom")}
+    
+    inst.enrich_literal_datatypes(allow_different_namespaces=True)
     
     result = inst.graph
-    assert (URIRef("s"), URIRef("c1"), Literal("hello", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string'))) in list(result)
-    assert (URIRef("s"), URIRef("c1"), Literal("hei", lang="no")) in list(result)   # Literals with language tag is not given datatype
-    assert (URIRef("s"), URIRef("c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
+
+    assert (URIRef("s"), URIRef("www.example.org/c1"), Literal("hello", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string'))) in list(result)
+    assert (URIRef("s"), URIRef("www.example.org/c1"), Literal("hei", lang="no")) in list(result)   # Literals with language tag is not given datatype
+    assert (URIRef("s"), URIRef("www.example.org/c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
     assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(result)
     assert "Enriching done. Added datatypes to 2 triples." in caplog.text
 

@@ -1,4 +1,4 @@
-from linkml_runtime.utils.schemaview import SchemaView
+from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.namespaces import update_namespace_in_triples
@@ -108,7 +108,7 @@ class CIMProcessor:
     #         self.graph.add(t)
 
 
-    def namespaces_different_from_model(self) -> set[tuple[str, URIRef]]|None:
+    def namespaces_different_from_model(self) -> set[tuple[str, str, str]]|None:
         """Checking if all namespaces in graph and header are identical with namespaces in model.
         
         Model is the ground truth. Checks only prefixes that are the same for both.
@@ -119,23 +119,34 @@ class CIMProcessor:
         Returns:
             set[tuple[str, URIRef]]: The graph/header namespaces that are different if any, else None.
         """
-        if not self.schema:
+        if not self.schema or not self.schema.schema:
             raise AttributeError("No schema detected. Import a linkML schema using .set_schema()")
 
-        not_identical: set = set()
+        not_identical: set[tuple[str, str, str]] = set()
 
         graph_ns = set(self.graph.namespace_manager.store.namespaces())
         if self.graph.metadata_header:
             header = self.graph.metadata_header.graph
             if header:
                 graph_ns |= set(header.namespace_manager.store.namespaces())
-        schema_ns = dict(self.schema.namespaces())
+
+        schema_def: SchemaDefinition = self.schema.schema
+
+        schema_prefixes = getattr(schema_def, "prefixes", None)
+        if isinstance(schema_prefixes, dict):
+            prefixes_dict = schema_prefixes
+        elif isinstance(schema_prefixes, list):
+            prefixes_dict = {p.prefix_prefix: p for p in schema_prefixes}
+        else:
+            raise TypeError(f"Unexpected prefix structure: {type(schema_prefixes).__name__}")
+        
+        schema_ns = {p.prefix_prefix: p.prefix_reference for p in prefixes_dict.values()}
         
         for prx, ns in graph_ns:
             schema_namespace = schema_ns.get(prx, None)
             if schema_namespace:
                 if schema_namespace != ns:
-                    not_identical.add((prx, ns))       
+                    not_identical.add((prx, str(ns), str(schema_namespace)))       
 
         if not_identical:
             return not_identical
@@ -174,7 +185,7 @@ class CIMProcessor:
 
         
 
-    def enrich_literal_datatypes(self) -> None:
+    def enrich_literal_datatypes(self, allow_different_namespaces: bool = False) -> None:
         """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
         
         - Cast value to correct format and log error when that is not possible.
@@ -187,17 +198,21 @@ class CIMProcessor:
             logger.error("Missing schemaview or slot_index. Enriching not possible.")
             return
 
-        unfound_predicates = set()
+        unfound_predicates = set()  # For clarity. May be removed later.
         casting_errors = []
-        updated_count = 0
-
+        updated_count = 0   # For clarity. May be removed later.
+        
+        diffs = self.namespaces_different_from_model() if allow_different_namespaces else None
+        
         for s, p, o in list(self.graph):
             if not isinstance(o, Literal) or o.datatype is not None or o.language is not None:
                 continue
 
-            slot = self.slot_index.get(str(p))
+            p_str = _replace_namespace(str(p), diffs) if diffs is not None else str(p)
+
+            slot = self.slot_index.get(p_str)
             if not slot:
-                unfound_predicates.add(str(p))
+                unfound_predicates.add(p_str)   # For clarity. May be removed later.
                 continue
 
             datatype_uri = resolve_datatype_from_slot(self.schema, slot)
@@ -213,14 +228,15 @@ class CIMProcessor:
 
             self.graph.remove((s, p, o))
             self.graph.add((s, p, new_literal))
-            updated_count += 1
+            updated_count += 1  # For clarity. May be removed later.
 
         if casting_errors:
             logger.error("\n".join(casting_errors))
 
-        if unfound_predicates:
+        if unfound_predicates:  # For clarity. May be removed later.
             logger.info(f"Did not find these predicates in model: {unfound_predicates}")
-        logger.info(f"Enriching done. Added datatypes to {updated_count} triples.")
+
+        logger.info(f"Enriching done. Added datatypes to {updated_count} triples.") # For clarity. May be removed later.
 
 
     # def process(self, *, enrich_datatypes=False):
@@ -283,6 +299,13 @@ def merge_namespace_managers(main_nm: NamespaceManager, other_nm: NamespaceManag
                 #     logger.warning(f"{ns} overwrites {main_dict[prefix]} for {prefix}.")
                 #     main_nm.bind(prefix, ns, override=True, replace=True)
                 #     main_dict[prefix] = URIRef(ns)
+
+
+def _replace_namespace(predicate: str, differences: set[tuple[str, str, str]]) -> str:
+    for _, graph_namespace, schema_namespace in differences:
+        if predicate.startswith(graph_namespace):
+            return schema_namespace + predicate[len(graph_namespace):]
+    return predicate
 
 
 if __name__ == "__main__":

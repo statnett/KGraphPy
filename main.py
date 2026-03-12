@@ -64,18 +64,18 @@ def main():
     linkmlfile = "../CoreEquipment.linkml.yaml"
     g = load_graphs_from_cimxml([file])
     g1 = g[0]
-    g1.extract_header()
+    # g1.extract_header()
 
-    tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
-    t = load_graphs_from_trig(tfile)
-    t1 = t[0]
-    t1.extract_header()
+    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    # t = load_graphs_from_trig(tfile)
+    # t1 = t[0]
+    # t1.extract_header()
     
-    g1.set_schema(linkmlfile)
+    # g1.set_schema(linkmlfile)
     g1.update_namespace("eu", "http://iec.ch/TC57/CIM100-European#")
     # diffs = g1.namespaces_different_from_model()
     # print(diffs)
-    g1.enrich_literal_datatypes()
+    # g1.enrich_literal_datatypes(allow_different_namespaces=True)
     # t1.replace_header(g1.graph.metadata_header)
     counter = 0
     for s, p, o in g1.graph:
@@ -85,7 +85,7 @@ def main():
             if counter == 5:
                 break
 
-    print(g1.slot_index)
+    # print(g1.slot_index)
     # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
     # g1.graph.serialize(destination=str(output_file), format="cimxml")
 
@@ -106,9 +106,9 @@ def main():
     # output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
     # t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
 
-    # t1.merge_header()    
-    # output_file_trig = Path.cwd().parent / "fromtrig_totrig_grid_eq_header_swapped.xml"
-    # t1.graph.serialize(destination=str(output_file_trig), format="trig")
+    # t1.merge_header()
+    # output_file_trig = Path.cwd().parent / "fromxml_totrig_grid_eq.trig"
+    # g1.graph.serialize(destination=str(output_file_trig), format="trig")
     
 
 if __name__ == "__main__":
