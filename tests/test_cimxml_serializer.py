@@ -1,4 +1,4 @@
-from typing import Callable, Type, cast, IO
+from typing import Callable, Type, cast
 import pytest
 from unittest.mock import MagicMock, call, patch, Mock
 import uuid

@@ -14,6 +14,7 @@ logger = logging.getLogger('cimxml_logger')
 class CIMProcessor:
     def __init__(self, graph: CIMGraph):
         self.graph: CIMGraph = graph
+        self.identifier: Node = self.graph.identifier
         self.schema: Optional[SchemaView] = None
         self.slot_index: Optional[dict] = None
 
@@ -21,6 +22,8 @@ class CIMProcessor:
         self.schema = SchemaView(filepath)
         self.slot_index = _build_slot_index(self.schema)
         
+    def convert_subject_uudi_format(self):
+        """Convert all subject uuids to format 'urn:uuid:'"""
 
     def replace_header(self, header: CIMMetadataHeader | None = None) -> None:
         """Replace the header of the graph.
@@ -241,27 +244,20 @@ class CIMProcessor:
 
         logger.info(f"Enriching done. Added datatypes to {updated_count} triples.") # For clarity. May be removed later.
 
+    def to_trig(self, enrich_datatypes: bool = False):
+        """To be implemented:
+        - Merge header
+        - Add header triples special for trig? Or do this somewhere else?
+        - Enrich datatypes
+        """
 
-    # def process(self, *, enrich_datatypes=False):
-    #     """Run the full CIM processing pipeline."""
-    #     self.extract_header()
-    #     if enrich_datatypes:
-    #         if not self.schema:
-    #             logger.error("Set schema before datatype enriching.")
-    #         else:
-    #             self.enrich_datatypes()
-    #     # other CIM-specific transformations can be added here
+    def to_cimxml(self):
+        """To be implemented:
+        - Ensure metadata_header has triples.
+        - Ensure correct namespaces?
+        """
 
-    # def prepare_for_serialization(self, *, enrich_datatypes=False):
-    #     """Prepare the graph for output formats."""
-    #     if enrich_datatypes:
-    #         if not self.schema:
-    #             logger.error("Set schema before datatype enriching.")
-    #         else:
-    #             self.enrich_datatypes()
-    #     self.merge_header()
-
-
+# Not in use, but might become usefull later
 def _check_for_namespace_collisions(namespaces1: NamespaceManager, namespaces2: NamespaceManager) -> bool:
     collision = False
     for prefix, ns1 in namespaces2.namespaces():

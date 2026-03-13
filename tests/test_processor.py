@@ -6,7 +6,6 @@ from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD
 from cim_plugin.exceptions import LiteralCastingError
-from cim_plugin.enriching import _build_slot_index
 from rdflib.namespace import DCAT, RDF
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition, Prefix

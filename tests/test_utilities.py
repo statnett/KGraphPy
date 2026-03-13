@@ -15,7 +15,6 @@ from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph, make_ci
 from cim_plugin.utilities import (
     extract_uuid,
     _extract_uuid_from_urn, 
-    get_graph_uuid, 
     load_cimxml_graph, 
     collect_cimxml_to_dataset,
     extract_subjects_by_object_type,
@@ -27,127 +26,6 @@ import logging
 
 logger = logging.getLogger('cimxml_logger')
 
-
-# Unit tests get_graph_uuid
-
-@pytest.mark.parametrize(
-    "rdf_type",
-    [
-        pytest.param(lambda: MD.FullModel, id="md:FullModel"),
-        pytest.param(lambda: DCAT.Dataset, id="dcat:Dataset"),
-    ]
-)
-def test_get_graph_uuid_correctsubject(rdf_type: Callable, mock_extract_uuid: Mock) -> None:
-    graph = Graph()
-    subject = URIRef("urn:uuid:12345678-1234-5678-1234-567812345678")
-
-    graph.add((subject, RDF.type, rdf_type()))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uuid.UUID("12345678-1234-5678-1234-567812345678")
-    mock_extract_uuid.assert_called_once_with(str(subject))
-
-def test_get_graph_uuid_emptygraph(mock_extract_uuid: Mock) -> None:
-    graph = Graph()
-
-    with pytest.raises(ValueError):
-        get_graph_uuid(graph)
-
-    mock_extract_uuid.assert_not_called()
-
-
-def test_get_graph_uuid_bothtypesandnoise() -> None:
-    graph = Graph()
-
-    fullmodel_uuid = uuid.uuid4()
-    dataset_uuid = uuid.uuid4()
-    fullmodel_subject = URIRef(f"urn:uuid:{fullmodel_uuid}")
-    dataset_subject = URIRef(f"urn:uuid:{dataset_uuid}")
-    graph.add((fullmodel_subject, RDF.type, MD.FullModel))
-    graph.add((dataset_subject, RDF.type, DCAT.Dataset))
-    graph.add((URIRef("http://example.org/noise"), RDFS.label, Literal("irrelevant")))
-
-    result = get_graph_uuid(graph)
-
-    assert result == fullmodel_uuid
-
-
-def test_get_graph_uuid_nofullmodel() -> None:
-    graph = Graph()
-
-    dataset_uuid = uuid.uuid4()
-    dataset_subject = URIRef(f"urn:uuid:{dataset_uuid}")
-    graph.add((dataset_subject, RDF.type, DCAT.Dataset))
-
-    result = get_graph_uuid(graph)
-
-    assert result == dataset_uuid
-
-
-def test_get_graph_uuid_multiplefullmodels() -> None:
-    graph = Graph()
-
-    uuid1 = uuid.uuid4()
-    uuid2 = uuid.uuid4()
-    subject1 = URIRef(f"urn:uuid:{uuid1}")
-    subject2 = URIRef(f"urn:uuid:{uuid2}")
-    graph.add((subject1, RDF.type, MD.FullModel))
-    graph.add((subject2, RDF.type, MD.FullModel))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uuid1 # First encountered is returned
-
-
-def test_get_graph_uuid_malformedurn() -> None:
-    graph = Graph()
-
-    bad_subject = URIRef("urn:uuid:not-a-valid-uuid")
-    graph.add((bad_subject, RDF.type, MD.FullModel))
-
-    with pytest.raises(ValueError):
-        get_graph_uuid(graph)
-
-
-def test_get_graph_uuid_ignoresblanknodes() -> None:
-    graph = Graph()
-
-    uid = uuid.uuid4()
-    subject = URIRef(f"urn:uuid:{uid}")
-
-    graph.add((subject, RDF.type, MD.FullModel))
-    graph.add((BNode(), RDF.type, BNode()))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uid
-    assert len(graph) == 2
-
-
-def test_get_graph_uuid_uppercaseurn() -> None:
-    graph = Graph()
-
-    uid = uuid.uuid4()
-    subject = URIRef(f"urn:uuid:{str(uid).upper()}")    # Uppercase uuid, but not prefix
-
-    graph.add((subject, RDF.type, MD.FullModel))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uid
-
-
-def test_get_graph_uuid_ignoresotherrdftypes() -> None:
-    graph = Graph()
-
-    uid = uuid.uuid4()
-    subject = URIRef(f"urn:uuid:{uid}")
-
-    graph.add((subject, RDF.type, RDFS.Class))
-
-    with pytest.raises(ValueError):
-        get_graph_uuid(graph)
 
 # Unit tests extract_uuid
 @pytest.mark.parametrize("input_str, expected", [
@@ -231,7 +109,7 @@ def test_load_cimxml_graph_success(mock_graph_cls: MagicMock) -> None:
 
     graph = load_cimxml_graph("dummy.xml")
 
-    mock_graph.parse.assert_called_once_with("dummy.xml", format="cimxml", schema_path=None)
+    mock_graph.parse.assert_called_once_with("dummy.xml", format="cimxml")
     assert graph is mock_graph
 
 
@@ -239,9 +117,9 @@ def test_load_cimxml_graph_success(mock_graph_cls: MagicMock) -> None:
 def test_load_cimxml_graph_schema_path(mock_graph_cls: MagicMock) -> None:
     mock_graph = mock_graph_cls.return_value
     
-    graph = load_cimxml_graph("file.xml", schema_path="schema.xsd")
+    graph = load_cimxml_graph("file.xml")
 
-    mock_graph.parse.assert_called_once_with("file.xml", format="cimxml", schema_path="schema.xsd")
+    mock_graph.parse.assert_called_once_with("file.xml", format="cimxml")
     assert graph is mock_graph
 
 
@@ -472,21 +350,22 @@ def test_collect_cimxml_to_dataset_failedfile(mock_loader: MagicMock, caplog: py
     assert mock_loader.call_count == 2
      
 
-@pytest.mark.parametrize(
-        "schema", [
-            pytest.param(None, id="No schema"), 
-            pytest.param("schema.yaml", id="Schema present")
-        ])
-@patch("cim_plugin.utilities.load_cimxml_graph")
-def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: str|None) -> None:
-    g = Graph()
-    mock_loader.return_value = g
+# Test for a deprecated feature
+# @pytest.mark.parametrize(
+#         "schema", [
+#             pytest.param(None, id="No schema"), 
+#             pytest.param("schema.yaml", id="Schema present")
+#         ])
+# @patch("cim_plugin.utilities.load_cimxml_graph")
+# def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: str|None) -> None:
+#     g = Graph()
+#     mock_loader.return_value = g
 
-    ds = collect_cimxml_to_dataset(["file.xml"], schema_path=schema)
+#     ds = collect_cimxml_to_dataset(["file.xml"], schema_path=schema)
 
-    mock_loader.assert_called_once_with("file.xml", schema)
-    named = next(g for g in ds.graphs() if g.identifier != ds.default_graph.identifier)
-    assert len(named) == 0
+#     mock_loader.assert_called_once_with("file.xml", schema)
+#     named = next(g for g in ds.graphs() if g.identifier != ds.default_graph.identifier)
+#     assert len(named) == 0
 
 
 def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, cimxml_plugin: None) -> None:

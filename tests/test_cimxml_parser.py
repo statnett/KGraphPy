@@ -1,12 +1,9 @@
 from cim_plugin.cimxml_parser import (
     _get_current_namespace_from_graph,
-    # update_namespace_in_triples,
     ensure_correct_namespace_graph,
     find_slots_with_range,
     _clean_uri,
     fix_qualifier_for_all_uuids,
-    # cast_float,
-    # cast_bool
 )
 import pytest
 from unittest.mock import patch, MagicMock, mock_open, call
@@ -15,7 +12,6 @@ import logging
 from pytest import LogCaptureFixture
 from tests.fixtures import make_graph_with_prefixes, sample_yaml
 import textwrap
-from typing import Any
 
 
 logger = logging.getLogger("cimxml_logger")

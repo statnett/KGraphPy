@@ -83,54 +83,6 @@ class CIMXMLSerializer(Serializer):
         return sorted(namespaces.items())
 
 
-    # def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
-    #     """Collect namespaces used by the header and/or the data.
-        
-    #     The namespace is only collected if it is both registered in the namespace_manager 
-    #     and present in the header/data.
-
-    #     Returns:
-    #         list[tuple[str, URIRef]]: Sorted list of tuples with prefix, namespace.
-    #     """
-    #     nm = self.store.namespace_manager
-    #     namespaces: dict[str, URIRef] = {}
-
-    #     # Sorting to prevent overlapping namespaces from being excluded
-    #     known = sorted(nm.namespaces(), key=lambda item: len(str(item[1])), reverse=True,)
-
-    #     def add_uri(uri: URIRef | Node):
-    #         if not isinstance(uri, URIRef):
-    #             return
-
-    #         uri_str = str(uri)
-
-    #         if uri_str.startswith("urn:"):
-    #             return
-
-    #         # Match only namespaces already registered in the graph,
-    #         for prefix, ns in known:
-    #             ns_str = str(ns)
-    #             if uri_str.startswith(ns_str):
-    #                 namespaces[prefix] = ns
-    #                 break
-
-    #     # Header
-    #     header = getattr(self.store, "metadata_header", None)
-    #     if header is not None:
-    #         add_uri(header.subject)
-    #         for _, p, o in header.triples:
-    #             add_uri(p)
-    #             add_uri(o)
-
-    #     # Data
-    #     for s, p, o in self.store:
-    #         add_uri(s)
-    #         add_uri(p)
-    #         add_uri(o)
-
-    #     return sorted(namespaces.items())
-
-
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
         """Serialize graph to CIMXML format.
         

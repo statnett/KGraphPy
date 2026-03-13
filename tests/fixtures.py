@@ -6,7 +6,6 @@ from rdflib import Graph, URIRef, Namespace, BNode, Literal
 from rdflib.namespace import RDF, DCAT
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
-from cim_plugin.cimxml_parser import CIMXMLParser
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
 from cim_plugin.graph import CIMGraph
@@ -47,8 +46,6 @@ def make_slot_index() -> Callable[..., dict]:
         for d in slots:
             for key, value in d.items():
                 slot_def = SlotDefinition(name=key, range=value)
-                # temp_dict["name"] = key
-                # temp_dict["range"] = value
                 slot_dict[key] = slot_def
         
         return slot_dict
@@ -113,24 +110,6 @@ def build_graph_with_blank_header() -> tuple[Graph, BNode, set[BNode]]:
     g.add((b2, URIRef("urn:p:3"), Literal("value"))) 
     
     return g, header, {header, b1, b2}
-
-# CIMXMLParser
-@pytest.fixture
-def cimxmlinstance_w_prefixes(make_schemaview):
-    """Create an instance with a real SchemaView."""
-    obj = CIMXMLParser()
-    obj.schemaview = make_schemaview(prefixes={"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}})
-    return obj
-
-
-@pytest.fixture
-def make_cimxmlparser() -> Callable[..., CIMXMLParser]:
-    def _factory(schemaview: SchemaView) -> CIMXMLParser:
-        obj = CIMXMLParser()
-        obj.schema_path = "schema.yaml"
-        obj.schemaview = schemaview
-        return obj
-    return _factory
 
 
 # CIMXMLSerializer
