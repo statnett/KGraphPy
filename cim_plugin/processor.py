@@ -4,7 +4,7 @@ from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.namespaces import update_namespace_in_triples
 from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
 from cim_plugin.exceptions import LiteralCastingError
-from rdflib import URIRef, Literal
+from rdflib import URIRef, Literal, Node
 from rdflib.namespace import NamespaceManager
 import logging
 from typing import Optional
@@ -186,11 +186,14 @@ class CIMProcessor:
         
 
     def enrich_literal_datatypes(self, allow_different_namespaces: bool = False) -> None:
-        """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
+        """Enrich the Literals of with datatypes collected from linkML SchemaView.
         
         - Cast value to correct format and log error when that is not possible.
         - Tag with the full URI of the primitive datatype.
+        - Allows the namespaces to differ between graph and schema, if the prefix is the same.
 
+        Parameters:
+            allow_different_namespaces (bool): Allows differing namespaces if True.
         """
         logger.info("Enriching literal datatypes")
 
@@ -208,7 +211,7 @@ class CIMProcessor:
             if not isinstance(o, Literal) or o.datatype is not None or o.language is not None:
                 continue
 
-            p_str = _replace_namespace(str(p), diffs) if diffs is not None else str(p)
+            p_str = replace_namespace(str(p), self.graph, diffs) if diffs else str(p)
 
             slot = self.slot_index.get(p_str)
             if not slot:
@@ -301,10 +304,30 @@ def merge_namespace_managers(main_nm: NamespaceManager, other_nm: NamespaceManag
                 #     main_dict[prefix] = URIRef(ns)
 
 
-def _replace_namespace(predicate: str, differences: set[tuple[str, str, str]]) -> str:
-    for _, graph_namespace, schema_namespace in differences:
-        if predicate.startswith(graph_namespace):
-            return schema_namespace + predicate[len(graph_namespace):]
+def replace_namespace(predicate: str, graph: CIMGraph, replacements: set[tuple[str, str, str]]) -> str:
+    """Replace namespace for a uri from a set of replacements.
+    
+    If the prefix and namespace of the predicate is in the set of replacements, the namespace will be replaced.
+    Otherwise, the predicate is returned unchanged.
+
+    Parameters:
+        predicate (str): The predicate or uri where the namespace is to be replaced.
+        graph (CIMGraph): The graph with the namespace manager that contains the namespace for the predicate.
+        replacements (set[tuple[str, str, str]]): A set of (prefix, old namespace, new namespace).
+    
+    Returns:
+        str: The predicate with or without changes.
+    """
+    try:
+        prefix, ns, local = graph.compute_qname(predicate)
+    except ValueError as e:
+        logger.error(f"Error in compute_qname for {predicate}: {e}")
+        return predicate
+
+    for old_prefix, old_ns, new_ns in replacements:
+        if prefix == old_prefix and str(ns) == old_ns:
+            return new_ns + local
+
     return predicate
 
 

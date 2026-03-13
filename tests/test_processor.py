@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import URIRef, Literal, BNode
-from cim_plugin.processor import CIMProcessor, merge_namespace_managers
+from cim_plugin.processor import CIMProcessor, merge_namespace_managers, replace_namespace
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD
@@ -792,7 +792,7 @@ def test_update_namespace_multipletriples() -> None:
     pytest.param(None, [{"p": "string"}], id="Schemaview missing"),
     pytest.param("dummy", None, id="slot_index missing"),
 ])
-@patch("cim_plugin.processor._replace_namespace")
+@patch("cim_plugin.processor.replace_namespace")
 @patch("cim_plugin.processor.resolve_datatype_from_slot")
 @patch("cim_plugin.processor.create_typed_literal")
 def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, mock_resolve: MagicMock, mock_replace: MagicMock, schemaview: SchemaView|None, slot_dict: list[dict]|None, make_slot_index: Callable[..., dict], caplog: pytest.LogCaptureFixture) -> None:
@@ -965,7 +965,7 @@ def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_reso
             pytest.param(True, {("ex", "example.com", "example.org")}, id="Different namespaces allowed, some found"),
         ]
 )
-@patch("cim_plugin.processor._replace_namespace", return_value="p")
+@patch("cim_plugin.processor.replace_namespace", return_value="p")
 @patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
 @patch("cim_plugin.processor.create_typed_literal")
 def test_enrich_literal_datatypes_allownamespaces(mock_create: MagicMock, mock_resolve: MagicMock, mock_replace: MagicMock, allow: bool, returned: set[tuple[str, str, str]]|None, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView]) -> None:
@@ -1059,6 +1059,41 @@ def test_enrich_literal_datatypes_integrateddifferentnamespaces(make_schemaview:
     assert (URIRef("s"), URIRef("www.example.org/c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
     assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(result)
     assert "Enriching done. Added datatypes to 2 triples." in caplog.text
+
+
+def test_enrich_literal_datatypes_integrateddifferentnamespacesoverlap(make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    classes = {"A": ClassDefinition(name="A", attributes={"http://www.example.com/c1": SlotDefinition(name="http://www.example.com/c1", range="string"),
+                                                          "http://www.example.org/bar/c2": SlotDefinition(name="http://www.example.org/bar/c2", range="Custom")})}
+    types = {"Custom": TypeDefinition(name="Custom", base="integer", uri="xsd:integer")}
+    prefixes = {"ex": {"prefix_prefix": "ex", "prefix_reference": "http://www.example.com/"},
+                "foo": {"prefix_prefix": "foo", "prefix_reference": "http://www.example.org/bar/"}}   # This one is the same as graph
+    sv = make_schemaview(classes=classes, types=types, prefixes=prefixes)
+    
+    g = CIMGraph()
+    g.bind("ex", "www.example.org/")
+    g.bind("foo", "www.example.org/bar/")    # Overlap between this namespace and ex
+    g.add((URIRef("s"), URIRef("www.example.org/c1"), Literal("hello")))
+    g.add((URIRef("s"), URIRef("www.example.org/c1"), Literal("hei", lang="no")))
+    g.add((URIRef("s"), URIRef("www.example.org/bar/c2"), Literal("1")))
+    g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
+
+    inst = CIMProcessor(g)
+    inst.schema = sv
+    
+    inst.slot_index = {"http://www.example.com/c1": SlotDefinition(name="c1", range="string"), "http://www.example.org/bar/c2": SlotDefinition(name="c2", range="Custom")}
+    
+    inst.enrich_literal_datatypes(allow_different_namespaces=True)
+    
+    result = inst.graph
+    print(list(result))
+
+    assert (URIRef("s"), URIRef("www.example.org/c1"), Literal("hello", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string'))) in list(result)
+    assert (URIRef("s"), URIRef("www.example.org/c1"), Literal("hei", lang="no")) in list(result)
+    assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(result)
+    assert (URIRef("s"), URIRef("www.example.org/bar/c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
+    assert "Enriching done. Added datatypes to 2 triples." in caplog.text
+    
 
 
 def test_enrich_literal_datatypes_noupdates(make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
@@ -1191,6 +1226,82 @@ def test_merge_namespace_managers_errorlogged(caplog: pytest.LogCaptureFixture) 
     assert main_nm.namespace("foo") == URIRef("www.bar.org/")
     assert caplog.records[0].levelname == "ERROR"
     assert f"Namespace for 'foo' differs between graphs (www.bar.org/ vs https://foo.com/). www.bar.org/ is kept." in caplog.text
+
+
+# Unit tests replace_namespace
+@pytest.mark.parametrize(
+    "predicate, diffs, expected",
+    [
+        pytest.param("https://example.com/p", {("ex", "https://example.com/", "https://example.org/")}, "https://example.org/p", id="Simple substitution"),
+        pytest.param("https://example.com/p%20", {("ex", "https://example.com/", "https://example.org/")}, "https://example.org/p%20", id="Unusual predicate"),
+        pytest.param("https://example.com/p", {("ex", "https://example.com/", "https://example.com")}, "https://example.comp", id="Removing /"),
+        pytest.param("https://example.com/p", {("ex", "https://example.com/", "https://example.com#")}, "https://example.com#p", id="From / to #"),
+        pytest.param("https://example.com/foo/p", {("ex", "https://example.com/", "https://example.org/")}, "https://example.com/foo/p", id="Overlap"),
+        pytest.param(
+            "https://example.com/foo/p", 
+            {("ex", "https://example.com/", "https://example.org/"), ("foo", "https://example.com/foo/", "https://example.com/bar/")}, 
+            "https://example.com/bar/p", 
+            id="Overlap, both have changes"
+        ),
+        pytest.param("https://example.com/p", {("foo", "https://example.com/foo/", "https://example.com/bar/")}, "https://example.com/p", id="Not in set, no change"),
+        pytest.param("https://example.com/p", {}, "https://example.com/p", id="Empty set, no change"),
+        pytest.param("https://example.com/", {("ex", "https://example.com/", "https://example.org/")}, "https://example.org/", id="Empty predicate"),
+        pytest.param("https://example.com/p", {("ex", "https://example.com/", "https://example.com/ ")}, "https://example.com/ p", id="Whitespace in new"),
+        pytest.param("https://example.com/ p", {("ex", "https://example.com/ ", "https://example.org/")}, "https://example.com/ p", id="Whitespace in old"),
+        pytest.param("https://example.com#p", {("ex", "https://example.com/", "https://example.org/")}, "https://example.com#p", id="Mismatch between namespace manager and set, no change"),
+        pytest.param("https://example.com/p", {("exa", "https://example.com/", "https://example.org/")}, "https://example.com/p", id="Different prefix, same namespace, no change"),
+        pytest.param("ex:p", {("exa", "https://example.com/", "https://example.org/")}, "ex:p", id="Predicate not a full uri, no change"),
+        pytest.param(
+            "https://example.com/p", 
+            {("ex", "https://example.com/", "https://example.org/"), ("exa", "https://example.com/", "https://wrong/")}, 
+            "https://example.org/p", 
+            id="Prefix overlap, both are present" # This is not allowed in the namespace manager, but could occur in the set of differences
+        ),
+    ]
+)
+def test_replace_namespace_various(predicate: str, diffs: set[tuple[str, str, str]], expected: str) -> None:
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    g.bind("foo", "https://example.com/foo/")
+    g.add((URIRef("s1"), URIRef(predicate), Literal("o")))
+    result = replace_namespace(predicate=predicate, graph=g, replacements=diffs)
+    assert result == expected
+
+    # The graph is unchanged
+    assert g.namespace_manager.store.namespace("ex") == URIRef("https://example.com/")
+    assert (URIRef("s1"), URIRef(predicate), Literal("o")) in g
+
+
+def test_replace_namespace_invaliduri(caplog: pytest.LogCaptureFixture) -> None:
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/ ")   # Whitespace in uri raises a ValueError caught by the function
+    g.bind("foo", "https://example.com/foo/")
+    predicate = "https://example.com/ p"
+    g.add((URIRef("s1"), URIRef(predicate), Literal("o")))
+    result = replace_namespace(predicate=predicate, graph=g, replacements={("ex", "https://example.com/ ", "https://example.org/")})
+    assert result == predicate
+    assert f"Error in compute_qname for {predicate}: " in caplog.text
+
+
+def test_replace_namespace_emptygraph() -> None:
+    g = CIMGraph()
+    predicate = "https://example.com/p"
+    result = replace_namespace(predicate=predicate, graph=g, replacements={("ex", "https://example.com/", "https://example.org/")})
+    assert result == predicate  # When namespace is not in the namespaces manager, the predicate is returned unchanged
+
+
+def test_replace_namespace_duplicatesinreplacements() -> None:
+    # Documents what happends if the function is given a replacements set with duplicated prefix, old_ns.
+    # This will never happen if the replacements set is built by CIMProcess.namespaces_different_from_model 
+    # because rdflib does not allow duplicate namespaces. 
+    g = CIMGraph()
+    g.bind("ex", "https://example.com/")
+    diffs = {("ex", "https://example.com/", "https://first.com/"), ("ex", "https://example.com/", "https://second.com/")}
+    predicate = "https://example.com/p"
+    g.add((URIRef("s1"), URIRef(predicate), Literal("o")))
+    result = replace_namespace(predicate=predicate, graph=g, replacements=diffs)
+    # Sets are not ordered, so sometimes it gives one result and sometimes the other
+    assert result in {"https://first.com/p", "https://second.com/p"}
 
 
 if __name__ == "__main__":
