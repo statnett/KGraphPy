@@ -2,16 +2,14 @@
 
 from rdflib.parser import Parser, InputSource
 from rdflib.plugins.parsers.rdfxml import RDFXMLParser
-from rdflib import URIRef, Literal, Namespace, Graph
-from rdflib.namespace import XSD
-from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
+from rdflib import URIRef, Namespace, Graph
+from linkml_runtime.utils.schemaview import SchemaView
 from linkml_runtime.linkml_model.meta import TypeDefinition 
 import yaml
 import logging
-from typing import Optional, cast
-from cim_plugin.exceptions import LiteralCastingError
+from typing import Optional
 from cim_plugin.utilities import extract_uuid
-
+from cim_plugin.namespaces import update_namespace_in_triples
 import io
 import contextlib
 
@@ -22,12 +20,8 @@ class CIMXMLParser(Parser):
     name = "cimxml"
     format = "cimxml"
 
-    def __init__(self, schema_path: str|None=None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.schema_path: str|None = schema_path
-        self.schemaview: SchemaView|None = None
-        self.slot_index: dict|None = None
-        self.class_index: dict|None = None
         logger.info("CIMXMLParser loaded")
 
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
@@ -37,127 +31,51 @@ class CIMXMLParser(Parser):
         with contextlib.redirect_stdout(buf):   
             rdfxml.parse(source, sink, **kwargs)
         
-        fix_qualifier_for_all_uuids(sink)
-
-        if "schema_path" in kwargs:
-            self.schema_path = kwargs["schema_path"]
-        if self.schema_path and self.schemaview is None:    # Load model from linkML file
-            self.schemaview = SchemaView(self.schema_path)
-            self.slot_index, self.class_index = _build_slot_index(self.schemaview)    # Build index for more effective retrieval of datatypes
-            self.enrich_literal_datatypes(sink)    # Add datatypes from model
+        fix_qualifier_for_all_uuids(sink)   # Fix rdf:ID errors created by the RDFXMLParser and remove _ and #_
 
 
-    def ensure_correct_namespace_model(self, prefix: str, correct_namespace: str):
-        """Ensure that the given prefix has correct namespace in schemaview and update it if not.
-        
-        Parameters:
-            prefix (str): The prefix to check for correct namespace.
-            new_namespace (str): The correct namespace.
+def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef]) -> URIRef:
+    """Clean uri uuid to a urn:uuid: format.
+    
+    Parameters:
+        uri (URIRef): The uri with the uuid to clean.
+        uri_map: A map to keep track of which uuid has been clean (for caching).
 
-        Raises:
-            ValueError: - If schemaview is not found.
-                        - If given prefix is not found in schemaview.
-        """
-        if not self.schemaview:
-            raise ValueError("Schemaview not found")
+    Returns:
+        URIRef: The uuid with urn:uuid: qualifier.
+    """
+    uri_str = str(uri)
+    uuid_val = extract_uuid(uri_str)
+    if not uuid_val:
+        return uri
 
-        current = _get_current_namespace_from_model(self.schemaview, prefix)
-        
-        if current is None:
-            raise ValueError(f"Prefix {prefix} not found in schemaview")
+    if uri_str not in uri_map:
+        uri_map[uri_str] = URIRef(f"urn:uuid:{uuid_val}")
 
-        if current == correct_namespace:
-            logger.info(f"Model has correct namespace for {prefix}.")
-            return
+    return uri_map[uri_str]
 
-        logger.info(f"Wrong namespace detected for {prefix} in model. Correcting to {correct_namespace}.")
-        update_namespace_in_model(self.schemaview, prefix, correct_namespace)
-        
+def fix_qualifier_for_all_uuids(graph: Graph) -> None:
+    """Fix the qualifier for all uuids in graph to urn:uuid: format. 
+    
+        Ex. http://example.com#_00000000-0000-4000-8000-000000000001 is fixed to 
+        urn:uuid:00000000-0000-4000-8000-000000000001.
 
-    def patch_missing_datatypes_in_model(self) -> None:
-        """Patch a linkML schemaview with a missing datatype.
+    Parameters:
+        graph (Graph): The Graph to be modified.
+    """
+    uri_map = {}
 
-        Currently patches integer.
+    for s, p, o in list(graph):
+        new_s = _clean_uri(s, uri_map) if isinstance(s, URIRef) else s
+        new_o = _clean_uri(o, uri_map) if isinstance(o, URIRef) else o
 
-        Raises:
-            TypeError: If schemaview.schema.types is not a dict.
-        """
-        if self.schema_path and self.schemaview and self.schemaview.schema:
-
-            types = self.schemaview.schema.types
-            if not isinstance(types, dict):
-                raise TypeError(f"Expected types to be dict, got {type(types)}")
-            
-            if "integer" in types:
-                logger.info("Integer is present in SchemaView.")
-                return
-        
-            try:
-                t = TypeDefinition( name="integer", base="int", uri="http://www.w3.org/2001/XMLSchema#integer" )     
-                types["integer"] = t 
-                self.schemaview.set_modified() 
-                patch_integer_ranges(self.schemaview, self.schema_path) # Reassign datatypes to integer (were automatically assigned to string when loaded)
-            except ValueError as e:
-                logger.error(e)
-                raise
-
-
-    def enrich_literal_datatypes(self, graph: Graph) -> Graph:
-        """Enrich the Literals of a graph with datatypes collected from linkML SchemaView.
-        
-        - Cast value to correct format and log error when that is not possible.
-        - Tag with the full URI of the primitive datatype.
-
-        Parameters:
-            graph (Graph): The graph to enrich.
-
-        Returns:
-            Graph: The enriched graph.
-        """
-        logger.info("Enriching literal datatypes")
-
-        if not self.schemaview or not self.slot_index:
-            logger.error("Missing schemaview or slot_index. Enriching not possible.")
-            return graph
-
-        unfound_predicates = set()
-        casting_errors = []
-        updated_count = 0
-
-        for s, p, o in list(graph):
-            if not isinstance(o, Literal) or o.datatype is not None or o.language is not None:
-                continue
-
-            slot = self.slot_index.get(str(p))
-            if not slot:
-                unfound_predicates.add(str(p))
-                continue
-
-            datatype_uri = resolve_datatype_from_slot(self.schemaview, slot)
-            if not datatype_uri:
-                logger.info(f"No datatype found for range: {slot.range}, for {slot.name}")
-                continue
-
-            try:
-                new_literal = create_typed_literal(o.value, datatype_uri, self.schemaview)
-            except LiteralCastingError as e:
-                casting_errors.append(f"Error casting {o} for {s}, {p}: {e}")
-                continue
-
+        if (new_s, p, new_o) != (s, p, o):
             graph.remove((s, p, o))
-            graph.add((s, p, new_literal))
-            updated_count += 1
-
-        if casting_errors:
-            logger.error("\n".join(casting_errors))
-
-        if unfound_predicates:
-            logger.info(f"Did not find these predicates in model: {unfound_predicates}")
-        logger.info(f"Enriching done. Added datatypes to {updated_count} triples.")
-
-        return graph
+            graph.add((new_s, p, new_o))
 
 
+
+# No longer used anywhere. Remove?
 def _get_current_namespace_from_model(schemaview: SchemaView, prefix: str) -> Optional[str]:
     """Get namespace for a given prefix from a linkML SchemaView.
     
@@ -209,6 +127,7 @@ def _get_current_namespace_from_graph(graph: Graph, prefix: str) -> Optional[str
     return None
 
 
+# No longer in use. Remove?
 def update_namespace_in_model(schemaview: SchemaView, prefix: str, new_namespace: str) -> None:
     """Update namespace in linkML SchemaView for a given prefix.
     
@@ -233,41 +152,7 @@ def update_namespace_in_model(schemaview: SchemaView, prefix: str, new_namespace
 
     schemaview.__init__(schema)
 
-
-def update_namespace_in_graph(graph: Graph, old_namespace: str, new_namespace: str) -> None:
-    """Update an old namespace with a new namespace for every triple in a graph.
-    
-    Parameters:
-        graph (Graph): The graph where namespaces are to be replaced.
-        old_namespace (str): The namespace to be replaced.
-        new_namespace (str): The namespace to replace the old with.
-
-    Raises:
-        ValueError: If old_namespace is an empty string. 
-                    Prevents the new namespace being inserted between every character.
-    """
-    if not old_namespace:
-        raise ValueError("old_namespace cannot be an empty string")
-    
-    to_add = [] 
-    to_remove = [] 
-    
-    for s, p, o in graph: 
-        new_s = URIRef(str(s).replace(old_namespace, new_namespace)) if isinstance(s, URIRef) and str(s).startswith(old_namespace) else s 
-        new_p = URIRef(str(p).replace(old_namespace, new_namespace)) if isinstance(p, URIRef) and str(p).startswith(old_namespace) else p 
-        new_o = URIRef(str(o).replace(old_namespace, new_namespace)) if isinstance(o, URIRef) and str(o).startswith(old_namespace) else o 
-        
-        if (new_s, new_p, new_o) != (s, p, o): 
-            to_remove.append((s, p, o)) 
-            to_add.append((new_s, new_p, new_o)) 
-            
-    for triple in to_remove: 
-        graph.remove(triple) 
-        
-    for triple in to_add: 
-        graph.add(triple)
-
-
+# No longer in use. Remove?
 def ensure_correct_namespace_graph(graph: Graph, prefix: str, correct_namespace: str) -> None:
     """Ensure that graph has correct namespace for given prefix, and correct if not.
     
@@ -297,9 +182,9 @@ def ensure_correct_namespace_graph(graph: Graph, prefix: str, correct_namespace:
     logger.info(f"Wrong namespace detected for {prefix} in graph. Correcting to {stripped_namespace}.")
     
     graph.bind(prefix, Namespace(stripped_namespace), replace=True)
-    update_namespace_in_graph(graph, current, stripped_namespace)
+    update_namespace_in_triples(graph, current, stripped_namespace)
 
-
+# No longer in use. Remove?
 def inject_integer_type(schemaview: SchemaView) -> None: 
     """Inject integer into types in the SchemaView of a linkML file.
 
@@ -323,7 +208,7 @@ def inject_integer_type(schemaview: SchemaView) -> None:
         types["integer"] = t 
         schemaview.set_modified()
 
-
+# Not in use anymore. Might be usefull later.
 def find_slots_with_range(schema_path: str, datatype: str) -> set[str]:
     """Find all slot names in a linkML whose attribute definition has a given range datatype.
 
@@ -358,286 +243,6 @@ def find_slots_with_range(schema_path: str, datatype: str) -> set[str]:
                 matching_slots.add(slot_name)
 
     return matching_slots
-
-
-def patch_integer_ranges(schemaview: SchemaView, schema_path: str) -> None:
-    """Patch slots in schemaview which contain range: integer in raw yaml.
-    
-    Parameters:
-        schemaview (SchemaView): The schemaview which is to be patched.
-        schema_path (str): Path to the file with the raw yaml linkML data.
-
-    Raises:
-        ValueError: - If schemaview has no slots.
-                    - If specific slot is not found in the schemaview.
-    """
-    integer_slots = find_slots_with_range(schema_path, "integer")
-
-    if not integer_slots:
-        logger.info("No attributes with range=integer found. No changes made.")
-        return
-    
-    if schemaview.schema is None or not isinstance(schemaview.schema.slots, dict): 
-        raise ValueError("SchemaView has no slots") 
-    
-    changed = False 
-    for slot_name in integer_slots: 
-        original_slot = schemaview.get_slot(slot_name) 
-        if original_slot is None: 
-            raise ValueError(f"{slot_name} not found in schemaview")
-        
-        if original_slot.range != "integer": 
-            original_slot.range = "integer" 
-            schemaview.add_slot(original_slot) 
-            changed = True 
-            
-    if changed: 
-        schemaview.set_modified()
-
-
-def _clean_uri(uri: URIRef, uri_map: dict[str, URIRef]) -> URIRef:
-    """Clean uri uuid to a urn:uuid: format.
-    
-    Parameters:
-        uri (URIRef): The uri with the uuid to clean.
-        uri_map: A map to keep track of which uuid has been clean (for caching).
-
-    Returns:
-        URIRef: The uuid with urn:uuid: qualifier.
-    """
-    uri_str = str(uri)
-    uuid_val = extract_uuid(uri_str)
-    if not uuid_val:
-        return uri
-
-    if uri_str not in uri_map:
-        uri_map[uri_str] = URIRef(f"urn:uuid:{uuid_val}")
-
-    return uri_map[uri_str]
-
-def fix_qualifier_for_all_uuids(graph: Graph) -> None:
-    """Fix the qualifier for all uuids in graph to urn:uuid: format. 
-    
-        Ex. http://example.com#_00000000-0000-4000-8000-000000000001 is fixed to 
-        urn:uuid:00000000-0000-4000-8000-000000000001.
-
-    Parameters:
-        graph (Graph): The Graph to be modified.
-    """
-    uri_map = {}
-
-    for s, p, o in list(graph):
-        new_s = _clean_uri(s, uri_map) if isinstance(s, URIRef) else s
-        new_o = _clean_uri(o, uri_map) if isinstance(o, URIRef) else o
-
-        if (new_s, p, new_o) != (s, p, o):
-            graph.remove((s, p, o))
-            graph.add((new_s, p, new_o))
-
-
-def _resolve_type(schemaview: SchemaView, type_name: str) -> str|None:
-    """Resolve a LinkML type name to its canonical datatype.
-    
-    Works for both declared types and built-in primitives.
-    
-    Parameters:
-        schemaview (SchemaView): The SchemaView to get the datatype from.
-        type_name (str): Name of type.
-
-    Returns:
-        str: The datatype, either as a uri or base name. Last resort returns type_name.
-    """
-    t = schemaview.get_type(type_name)
-    if t is None:
-        return None
-
-    if t.uri:
-        return t.uri
-
-    if t.base:
-        return _resolve_type(schemaview, t.base)
-
-    return type_name
-
-
-def resolve_datatype_from_slot(schemaview: SchemaView, slot: SlotDefinition) -> str|None:
-    """Resolve primitive datatype by collecting range from linkML slots.
-    
-    If range is a custom type, the primitive type of the custom type will be returned.
-
-    This function should only be used on predicates whos object are literals.
-    If the object is a URI, the return could be erronous.
-
-    Parameters:
-        schemaview (SchemaView): The linkML SchemaView to collect the datatype from.
-        slot (SlotDefinition): The slot which contains the datatype range.
-
-    Returns:
-        str: The datatype if found.
-        None: If range is nonexistent or a class.
-    """
-    rng = slot.range
-    if not rng:
-        return None
-
-    # Case 1: range is a declared type or primitive
-    resolved = _resolve_type(schemaview, rng)
-    if resolved:
-        return resolved
-
-    # Case 2: range is an enum
-    if rng in schemaview.all_enums():
-        enum = schemaview.get_enum(rng)
-
-        # If any permissible value has a meaning (URI), then enum values are URIs
-        has_meaning = any(
-            pv.meaning for pv in (enum.permissible_values or {}).values()   # type: ignore
-        )
-
-        if has_meaning:
-            # Enum values will appear as URIs, not literals
-            logger.warning(f"Literal encountered for enum {rng} with meaning. Literal enums should not have meaning. Is object a URI?")
-
-        return "xsd:string"
-    
-    # Case 3: range is a class → literals should never appear 
-    if rng in schemaview.all_classes(): 
-        logger.warning( f"slot.range '{rng}' is a class. Is object a URI?" ) 
-        return None
-
-    return rng
-
-
-def cast_float(value: str) -> float:
-    """Cast string value to float.
-
-    Corrects the common error of using , as decimal point (3,14 -> 3.14).
-    
-    Parameters:
-        value (str): The value to be cast.
-    
-    Raises:
-        ValueError: If input is not possible to cast.
-    """
-    s = str(value).strip()
-
-    if "," in s and "." not in s:
-        s = s.replace(",", ".")
-
-    try:
-        return float(s)
-    except ValueError:
-        raise ValueError(f"Invalid float: {value}")
-
-
-def cast_bool(value: str) -> bool:
-    """Cast string value to boolean.
-    
-    Parameters:
-        value (str): The value to be cast.
-    
-    Raises:
-        ValueError: If input does not match true or false.
-    """
-    s = str(value).lower()
-    if s in ("true", "1"):
-        return True
-    if s in ("false", "0"):
-        return False
-    raise ValueError(f"Invalid boolean lexical form: {value}")
-
-
-CASTERS = {
-    str(XSD.integer): int,
-    str(XSD.float): cast_float,
-    str(XSD.boolean): cast_bool,
-    str(XSD.date): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-    str(XSD.dateTime): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-}
-
-
-def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) -> Literal:
-    """Cast Literal to correct format based on datatype uri.
-    
-    Parameters:
-        value (str): The value to be cast.
-        datatype_uri (str): The datatype in format "prefix:datatype".
-    
-    Raises:
-        LiteralCastingError: If the casting fails.
-
-    Returns:
-        Literal with the new value format and datatype set.
-    """
-    if datatype_uri and ":" in datatype_uri and not datatype_uri.startswith("http"):
-        datatype_uri = schemaview.expand_curie(datatype_uri)
-
-    caster = CASTERS.get(datatype_uri)
-    if caster:
-        try:
-            value = caster(value)
-        except (ValueError, TypeError):
-            raise LiteralCastingError(f"{value}, {datatype_uri}")
-
-    # RDFLib will set .value = None for unknown datatypes
-    return Literal(value, datatype=URIRef(datatype_uri) if datatype_uri else None)
-
-
-def slots_equal(slot1: SlotDefinition, slot2: SlotDefinition) -> bool:
-    """Show whether two SlotDefinition objects contain the same keys and values.
-
-    Internal attributes are ignored (starts with _).
-
-    Parameters:
-        slot1 (SlotDefinition): First slot.
-        slot2 (SlotDefinition): Second slot.
-    
-    Returns:
-        bool: True if slot1 and slot2 are the identical.
-
-    """
-    d1 = {k: v for k, v in slot1.__dict__.items() if not k.startswith("_")}
-    d2 = {k: v for k, v in slot2.__dict__.items() if not k.startswith("_")}
-
-    return d1 == d2
-
-
-def _build_slot_index(schemaview: SchemaView) -> tuple[dict, dict]:
-    """Build an index of classes and slots from a SchemaView.
-    
-    Parameters:
-        schemaview (SchemaView): The schemaview to build the index from.
-
-    Returns:
-        tuple[dict, dict]: The slot index and the class index in that order.
-    """
-    slot_index = {}
-
-    for cls_name, cls in schemaview.all_classes().items():
-        if not isinstance(cls.attributes, dict):
-            continue
-
-        for slot_name, slot in cls.attributes.items():
-            slot = cast(SlotDefinition, slot)
-            if not slot.slot_uri:
-                continue
-
-            expanded = schemaview.expand_curie(slot.slot_uri)
-
-            if expanded not in slot_index:
-                slot_index[expanded] = slot
-                continue
-
-            existing = slot_index[expanded]
-
-            if slots_equal(existing, slot):
-                continue
-
-            logger.warning(f"Slot for URI '{expanded}' is overwritten by class slot '{slot_name}'.")
-            slot_index[expanded] = slot
-
-    class_index = {name: cls for name, cls in schemaview.all_classes().items()}
-    return slot_index, class_index
 
 
 if __name__ == "__main__":

@@ -4,8 +4,11 @@ from unittest.mock import patch, MagicMock
 from rdflib import Graph, URIRef, Literal, BNode, Node
 from rdflib.namespace import DCAT, DCTERMS, RDF
 from cim_plugin.namespaces import MD
-from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.header import CIMMetadataHeader, create_header_attribute
 from tests.fixtures import build_graph_with_blank_header
+import logging
+
+logger = logging.getLogger('cimxml_logger')
 
 
 # Unit tests .__init__
@@ -21,16 +24,16 @@ def test_init_providedsubject() -> None:
     assert h.subject == s
 
 
-def test_init_triplesnone() -> None:
-    h = CIMMetadataHeader(triples=None)
-    assert h.triples == []
+def test_init_graphnone() -> None:
+    h = CIMMetadataHeader(graph=None)
+    assert len(h.graph) == 0    # An empty graph is made
 
 
-def test_init_triplesinput() -> None:
-    triples = [(URIRef("a"), URIRef("b"), Literal("c"))]
-    h = CIMMetadataHeader(triples=triples)
-    assert h.triples == triples
-    assert h.triples is not triples  # must be a copy
+def test_init_graphinput() -> None:
+    g = Graph()
+    g.add((URIRef("a"), URIRef("b"), Literal("c")))
+    h = CIMMetadataHeader(graph=g)
+    assert h.graph == g
 
 
 def test_init_metadataobjectsdefaults() -> None:
@@ -90,65 +93,94 @@ def test_init_profilepredicatesusedincollect(mock_collect: MagicMock) -> None:
 
 
 # Unit tests .from_graph
+@patch("cim_plugin.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
-def test_from_graph_noheadertriples(mock_collect: MagicMock) -> None:
+def test_from_graph_noheadertriples(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
     # No rdf:type triples at all
     with pytest.raises(ValueError, match="No metadata header"):
         CIMMetadataHeader.from_graph(g)
-    mock_collect.assert_not_called()
+    mock_triples.assert_not_called()
+    mock_namespaces.assert_not_called()
 
+@patch("cim_plugin.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
-def test_from_graph_multipleheaders(mock_collect: MagicMock) -> None:
+def test_from_graph_multipleheaders(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
     g.add((URIRef("urn:h1"), RDF.type, MD.FullModel))
     g.add((URIRef("urn:h2"), RDF.type, DCAT.Dataset))
 
     with pytest.raises(ValueError, match="Multiple metadata headers"):
         CIMMetadataHeader.from_graph(g)
-    mock_collect.assert_not_called()
+    mock_triples.assert_not_called()
+    mock_namespaces.assert_not_called()
 
 
+@patch("cim_plugin.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
-def test_from_graph_onlyheadertriple(mock_collect: MagicMock) -> None:
+def test_from_graph_onlyheadertriple(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
     header = URIRef("urn:header")
     g.add((header, RDF.type, DCAT.Dataset))
 
-    mock_collect.return_value = (header, [(header, RDF.type, DCAT.Dataset)], set(header))
-
+    mock_triples.return_value = (header, [(header, RDF.type, DCAT.Dataset)], set(header))
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == header
     assert result.triples == [(header, RDF.type, DCAT.Dataset)]
-    mock_collect.assert_called_once_with(g, header)
+    mock_triples.assert_called_once_with(g, header)
+    mock_namespaces.assert_called_once_with([(header, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
 
+@patch("cim_plugin.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
-def test_from_graph_blankheaderrepair(mock_collect: MagicMock) -> None:
+def test_from_graph_namespaces(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
+    g = Graph()
+    header = URIRef("urn:header")
+    g.add((header, RDF.type, DCAT.Dataset))
+
+    mock_triples.return_value = (header, [(header, RDF.type, DCAT.Dataset)], set(header))
+    mock_namespaces.return_value = {"rdf": URIRef("rdf_test"), "dcat": URIRef("dcat_test")}
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.subject == header
+    assert result.triples == [(header, RDF.type, DCAT.Dataset)]
+    ns = result.graph.namespace_manager.store
+    assert len(list(ns.namespaces())) == 2
+    assert ns.namespace("rdf") == URIRef("rdf_test")
+    assert ns.namespace("dcat") == URIRef("dcat_test")
+    mock_triples.assert_called_once_with(g, header)
+    mock_namespaces.assert_called_once_with([(header, RDF.type, DCAT.Dataset)], g.namespace_manager)
+
+@patch("cim_plugin.header.collect_specific_namespaces")
+@patch.object(CIMMetadataHeader, "_collect_header_triples")
+def test_from_graph_blankheaderrepair(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
     header = BNode()
     repaired = URIRef("urn:uuid:fixed")
 
     g.add((header, RDF.type, DCAT.Dataset))
 
-    mock_collect.return_value = (repaired, [(repaired, RDF.type, DCAT.Dataset)], set(repaired))
+    mock_triples.return_value = (repaired, [(repaired, RDF.type, DCAT.Dataset)], set(repaired))
+    mock_namespaces.return_value = {"rdf": URIRef("rdf_test"), "dcat": URIRef("dcat_test")}
 
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == repaired
     assert result.triples == [(repaired, RDF.type, DCAT.Dataset)]
-    mock_collect.assert_called_once_with(g, header)
+    mock_triples.assert_called_once_with(g, header)
+    mock_namespaces.assert_called_once_with([(repaired, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
 
+@patch("cim_plugin.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
-def test_from_graph_metadataobjectsoverride(mock_collect: MagicMock) -> None:
+def test_from_graph_metadataobjectsoverride(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
     header = URIRef("urn:header")
 
     g.add((header, RDF.type, URIRef("urn:custom:Type")))
 
-    mock_collect.return_value = (header, [], set())
+    mock_triples.return_value = (header, [], set())
 
     result = CIMMetadataHeader.from_graph(g, metadata_objects={URIRef("urn:custom:Type")})
 
@@ -165,20 +197,23 @@ def test_from_graph_integration_dcatheader() -> None:
 
     result = CIMMetadataHeader.from_graph(g)
 
-    assert result.triples == [(header, RDF.type, DCAT.Dataset), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert set(result.triples) == {(header, RDF.type, DCAT.Dataset), (header, URIRef("urn:p"), URIRef("urn:o"))}
+    assert len(list(result.graph.namespace_manager.store.namespaces())) == 2
     assert result.reachable_nodes == reachable
 
 
 def test_from_graph_integration_fullmodelheader() -> None:
     g = Graph()
     header = URIRef("urn:header")
+    g.bind("md", MD)    # While dcat is in the default list, MD must be added
     g.add((header, RDF.type, MD.FullModel))
     g.add((header, URIRef("urn:p"), URIRef("urn:o")))
     reachable = {header}
 
     result = CIMMetadataHeader.from_graph(g)
 
-    assert result.triples == [(header, RDF.type, MD.FullModel), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert set(result.triples) == {(header, RDF.type, MD.FullModel), (header, URIRef("urn:p"), URIRef("urn:o"))}
+    assert len(list(result.graph.namespace_manager.store.namespaces())) == 2
     assert result.reachable_nodes == reachable
 
 
@@ -199,7 +234,8 @@ def test_from_graph_integration_metadataobjectsoverride() -> None:
 
     result = CIMMetadataHeader.from_graph(g, metadata_objects=[URIRef("urn:meta:Header")])
 
-    assert result.triples == [(header, RDF.type, URIRef("urn:meta:Header")), (header, URIRef("urn:p"), URIRef("urn:o"))]
+    assert set(result.triples) == {(header, RDF.type, URIRef("urn:meta:Header")), (header, URIRef("urn:p"), URIRef("urn:o"))}
+    assert len(list(result.graph.namespace_manager.store.namespaces())) == 1
     assert result.reachable_nodes == reachable
 
 
@@ -214,8 +250,26 @@ def test_from_graph_integration_blankheaderrepair(caplog: pytest.LogCaptureFixtu
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == repaired
-    assert result.triples == [(repaired, RDF.type, DCAT.Dataset), (repaired, DCTERMS.identifier, Literal("fixed"))]
+    assert (repaired, RDF.type, DCAT.Dataset) in result.graph
+    assert len(list(result.graph.namespace_manager.store.namespaces())) == 3
     assert "Metadata header subject is a blank node" in caplog.text
+
+
+def test_from_graph_integration_namespaces() -> None:
+    g = Graph()
+    header = URIRef("urn:uuid:fixed")
+    g.bind("md", MD)
+    g.add((header, RDF.type, DCAT.Dataset))
+    g.add((header, DCTERMS.identifier, Literal("fixed")))
+    g.add((header, MD.profile, Literal("profile1")))
+
+    result = CIMMetadataHeader.from_graph(g)
+
+    assert result.subject == header
+    assert (header, RDF.type, DCAT.Dataset) in result.graph
+    assert len(list(result.graph.namespace_manager.store.namespaces())) == 4
+    for prefix, ns in result.graph.namespace_manager.store.namespaces():
+        assert prefix in {"md", "rdf", "dcat", "dcterms"}
 
 # Unit tests ._collect_header_triples
 
@@ -675,6 +729,51 @@ def test_set_subject_multiplecalls() -> None:
     assert len(header.triples) == 4
     for s, p, o in header.triples:
         assert s == URIRef("h3")
+
+
+#Unit tests create_header_attribute
+def test_create_header_attribute_fromgraph() -> None:
+    graph = MagicMock()
+    fake_header = MagicMock()
+
+    with patch.object(CIMMetadataHeader, "from_graph", return_value=fake_header) as mock_from_graph, \
+         patch.object(CIMMetadataHeader, "empty") as mock_empty, \
+         patch.object(logger, "error") as mock_log:
+
+        result = create_header_attribute(graph)
+
+    assert result is fake_header
+    mock_from_graph.assert_called_once_with(graph)
+    mock_empty.assert_not_called()
+    mock_log.assert_not_called()
+
+
+def test_create_header_attribute_valueerror(caplog: pytest.LogCaptureFixture) -> None:
+    graph = MagicMock()
+    fake_empty_header = MagicMock()
+    fake_empty_header.subject = "generated-id"
+
+    with patch.object(CIMMetadataHeader, "from_graph", side_effect=ValueError("oops")) as mock_from_graph, \
+         patch.object(CIMMetadataHeader, "empty", return_value=fake_empty_header) as mock_empty:
+        result = create_header_attribute(graph)
+
+    assert result is fake_empty_header
+    mock_from_graph.assert_called_once_with(graph)
+    mock_empty.assert_called_once()
+    
+    assert len(caplog.records) == 1 
+    record = caplog.records[0] 
+    assert record.levelname == "ERROR" 
+    assert "oops" in record.message 
+    assert "generated-id" in record.message
+
+
+def test_create_header_attribute_otherexceptions() -> None:
+    graph = Graph()
+
+    with patch.object(CIMMetadataHeader, "from_graph", side_effect=TypeError("boom")):
+        with pytest.raises(TypeError):
+            create_header_attribute(graph)
 
 
 if __name__ == "__main__":

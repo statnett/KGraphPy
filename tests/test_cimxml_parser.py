@@ -1,12 +1,9 @@
 from cim_plugin.cimxml_parser import (
     _get_current_namespace_from_graph,
-    update_namespace_in_graph,
     ensure_correct_namespace_graph,
     find_slots_with_range,
     _clean_uri,
     fix_qualifier_for_all_uuids,
-    cast_float,
-    cast_bool
 )
 import pytest
 from unittest.mock import patch, MagicMock, mock_open, call
@@ -15,7 +12,6 @@ import logging
 from pytest import LogCaptureFixture
 from tests.fixtures import make_graph_with_prefixes, sample_yaml
 import textwrap
-from typing import Any
 
 
 logger = logging.getLogger("cimxml_logger")
@@ -110,189 +106,6 @@ def test_get_current_namespace_from_graph_unicodeprefix(prefix: str, uri: str) -
     assert result == uri
 
 
-@pytest.mark.parametrize(
-    "triple, old_ns, new_ns, expected",
-    [
-        pytest.param(
-            (URIRef("http://old.com/a"), URIRef("x"), URIRef("y")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("http://new.com/a"), URIRef("x"), URIRef("y")),
-            id="Subject update"
-        ),
-        pytest.param(
-            (URIRef("s"), URIRef("http://old.com/p"), URIRef("o")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("s"), URIRef("http://new.com/p"), URIRef("o")),
-            id="Predicate update"
-        ),
-        pytest.param(
-            (URIRef("s"), URIRef("p"), URIRef("http://old.com/o")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("s"), URIRef("p"), URIRef("http://new.com/o")),
-            id="Object update"
-        ),
-        pytest.param(
-            (URIRef("s"), URIRef("p"), URIRef("o")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("s"), URIRef("p"), URIRef("o")),
-            id="Simple no update"
-        ),
-        pytest.param(
-            (URIRef("http://unrecognized.com/s"), URIRef("http://unrecognized.com/p"), URIRef("http://unrecognized.com/o")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("http://unrecognized.com/s"), URIRef("http://unrecognized.com/p"), URIRef("http://unrecognized.com/o")),
-            id="No update, all uris."
-        ),
-        pytest.param(
-            (BNode("s"), URIRef("http://old.com/p"), URIRef("o")),
-            "http://old.com/",
-            "http://new.com/",
-            (BNode("s"), URIRef("http://new.com/p"), URIRef("o")),
-            id="Subject is BNode"
-        ),
-        pytest.param(
-            (URIRef("s"), URIRef("http://old.com/p"), BNode("o")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("s"), URIRef("http://new.com/p"), BNode("o")),
-            id="Object is BNode"
-        ),
-        pytest.param(
-            (URIRef("s"), URIRef("http://old.com/p"), Literal("o")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("s"), URIRef("http://new.com/p"), Literal("o")),
-            id="Object is Literal"
-        ),
-        pytest.param(
-            (URIRef("http://old.comX/a"), URIRef("x"), URIRef("y")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("http://old.comX/a"), URIRef("x"), URIRef("y")),
-            id="Partial match -> No update"
-        ),
-        # This may cause problems!!
-        pytest.param(
-            (URIRef("http://old.com/a/http://old.com/b"), URIRef("x"), URIRef("y")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("http://new.com/a/http://new.com/b"), URIRef("x"), URIRef("y")),
-            id="Multiple occurence of same uri"
-        ),
-        pytest.param(
-            (URIRef("http://old.complex/foo/a"), URIRef("x"), URIRef("y")),
-            "http://old.com/",
-            "http://new.com/",
-            (URIRef("http://old.complex/foo/a"), URIRef("x"), URIRef("y")),
-            id="Uri is part of another uri -> No update"
-        ),
-        pytest.param(
-            (URIRef("http://old.com/a"), URIRef("x"), URIRef("y")),
-            "http://old.com/",
-            "",
-            (URIRef("a"), URIRef("x"), URIRef("y")),
-            id="New namespace empty"
-        ),
-    ]
-)
-def test_update_namespace_in_graph_singletriple(triple: tuple, old_ns: str, new_ns: str, expected: tuple) -> None:
-    g = Graph()
-    g.add(triple)
-
-    update_namespace_in_graph(g, old_ns, new_ns)
-    for s, p, o in g:
-        print(s, p, o)
-    assert len(g) == 1
-    assert expected in g
-
-
-def test_update_namespace_in_graph_mixedtriples() -> None:
-    old_ns = "http://old.com/"
-    new_ns = "http://new.com/"
-
-    g = Graph()
-    t1 = (URIRef("http://old.com/a"), URIRef("p"), URIRef("o"))
-    t2 = (URIRef("s"), URIRef("http://old.com/p"), URIRef("o"))
-    t3 = (URIRef("s"), URIRef("p"), URIRef("http://old.com/o"))
-    t4 = (URIRef("s"), URIRef("p"), URIRef("o"))  # unchanged
-
-    for t in (t1, t2, t3, t4):
-        g.add(t)
-
-    update_namespace_in_graph(g, old_ns, new_ns)
-
-    expected = {
-        (URIRef("http://new.com/a"), URIRef("p"), URIRef("o")),
-        (URIRef("s"), URIRef("http://new.com/p"), URIRef("o")),
-        (URIRef("s"), URIRef("p"), URIRef("http://new.com/o")),
-        t4,
-    }
-
-    assert len(g) == 4
-    for triple in expected:
-        assert triple in g
-
-
-def test_update_namespace_in_graph_multiplereplacements() -> None:
-    g = Graph()
-    old_ns = "http://old.com/"
-    new_ns = "http://new.com/"
-
-    triple = (URIRef("http://old.com/s"), URIRef("http://old.com/p"), URIRef("http://old.com/o"),)
-    g.add(triple)
-
-    update_namespace_in_graph(g, old_ns, new_ns)
-
-    expected = (URIRef("http://new.com/s"), URIRef("http://new.com/p"), URIRef("http://new.com/o"),)
-
-    assert len(g) == 1
-    assert expected in g
-    assert triple not in g
-
-
-def test_update_namespace_in_graph_duplicatesafterreplacement() -> None:
-    # This test shows what happends if replacements leads to two uris being made identical
-    g = Graph()
-    old_ns = "http://old.com/"
-    new_ns = "http://new.com/"
-
-    t1 = (URIRef("http://old.com/a"), URIRef("p"), URIRef("o"))
-    t2 = (URIRef("http://new.com/a"), URIRef("p"), URIRef("o"))
-    g.add(t1)
-    g.add(t2)
-
-    assert len(g) == 2  # Number of triples before replacement
-
-    update_namespace_in_graph(g, old_ns, new_ns)
-
-    expected = (URIRef("http://new.com/a"), URIRef("p"), URIRef("o"))
-
-    assert len(g) == 1  # Number of triples after replacement
-    assert expected in g
-
-
-def test_update_namespace_in_graph_emptygraph() -> None:
-    g = Graph()
-
-    update_namespace_in_graph(g, "http://old.com/", "http://new.com/")
-
-    assert len(g) == 0
-
-
-def test_update_namespace_in_graph() -> None:
-    g = Graph()
-    g.add((URIRef("a"), URIRef("x"), URIRef("y")))
-    assert len(g) == 1
-
-    with pytest.raises(ValueError, match="old_namespace cannot be an empty string"):
-        update_namespace_in_graph(g, "", "http://new.com/")
-
-
 # Unit tests ensure_correct_namespace_graph
 @pytest.mark.parametrize(
     "prefix, current, new_ns, update",
@@ -303,7 +116,7 @@ def test_update_namespace_in_graph() -> None:
         pytest.param("ex", "www.example.com/", " www.newexample.com/ ", True, id="New namespace has whitespace -> update"),
     ]
 )
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_namespacehandling(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph, prefix: str, current: str, new_ns: str, update: bool, caplog: LogCaptureFixture) -> None:
     caplog.set_level("INFO")
@@ -323,7 +136,7 @@ def test_ensure_correct_namespace_graph_namespacehandling(mock_get: MagicMock, m
         assert bound_ns == URIRef(current)
         assert f"Graph has correct namespace for {prefix}." in caplog.text
 
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_currentisnone(mock_get: MagicMock, mock_update: MagicMock) -> None:
     mock_get.return_value = None
@@ -338,7 +151,7 @@ def test_ensure_correct_namespace_graph_currentisnone(mock_get: MagicMock, mock_
     mock_update.assert_not_called()
 
 
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_newisonlywhitespace(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.return_value = "www.example.com/"
@@ -352,7 +165,7 @@ def test_ensure_correct_namespace_graph_newisonlywhitespace(mock_get: MagicMock,
     assert g.namespace_manager.store.namespace("ex") == URIRef("www.example.com/")
 
 
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_nocorruptionofnewns(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.return_value = "www.example.com/"
@@ -364,7 +177,7 @@ def test_ensure_correct_namespace_graph_nocorruptionofnewns(mock_get: MagicMock,
     assert g.namespace_manager.store.namespace("ex") == URIRef("www.new.org/")
 
 
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_bindcalledcorrectly(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.return_value = "www.example.com/"
@@ -378,7 +191,7 @@ def test_ensure_correct_namespace_graph_bindcalledcorrectly(mock_get: MagicMock,
     mock_update.assert_called_once_with(g, "www.example.com/", "www.new.org/")
 
 
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_nswrongtype(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     # This test documents what happends if _get_current_namespace_from_graph brings back a namespace with wrong datatype.
@@ -395,7 +208,7 @@ def test_ensure_correct_namespace_graph_nswrongtype(mock_get: MagicMock, mock_up
     assert g.namespace_manager.store.namespace("wrong") == URIRef("www.new.org/")
 
 
-@patch("cim_plugin.cimxml_parser.update_namespace_in_graph")
+@patch("cim_plugin.cimxml_parser.update_namespace_in_triples")
 @patch("cim_plugin.cimxml_parser._get_current_namespace_from_graph")
 def test_ensure_correct_namespace_graph_idempotence(mock_get: MagicMock, mock_update: MagicMock, make_graph_with_prefixes: Graph) -> None:
     mock_get.side_effect = ["www.example.com/", "www.new.org/"]
@@ -633,57 +446,6 @@ def test_normalize_rdf_ids_emptygraph(mock_clean: MagicMock) -> None:
 
     mock_clean.assert_not_called()
     
-
-# Unit tests cast_bool
-@pytest.mark.parametrize(
-    "input, output",
-    [
-        pytest.param("true", True, id="Input 'true'"),
-        pytest.param("1", True, id="Input '1'"),
-        pytest.param("false", False, id="Input 'false'"),
-        pytest.param("0", False, id="Input '0'"),
-        pytest.param("gibberish", None, id="Nonsense"),
-        pytest.param("123", None, id="Numeric nonsense"),
-        pytest.param(True, True, id="Input boolean True"),
-        pytest.param(False, False, id="Input boolean False"),
-        pytest.param("True", True, id="Upper case True"),
-        pytest.param("FALSE", False, id="Upper case False"),
-        pytest.param(1, True, id="Integer"),
-        pytest.param(123, None, id="Wrong integer")
-    ]
-)
-def test_cast_bool_various(input: str|bool, output: bool) -> None:
-    if output is None:
-        with pytest.raises(ValueError, match="Invalid boolean lexical form"):
-            cast_bool(input)
-    else:
-        # Pylance silenced to test incorrect input type
-        assert cast_bool(input) == output   # type: ignore
-
-
-
-# Unit tests cast_float
-@pytest.mark.parametrize(
-    "input, output",
-    [
-        pytest.param("1", 1.0, id="Input '1'"),
-        pytest.param("0.5", 0.5, id="Input '0.5'"),
-        pytest.param("0,5", 0.5, id="Comma error"),
-        pytest.param("1,567.89", None, id="Comma as thousand mark"),
-        pytest.param("123", 123.0, id="Hundreds"),
-        pytest.param(True, None, id="Input boolean True"),
-        pytest.param("Hey", None, id="Invalid float string"),
-        pytest.param(123, 123.0, id="Integer input")
-    ]
-)
-def test_cast_float_various(input: Any, output: float|None) -> None:
-    if output is None:
-        with pytest.raises(ValueError, match="Invalid float"):
-            cast_float(input)
-    else:
-        # Pylance silenced to test incorrect input type
-        assert cast_float(input) == output   # type: ignore
-
 
 if __name__ == "__main__":
     pytest.main()

@@ -1,152 +1,32 @@
 from pathlib import Path
 import pytest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, call
 import uuid
-from rdflib import Graph, Namespace, URIRef, Literal, BNode
+from rdflib import Graph, Namespace, URIRef, Literal, BNode, Dataset
 from rdflib.namespace import RDF, RDFS, DCAT
 from rdflib.exceptions import ParserError
-from typing import Callable
+from typing import Callable, Any
 from cim_plugin.exceptions import CIMXMLParseError
 from cim_plugin.namespaces import MD
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
-from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph
+from cim_plugin.processor import CIMProcessor
+from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph, make_cimgraph
 from cim_plugin.utilities import (
     extract_uuid,
     _extract_uuid_from_urn, 
-    get_graph_uuid, 
-    load_cimxml_graph, 
+    load_cimxml_graph,
+    load_graphs_from_cimxml,
     collect_cimxml_to_dataset,
-    create_header_attribute, 
     extract_subjects_by_object_type,
-    group_subjects_by_type
+    group_subjects_by_type,
+    load_graphs_from_trig,
 )
 
 import logging
 
 logger = logging.getLogger('cimxml_logger')
 
-
-# Unit tests get_graph_uuid
-
-@pytest.mark.parametrize(
-    "rdf_type",
-    [
-        pytest.param(lambda: MD.FullModel, id="md:FullModel"),
-        pytest.param(lambda: DCAT.Dataset, id="dcat:Dataset"),
-    ]
-)
-def test_get_graph_uuid_correctsubject(rdf_type: Callable, mock_extract_uuid: Mock) -> None:
-    graph = Graph()
-    subject = URIRef("urn:uuid:12345678-1234-5678-1234-567812345678")
-
-    graph.add((subject, RDF.type, rdf_type()))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uuid.UUID("12345678-1234-5678-1234-567812345678")
-    mock_extract_uuid.assert_called_once_with(str(subject))
-
-def test_get_graph_uuid_emptygraph(mock_extract_uuid: Mock) -> None:
-    graph = Graph()
-
-    with pytest.raises(ValueError):
-        get_graph_uuid(graph)
-
-    mock_extract_uuid.assert_not_called()
-
-
-def test_get_graph_uuid_bothtypesandnoise() -> None:
-    graph = Graph()
-
-    fullmodel_uuid = uuid.uuid4()
-    dataset_uuid = uuid.uuid4()
-    fullmodel_subject = URIRef(f"urn:uuid:{fullmodel_uuid}")
-    dataset_subject = URIRef(f"urn:uuid:{dataset_uuid}")
-    graph.add((fullmodel_subject, RDF.type, MD.FullModel))
-    graph.add((dataset_subject, RDF.type, DCAT.Dataset))
-    graph.add((URIRef("http://example.org/noise"), RDFS.label, Literal("irrelevant")))
-
-    result = get_graph_uuid(graph)
-
-    assert result == fullmodel_uuid
-
-
-def test_get_graph_uuid_nofullmodel() -> None:
-    graph = Graph()
-
-    dataset_uuid = uuid.uuid4()
-    dataset_subject = URIRef(f"urn:uuid:{dataset_uuid}")
-    graph.add((dataset_subject, RDF.type, DCAT.Dataset))
-
-    result = get_graph_uuid(graph)
-
-    assert result == dataset_uuid
-
-
-def test_get_graph_uuid_multiplefullmodels() -> None:
-    graph = Graph()
-
-    uuid1 = uuid.uuid4()
-    uuid2 = uuid.uuid4()
-    subject1 = URIRef(f"urn:uuid:{uuid1}")
-    subject2 = URIRef(f"urn:uuid:{uuid2}")
-    graph.add((subject1, RDF.type, MD.FullModel))
-    graph.add((subject2, RDF.type, MD.FullModel))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uuid1 # First encountered is returned
-
-
-def test_get_graph_uuid_malformedurn() -> None:
-    graph = Graph()
-
-    bad_subject = URIRef("urn:uuid:not-a-valid-uuid")
-    graph.add((bad_subject, RDF.type, MD.FullModel))
-
-    with pytest.raises(ValueError):
-        get_graph_uuid(graph)
-
-
-def test_get_graph_uuid_ignoresblanknodes() -> None:
-    graph = Graph()
-
-    uid = uuid.uuid4()
-    subject = URIRef(f"urn:uuid:{uid}")
-
-    graph.add((subject, RDF.type, MD.FullModel))
-    graph.add((BNode(), RDF.type, BNode()))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uid
-    assert len(graph) == 2
-
-
-def test_get_graph_uuid_uppercaseurn() -> None:
-    graph = Graph()
-
-    uid = uuid.uuid4()
-    subject = URIRef(f"urn:uuid:{str(uid).upper()}")    # Uppercase uuid, but not prefix
-
-    graph.add((subject, RDF.type, MD.FullModel))
-
-    result = get_graph_uuid(graph)
-
-    assert result == uid
-
-
-def test_get_graph_uuid_ignoresotherrdftypes() -> None:
-    graph = Graph()
-
-    uid = uuid.uuid4()
-    subject = URIRef(f"urn:uuid:{uid}")
-
-    graph.add((subject, RDF.type, RDFS.Class))
-
-    with pytest.raises(ValueError):
-        get_graph_uuid(graph)
 
 # Unit tests extract_uuid
 @pytest.mark.parametrize("input_str, expected", [
@@ -230,7 +110,7 @@ def test_load_cimxml_graph_success(mock_graph_cls: MagicMock) -> None:
 
     graph = load_cimxml_graph("dummy.xml")
 
-    mock_graph.parse.assert_called_once_with("dummy.xml", format="cimxml", schema_path=None)
+    mock_graph.parse.assert_called_once_with("dummy.xml", format="cimxml")
     assert graph is mock_graph
 
 
@@ -238,9 +118,9 @@ def test_load_cimxml_graph_success(mock_graph_cls: MagicMock) -> None:
 def test_load_cimxml_graph_schema_path(mock_graph_cls: MagicMock) -> None:
     mock_graph = mock_graph_cls.return_value
     
-    graph = load_cimxml_graph("file.xml", schema_path="schema.xsd")
+    graph = load_cimxml_graph("file.xml")
 
-    mock_graph.parse.assert_called_once_with("file.xml", format="cimxml", schema_path="schema.xsd")
+    mock_graph.parse.assert_called_once_with("file.xml", format="cimxml")
     assert graph is mock_graph
 
 
@@ -471,21 +351,22 @@ def test_collect_cimxml_to_dataset_failedfile(mock_loader: MagicMock, caplog: py
     assert mock_loader.call_count == 2
      
 
-@pytest.mark.parametrize(
-        "schema", [
-            pytest.param(None, id="No schema"), 
-            pytest.param("schema.yaml", id="Schema present")
-        ])
-@patch("cim_plugin.utilities.load_cimxml_graph")
-def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: str|None) -> None:
-    g = Graph()
-    mock_loader.return_value = g
+# Test for a deprecated feature
+# @pytest.mark.parametrize(
+#         "schema", [
+#             pytest.param(None, id="No schema"), 
+#             pytest.param("schema.yaml", id="Schema present")
+#         ])
+# @patch("cim_plugin.utilities.load_cimxml_graph")
+# def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: str|None) -> None:
+#     g = Graph()
+#     mock_loader.return_value = g
 
-    ds = collect_cimxml_to_dataset(["file.xml"], schema_path=schema)
+#     ds = collect_cimxml_to_dataset(["file.xml"], schema_path=schema)
 
-    mock_loader.assert_called_once_with("file.xml", schema)
-    named = next(g for g in ds.graphs() if g.identifier != ds.default_graph.identifier)
-    assert len(named) == 0
+#     mock_loader.assert_called_once_with("file.xml", schema)
+#     named = next(g for g in ds.graphs() if g.identifier != ds.default_graph.identifier)
+#     assert len(named) == 0
 
 
 def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, cimxml_plugin: None) -> None:
@@ -514,51 +395,6 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, cimxml_p
     assert RDF.type in list(named.predicates())
     assert URIRef("https://cim.ucaiug.io/ns#ACLineSegment") in list(named.objects())
     assert len(ds.default_graph) == 0
-
-
-#Unit tests create_header_attribute
-def test_create_header_attribute_fromgraph() -> None:
-    graph = MagicMock()
-    fake_header = MagicMock()
-
-    with patch.object(CIMMetadataHeader, "from_graph", return_value=fake_header) as mock_from_graph, \
-         patch.object(CIMMetadataHeader, "empty") as mock_empty, \
-         patch.object(logger, "error") as mock_log:
-
-        result = create_header_attribute(graph)
-
-    assert result is fake_header
-    mock_from_graph.assert_called_once_with(graph)
-    mock_empty.assert_not_called()
-    mock_log.assert_not_called()
-
-
-def test_create_header_attribute_valueerror(caplog: pytest.LogCaptureFixture) -> None:
-    graph = MagicMock()
-    fake_empty_header = MagicMock()
-    fake_empty_header.subject = "generated-id"
-
-    with patch.object(CIMMetadataHeader, "from_graph", side_effect=ValueError("oops")) as mock_from_graph, \
-         patch.object(CIMMetadataHeader, "empty", return_value=fake_empty_header) as mock_empty:
-        result = create_header_attribute(graph)
-
-    assert result is fake_empty_header
-    mock_from_graph.assert_called_once_with(graph)
-    mock_empty.assert_called_once()
-    
-    assert len(caplog.records) == 1 
-    record = caplog.records[0] 
-    assert record.levelname == "ERROR" 
-    assert "oops" in record.message 
-    assert "generated-id" in record.message
-
-
-def test_create_header_attribute_otherexceptions() -> None:
-    graph = Graph()
-
-    with patch.object(CIMMetadataHeader, "from_graph", side_effect=TypeError("boom")):
-        with pytest.raises(TypeError):
-            create_header_attribute(graph)
 
 
 # Unit tests extract_subjects_by_object_type
@@ -818,6 +654,328 @@ def test_group_subjects_by_type_edgecases(make_graph, triples, expected_keys, ex
         # Flatten subjects across all groups
         all_subjects = {s for group in result.values() for s in group}
         assert all_subjects == expected_subjects
+
+
+# Unit tests load_graphs_from_Trig
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_empty(mock_dataset_cls: MagicMock) -> None:
+    ds = Dataset()
+    ds.parse = MagicMock()
+    mock_dataset_cls.return_value = ds
+
+    processors = load_graphs_from_trig("dummy.xml")
+
+    ds.parse.assert_called_once_with("dummy.xml", format="trig")
+    
+    assert len(processors) == 0
+
+
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_onegraph(mock_dataset_cls: MagicMock) -> None:
+    ds = Dataset()
+    g = ds.graph(identifier="graph1")
+    g.add((URIRef("s1"), URIRef("p1"), Literal("o")))
+    ds.parse = MagicMock()
+
+    mock_dataset_cls.return_value = ds
+
+    processors = load_graphs_from_trig("dummy.xml")
+
+    ds.parse.assert_called_once_with("dummy.xml", format="trig")
+    assert len(processors) == 1
+    assert len(processors[0].graph) == 1
+    assert isinstance(processors[0], CIMProcessor)
+    assert processors[0].graph.identifier == URIRef("graph1")
+    assert (URIRef("s1"), URIRef("p1"), Literal("o")) in processors[0].graph
+
+
+@pytest.mark.parametrize(
+        "id, expected",
+        [
+            pytest.param(URIRef("graph1"), URIRef("graph1"), id="URIRef"),
+            pytest.param("graph1", URIRef("graph1"), id="String"),
+            pytest.param(BNode("graph1"), BNode("graph1"), id="BNode"),
+            pytest.param(Literal("graph1"), URIRef("graph1"), id="Literal"),
+            pytest.param("", None, id="Empty string. A random BNode created."),
+            pytest.param(None, None, id="None. A random URIRef created.")
+        ]
+)
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_identifiers(mock_dataset_cls: MagicMock, id: Any, expected: Any) -> None:
+    ds = Dataset()
+    g = ds.graph(identifier=id)
+    g.add((URIRef("s1"), URIRef("p1"), Literal("o")))
+    ds.parse = MagicMock()
+
+    mock_dataset_cls.return_value = ds
+
+    processors = load_graphs_from_trig("dummy.xml")
+
+    identifier = processors[0].graph.identifier
+    if expected:
+        assert identifier == expected
+    else:
+        assert isinstance(identifier, URIRef) or isinstance(identifier, BNode)
+
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_multiplegraphs(mock_dataset_cls: MagicMock) -> None:
+    ds = Dataset()
+    tr1 = (URIRef("s1"), URIRef("p1"), Literal("o"))
+    tr2 = (URIRef("s2"), URIRef("p1"), Literal("o"))
+    g = ds.graph(identifier="graph1")
+    g.add(tr1)
+    g2 = ds.graph(identifier="graph2")
+    g2.add(tr2)
+    ds.parse = MagicMock()
+
+    mock_dataset_cls.return_value = ds
+
+    processors = load_graphs_from_trig("dummy.xml")
+
+    ds.parse.assert_called_once_with("dummy.xml", format="trig")
+    assert len(processors) == 2
+    
+    ids = {p.graph.identifier for p in processors} 
+    assert ids == {URIRef("graph1"), URIRef("graph2")}  # No default graph in list
+    p1 = next(p for p in processors if p.graph.identifier == URIRef("graph1")) 
+    assert tr1 in p1.graph 
+    assert tr2 not in p1.graph
+    p2 = next(p for p in processors if p.graph.identifier == URIRef("graph2")) 
+    assert tr2 in p2.graph
+    assert tr1 not in p2.graph
+
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_namespaces(mock_dataset_cls: MagicMock) -> None:
+    ds = Dataset()
+    g = ds.graph(identifier="graph1")
+    g.bind("ex", "www.example.com/")
+    g.bind("foo", "www.bar.com/")
+    g.add((URIRef("ex:s1"), URIRef("ex:p1"), Literal("o")))
+    ds.parse = MagicMock()
+
+    mock_dataset_cls.return_value = ds
+
+    processors = load_graphs_from_trig("dummy.xml")
+
+    ds.parse.assert_called_once_with("dummy.xml", format="trig")
+    assert len(processors) == 1
+    assert (URIRef("ex:s1"), URIRef("ex:p1"), Literal("o")) in processors[0].graph
+    ns = processors[0].graph.namespace_manager.store
+    assert ns.namespace("ex") == URIRef("www.example.com/")
+    assert ns.namespace("foo") == URIRef("www.bar.com/")    # Unused namespaces are also preserved
+
+
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_defaultgraph(mock_dataset_cls: MagicMock) -> None:
+    ds = Dataset()
+    g = ds.graph(identifier="graph1")
+    g.add((URIRef("s1"), URIRef("p1"), Literal("o")))
+    g2 = ds.graph(identifier=URIRef("urn:x-rdflib:default"))  # Default graph has triples
+    g2.add((URIRef("s2"), URIRef("p1"), Literal("o")))
+    ds.parse = MagicMock()
+
+    mock_dataset_cls.return_value = ds
+
+    processors = load_graphs_from_trig("dummy.xml")
+
+    ds.parse.assert_called_once_with("dummy.xml", format="trig")
+    assert len(processors) == 2
+    
+    ids = {p.graph.identifier for p in processors} 
+    assert ids == {URIRef("graph1"), URIRef("urn:x-rdflib:default")}
+    p1 = next(p for p in processors if p.graph.identifier == URIRef("graph1")) 
+    assert (URIRef("s1"), URIRef("p1"), Literal("o")) in p1.graph 
+    p2 = next(p for p in processors if p.graph.identifier == URIRef("urn:x-rdflib:default")) 
+    assert (URIRef("s2"), URIRef("p1"), Literal("o")) in p2.graph
+
+
+@patch("cim_plugin.utilities.Dataset")
+def test_load_graphs_from_trig_parseexception(mock_dataset_cls: MagicMock) -> None:
+    ds = Dataset()
+    ds.parse = MagicMock(side_effect = ValueError)
+    mock_dataset_cls.return_value = ds
+
+    with pytest.raises(ValueError):
+        load_graphs_from_trig("dummy.xml")
+
+    ds.parse.assert_called_once_with("dummy.xml", format="trig")
+
+# Unit tests load_graphs_from_cimxml
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_emptygraph(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g = CIMGraph()
+    mock_load.return_value = g
+    mock_header = CIMMetadataHeader.empty(URIRef("h1"))
+    mock_create.return_value = mock_header
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    mock_load.assert_called_once_with("dummy.xml")
+    mock_create.assert_called_once_with(g)
+    assert len(ds) == 1
+    pr = ds[0]
+    assert isinstance(pr, CIMProcessor)
+    assert pr.identifier == URIRef("h1")
+    assert pr.graph != g    # New graph is made in the function, so should not be the same
+    assert isinstance(pr.graph, CIMGraph)
+    assert pr.graph.metadata_header is None # Header is not bound to the graph, though it is temporarily made to extract/create the identifier
+    assert len(pr.graph) == 0
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_parsingerror(mock_load: MagicMock, mock_create: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+    g2 = CIMGraph()
+    mock_header2 = CIMMetadataHeader.empty(URIRef("h2"))
+    mock_create.return_value = mock_header2
+    mock_load.side_effect = [CIMXMLParseError("dummy1.xml", "Error parsing"), g2]
+
+    ds = load_graphs_from_cimxml(["dummy1.xml", "dummy2.xml"])
+    assert len(ds) == 1
+    assert ds[0].identifier == URIRef("h2")
+    mock_load.assert_has_calls([call("dummy1.xml"), call("dummy2.xml")])
+    mock_create.assert_called_once_with(g2)
+    assert caplog.records[0].levelname == "ERROR"
+    assert "dummy1.xml" in caplog.text
+    assert "Error parsing" in caplog.text
+    
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_graphcontent(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g = CIMGraph()
+    g.bind("inc", "included.com")
+    g.add((URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")))
+    mock_load.return_value = g
+    mock_header = CIMMetadataHeader.empty(URIRef("h1"))
+    mock_header.graph.bind("ex", "excluded.org")
+    mock_header.add_triple(URIRef("excluded.org"), Literal("oh"))
+    mock_create.return_value = mock_header
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    mock_load.assert_called_once_with("dummy.xml")
+    mock_create.assert_called_once_with(g)
+    assert len(ds) == 1
+    pr = ds[0]
+    assert pr.graph.namespace_manager.store.namespace("inc") == URIRef("included.com")
+    assert pr.graph.namespace_manager.store.namespace("ex") == None
+    assert (URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")) in pr.graph
+    assert (URIRef("h1"), URIRef("excluded.org"), Literal("oh")) not in pr.graph
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_multiplefiles(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g1 = CIMGraph()
+    g2 = CIMGraph()
+    mock_load.side_effect = [g1, g2]
+    mock_header1 = CIMMetadataHeader.empty(URIRef("h1"))
+    mock_header2 = CIMMetadataHeader.empty(URIRef("h2"))
+    mock_create.side_effect = [mock_header1, mock_header2]
+
+    ds = load_graphs_from_cimxml(["dummy1.xml", "dummy2.xml"])
+
+    mock_load.assert_has_calls([call("dummy1.xml"), call("dummy2.xml")])
+    mock_create.assert_has_calls([call(g1), call(g2)])
+    assert len(ds) == 2
+    assert ds[0].identifier == URIRef("h1")
+    assert ds[1].identifier == URIRef("h2")
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_integrated(mock_load: MagicMock) -> None:
+    g = CIMGraph()
+    g.bind("inc", "included.com")
+    g.add((URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")))
+    g.add((URIRef("h1"), RDF.type, DCAT.Dataset))
+    mock_load.return_value = g
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    mock_load.assert_called_once_with("dummy.xml")
+
+    assert len(ds) == 1
+    pr = ds[0]
+    assert pr.identifier == URIRef("h1")
+    assert pr.graph.namespace_manager.store.namespace("inc") == URIRef("included.com")
+    assert (URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")) in pr.graph
+    assert (URIRef("h1"), RDF.type, DCAT.Dataset) in pr.graph
+
+
+@pytest.mark.parametrize(
+        "id, expected",
+        [
+            pytest.param(URIRef("graph1"), URIRef("graph1"), id="URIRef"),
+            pytest.param("graph1", URIRef("graph1"), id="String"),
+            pytest.param(BNode("graph1"), None, id="BNode. A random BNode is created"),
+            pytest.param(Literal("graph1"), URIRef("graph1"), id="Literal"),
+            pytest.param("", None, id="Empty string. A random BNode created."),
+            pytest.param(None, None, id="None. A random URIRef created.")
+        ]
+)
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_identifiers(mock_load: MagicMock, mock_create: MagicMock, id: Any, expected: Any) -> None:
+    g = CIMGraph()
+    mock_header = CIMMetadataHeader.empty(id)
+    g.add((URIRef("s1"), URIRef("p1"), Literal("o")))
+    mock_load.return_value = g
+    mock_create.return_value = mock_header
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    identifier = ds[0].graph.identifier
+    if expected:
+        assert identifier == expected
+    else:
+        assert isinstance(identifier, URIRef) or isinstance(identifier, BNode)
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_loadfailure(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    mock_load.return_value = "wrong"
+
+    with pytest.raises(AttributeError):
+        ds = load_graphs_from_cimxml("dummy.xml")
+        assert len(ds) == 0
+
+    mock_load.assert_called_once_with("dummy.xml")
+    mock_create.assert_called_once_with("wrong")
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_nofiles(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    ds = load_graphs_from_cimxml([])
+    assert len(ds) == 0
+    mock_load.assert_not_called()
+    mock_create.assert_not_called()
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_generator(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g1 = CIMGraph()
+    g2 = CIMGraph()
+    mock_load.side_effect = [g1, g2]
+    h1 = CIMMetadataHeader.empty(URIRef("h1"))
+    h2 = CIMMetadataHeader.empty(URIRef("h2"))
+    mock_create.side_effect = [h1, h2]
+
+    def file_gen():
+        yield "file1.xml"
+        yield "file2.xml"
+
+    ds = load_graphs_from_cimxml(file_gen())
+
+    mock_load.assert_has_calls([call("file1.xml"), call("file2.xml")])
+    mock_create.assert_has_calls([call(g1), call(g2)])
+    assert len(ds) == 2
+    assert ds[0].identifier == URIRef("h1")
+    assert ds[1].identifier == URIRef("h2")
 
 if __name__ == "__main__":
     pytest.main()

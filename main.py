@@ -6,7 +6,9 @@ import cim_plugin   # If this is removed the cim parser and serializer will no l
 import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
-from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph
+from pathlib import Path
+from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph, load_graphs_from_trig, load_graphs_from_cimxml
+from cim_plugin.cimxml_serializer import CIMXMLSerializer
 
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
@@ -58,33 +60,35 @@ def main():
 
     # These files are not included
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
-    file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
-    file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
+    # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
+    # file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
     linkmlfile = "../CoreEquipment.linkml.yaml"
-    ds = collect_cimxml_to_dataset([file, file2], schema_path=linkmlfile)
-    g3 = load_cimxml_graph(file3, schema_path=None)   # Has different namespace for cim, so must be loaded separetely from the others
-    
-    # Select individual graphs by name
-    g1 = ds.graph(URIRef('urn:uuid:e710212f-f6b2-8d4c-9dc0-365398d8b59c'))
-    g2 = ds.graph(URIRef('urn:uuid:1d08772d-c1d0-4c47-810d-b14908cd94f5'))
-    for g in ds.graphs():
-        print(g.identifier) # Find the names by printing the identifiers of the graphs
+    g = load_graphs_from_cimxml([file])
+    g1 = g[0]
+    # g1.extract_header()
 
+    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    # t = load_graphs_from_trig(tfile)
+    # t1 = t[0]
+    # t1.extract_header()
+    
+    # g1.set_schema(linkmlfile)
+    g1.update_namespace("eu", "http://iec.ch/TC57/CIM100-European#")
+    # diffs = g1.namespaces_different_from_model()
+    # print(diffs)
+    # g1.enrich_literal_datatypes(allow_different_namespaces=True)
+    # t1.replace_header(g1.graph.metadata_header)
     counter = 0
-    for s, p, o in g2:  # Show random triples
+    for s, p, o in g1.graph:
         if isinstance(o, Literal):
             print(s, p, o, o.datatype)
             counter += 1
             if counter == 5:
                 break
 
-    # How to look at the header
-    if g1.metadata_header:
-        print(g1.metadata_header.triples)
-
-    # Examples of how to serialise to cimxml
+    # print(g1.slot_index)
     # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
-    # g1.serialize(destination=str(output_file), format="cimxml")
+    # g1.graph.serialize(destination=str(output_file), format="cimxml")
 
     # output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh_parser_changed.xml"
     # g2.serialize(destination=str(output_file2), format="cimxml")
@@ -92,7 +96,21 @@ def main():
     # output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er_parser_changed.xml"
     # g3.serialize(destination=str(output_file3), format="cimxml", qualifier="urn")
 
+    # t1.update_namespace("cim", str(g1.graph.namespace_manager.store.namespace("cim")))
+    # t1.update_namespace("eu", str(g1.graph.namespace_manager.store.namespace("eu")))
 
+    # t1.set_schema(linkmlfile)
+    # diffs = t1.namespaces_different_from_model()
+    # print(diffs)
+    # print(t1.schema.namespaces())
+
+    # output_file3 = Path.cwd().parent / "fromtrig_grid_eq_header_swapped.xml"
+    # t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
+
+    # t1.merge_header()
+    # output_file_trig = Path.cwd().parent / "fromxml_totrig_grid_eq.trig"
+    # g1.graph.serialize(destination=str(output_file_trig), format="trig")
+    
 
 if __name__ == "__main__":
     main()

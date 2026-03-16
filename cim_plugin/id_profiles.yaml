@@ -14,7 +14,7 @@ profiles:
   "http://iec.ch/TC57/ns/CIM/EquipmentBoundary-EU/3.0": []
   "http://iec.ch/TC57/ns/CIM/GeographicalLocation-EU/3.0": []
   "http://iec.ch/TC57/ns/CIM/Operation-EU/3.0": []
-  "http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0": 
+  "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": &shortcircuit_4_0 
     - cim:ACLineSegment
     - cim:AsynchronousMachine
     - cim:BusbarSection
@@ -43,7 +43,7 @@ profiles:
   # IEC 61970-452:2021:
   "http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0": []
   "http://iec.ch/TC57/ns/CIM/Operation/4.0": []
-  "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": &shortcircuit_4_0 []
+  # "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": &shortcircuit_4_0 []   This is repeated above. Check!
 
 
   #IEC 61970-456:2021:

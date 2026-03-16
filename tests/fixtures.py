@@ -1,13 +1,11 @@
 import pytest
 from typing import Callable, Generator
 from linkml_runtime import SchemaView
-from linkml_runtime import SchemaView
-from linkml_runtime.linkml_model.meta import SchemaDefinition
+from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
 from rdflib import Graph, URIRef, Namespace, BNode, Literal
 from rdflib.namespace import RDF, DCAT
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
-from cim_plugin.cimxml_parser import CIMXMLParser
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
 from cim_plugin.graph import CIMGraph
@@ -38,6 +36,22 @@ def make_schemaview() -> Callable[..., SchemaView]:
         return SchemaView(schema=schema) # type: ignore
 
     return _factory
+
+@pytest.fixture
+def make_slot_index() -> Callable[..., dict]:
+    """Factory for creating a slot_index."""
+
+    def _factory(slots: list[dict[str, str]]) -> dict:
+        slot_dict: dict = {}
+        for d in slots:
+            for key, value in d.items():
+                slot_def = SlotDefinition(name=key, range=value)
+                slot_dict[key] = slot_def
+        
+        return slot_dict
+
+    return _factory
+            
 
 
 # Graph making fixtures
@@ -76,6 +90,7 @@ def make_cimgraph():
 
     # Create metadata header
     header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+    header.graph.bind("ex", Namespace("http://example.com/"))
     header.add_triple(RDF.type, DCAT.Dataset)
     g.metadata_header = header
 
@@ -95,24 +110,6 @@ def build_graph_with_blank_header() -> tuple[Graph, BNode, set[BNode]]:
     g.add((b2, URIRef("urn:p:3"), Literal("value"))) 
     
     return g, header, {header, b1, b2}
-
-# CIMXMLParser
-@pytest.fixture
-def cimxmlinstance_w_prefixes(make_schemaview):
-    """Create an instance with a real SchemaView."""
-    obj = CIMXMLParser()
-    obj.schemaview = make_schemaview(prefixes={"ex": {"prefix_prefix": "ex", "prefix_reference": "www.example.org"}})
-    return obj
-
-
-@pytest.fixture
-def make_cimxmlparser() -> Callable[..., CIMXMLParser]:
-    def _factory(schemaview: SchemaView) -> CIMXMLParser:
-        obj = CIMXMLParser()
-        obj.schema_path = "schema.yaml"
-        obj.schemaview = schemaview
-        return obj
-    return _factory
 
 
 # CIMXMLSerializer

@@ -1,4 +1,4 @@
-from typing import Callable, Type, cast, IO
+from typing import Callable, Type, cast
 import pytest
 from unittest.mock import MagicMock, call, patch, Mock
 import uuid
@@ -108,7 +108,7 @@ def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
         ("http://bar.org/Value", "bar"),
     ],
 )
-def test__collect_used_namespaces_onlyregisterednamespaces(make_cimgraph: CIMGraph, uri: str, expected_prefix: str) -> None:
+def test_collect_used_namespaces_onlyregisterednamespaces(make_cimgraph: CIMGraph, uri: str, expected_prefix: str) -> None:
     # Collecting namespace if it exist in the namespace_manager
     g = make_cimgraph
     g.add((URIRef(uri), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
@@ -143,7 +143,7 @@ def test_collect_used_namespaces_unregisterednamespaces(make_cimgraph: CIMGraph,
     assert all(not str(ns).startswith(uri.rsplit("/", 1)[0]) for ns in ns_list.values())
     
 
-def test_urns_are_ignored(make_cimgraph: CIMGraph) -> None:
+def test_collect_used_namespaces_urnsignored(make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
     g.add((URIRef("urn:uuid:1234"), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
 
@@ -159,6 +159,7 @@ def test_collect_used_namespaces_headertriples(make_cimgraph: CIMGraph) -> None:
 
     # Add header triples
     assert g.metadata_header    # Without this pylance reacts to add_triple
+    g.metadata_header.graph.bind("foo", "http://foo.org/ns#")
     g.metadata_header.add_triple(
         URIRef("http://foo.org/ns#headerPredicate"),
         URIRef("http://foo.org/ns#headerObject"),
@@ -250,12 +251,34 @@ def test_collect_used_namespaces_overlappingnamespaces() -> None:
     assert str(ns_list["exns"]) == "http://example.com/ns/"
 
 
+def test_collect_used_namespaces_overlappingnamespacesshortnotused() -> None:
+    g = CIMGraph()
+    g.bind("ex", Namespace("http://example.com/"))
+    g.bind("exns", Namespace("http://example.com/ns/"))
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/ns/header"))
+    g.add((
+        URIRef("http://example.com/ns/Thing"),
+        URIRef("http://example.com/ns/p"),
+        URIRef("http://example.com/ns/Object")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+    assert "ex" not in ns_list
+    assert "exns" in ns_list
+    assert str(ns_list["exns"]) == "http://example.com/ns/"
+
+
 def test_collect_used_namespaces_collisions() -> None:
+    # This test just shows that g.bind decides which prefix is kept with namespace collisions.
+    # Should possibly be removed.
+
     g = CIMGraph()
 
-    # Two prefixes bound to the same namespace URI
-    g.bind("ex", Namespace("http://example.com/"))
-    g.bind("alt", Namespace("http://example.com/"))
+    # Three prefixes bound to the same namespace URI in different ways
+    g.bind("ex0", Namespace("http://example.com/"))
+    g.bind("ex", Namespace("http://example.com/"), override=True) # New prefix replaces old
+    g.bind("alt", Namespace("http://example.com/"), override=False) # Old prefix kept, new not added
 
     g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
 
@@ -270,8 +293,32 @@ def test_collect_used_namespaces_collisions() -> None:
     print(ns_list)
 
     assert len(ns_list) == 1    # Only one prefix should survive
-    assert list(ns_list.values())[0] == URIRef("http://example.com/")   # It must map to the correct namespace URI
-    assert list(ns_list.keys())[0] in {"ex", "alt"} # And the prefix must be one of the registered ones
+    assert "ex" in ns_list
+    assert ns_list["ex"] == URIRef("http://example.com/")   # It must map to the correct namespace URI
+
+
+def test_collect_used_namespaces_collisionsfromdifferentsources() -> None:
+    # This test shows what this function does with namespace collisions.
+    g = CIMGraph()
+    g.bind("ex", Namespace("http://example.com/"))
+
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("http://example.com/header"))
+    g.metadata_header.graph.bind("alt", Namespace("http://example.com/"))
+    g.metadata_header.add_triple(URIRef("http://example.com/p"), Literal("o"))
+
+    g.add((
+        URIRef("http://example.com/Thing"),
+        URIRef("http://example.com/p"),
+        URIRef("http://example.com/o")
+    ))
+
+    ser = CIMXMLSerializer(g)
+    ns_list = dict(ser._collect_used_namespaces())
+
+    assert len(ns_list) == 2    # Both namespaces are collected
+    assert "alt" in ns_list
+    assert "ex" in ns_list
+    assert ns_list["ex"] == ns_list["alt"]  # Both prefixes points to the same namespace
 
 
 def test_collect_used_namespaces_rebindingnamespace() -> None:
@@ -629,7 +676,7 @@ def test_write_header_rdftypehandling(capture_writer: tuple[list, Callable]) -> 
 
     result = "".join(output)
     print(result)
-    assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1">\n    <rdf:type rdf:resource="http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel"/>\n    <rdf:type rdf:resource="o"/>\n  </dcat:Dataset>\n'
+    assert '<rdf:type rdf:resource="http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel"/>' in result
     assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
 
 

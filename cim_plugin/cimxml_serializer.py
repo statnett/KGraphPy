@@ -9,7 +9,7 @@ from xml.sax.saxutils import quoteattr, escape
 import logging
 from typing import IO, Any, Dict, Optional
 from cim_plugin.utilities import group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
-from cim_plugin.namespaces import MD
+from cim_plugin.namespaces import MD, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 # from cim_plugin.graph import CIMGraph
@@ -47,52 +47,39 @@ class CIMXMLSerializer(Serializer):
             setattr(self.store, "metadata_header", header)
         return header
 
-
     def _collect_used_namespaces(self) -> list[tuple[str, URIRef]]:
         """Collect namespaces used by the header and/or the data.
         
         The namespace is only collected if it is both registered in the namespace_manager 
-        and present in the header/data.
+        and present in the triples of either header or data.
+        With namespace conflicts the namespace of the data is preserved.
 
         Returns:
             list[tuple[str, URIRef]]: Sorted list of tuples with prefix, namespace.
         """
-        nm = self.store.namespace_manager
         namespaces: dict[str, URIRef] = {}
 
-        # Sorting to prevent overlapping namespaces from being excluded
-        known = sorted(nm.namespaces(), key=lambda item: len(str(item[1])), reverse=True,)
-
-        def add_uri(uri: URIRef | Node):
-            if not isinstance(uri, URIRef):
-                return
-
-            uri_str = str(uri)
-
-            if uri_str.startswith("urn:"):
-                return
-
-            # Match only namespaces already registered in the graph,
-            for prefix, ns in known:
-                ns_str = str(ns)
-                if uri_str.startswith(ns_str):
-                    namespaces[prefix] = ns
-                    break
-
-        # Header
+        # --- Header namespaces ---
         header = getattr(self.store, "metadata_header", None)
         if header is not None:
-            add_uri(header.subject)
-            for _, p, o in header.triples:
-                add_uri(p)
-                add_uri(o)
+            header_triples = list(header.graph.triples((None, None, None)))
+            header_ns = collect_specific_namespaces(
+                header_triples,
+                header.graph.namespace_manager
+            )
+            namespaces.update(header_ns)
+            # print("Header: ", namespaces)
 
-        # Data
-        for s, p, o in self.store:
-            add_uri(s)
-            add_uri(p)
-            add_uri(o)
+        # --- Data namespaces ---
+        data_triples = list(self.store.triples((None, None, None)))
+        data_ns = collect_specific_namespaces(
+            data_triples,
+            self.store.namespace_manager
+        )
+        namespaces.update(data_ns)
+        # print("With data: ", namespaces)
 
+        # Stable output
         return sorted(namespaces.items())
 
 
