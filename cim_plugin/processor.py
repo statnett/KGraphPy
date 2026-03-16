@@ -6,6 +6,7 @@ from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, 
 from cim_plugin.exceptions import LiteralCastingError
 from rdflib import URIRef, Literal, Node
 from rdflib.namespace import NamespaceManager
+from pathlib import Path
 import logging
 from typing import Optional
 
@@ -18,12 +19,29 @@ class CIMProcessor:
         self.schema: Optional[SchemaView] = None
         self.slot_index: Optional[dict] = None
 
-    def set_schema(self, filepath: str) -> None:
+    def set_schema(self, filepath: str|Path) -> None:
         self.schema = SchemaView(filepath)
         self.slot_index = _build_slot_index(self.schema)
         
     def convert_subject_uudi_format(self):
-        """Convert all subject uuids to format 'urn:uuid:'"""
+        """Convert all subject uuids to format 'urn:uuid:'
+        Not implemented yet.
+        """
+
+    def extract_header(self) -> None:
+        """Move header triples from graph to the metadata_header attribute."""
+        if self.graph.metadata_header:
+            logger.error("Metadata header already exist. Use .replace_header instead.")
+            return
+        
+        header = create_header_attribute(self.graph)
+        self.graph.metadata_header = header
+        self.graph.remove((header.subject, None, None))
+
+        # Remove blank nodes that belong to the header
+        for subject_node in header.reachable_nodes:
+            self.graph.remove((subject_node, None, None))
+
 
     def replace_header(self, header: CIMMetadataHeader | None = None) -> None:
         """Replace the header of the graph.
@@ -58,19 +76,6 @@ class CIMProcessor:
         # Replace header
         self.graph.metadata_header = header
 
-    def extract_header(self) -> None:
-        """Move header triples from graph to the metadata_header attribute."""
-        if self.graph.metadata_header:
-            logger.error("Metadata header already exist. Use .replace_header instead.")
-            return
-        
-        header = create_header_attribute(self.graph)
-        self.graph.metadata_header = header
-        self.graph.remove((header.subject, None, None))
-
-        # Remove blank nodes that belong to the header
-        for subject_node in header.reachable_nodes:
-            self.graph.remove((subject_node, None, None))
 
     def merge_header(self) -> None:
         """Merge header back into graph.
@@ -244,18 +249,22 @@ class CIMProcessor:
 
         logger.info(f"Enriching done. Added datatypes to {updated_count} triples.") # For clarity. May be removed later.
 
-    def to_trig(self, enrich_datatypes: bool = False):
-        """To be implemented:
-        - Merge header
-        - Add header triples special for trig? Or do this somewhere else?
-        - Enrich datatypes
-        """
 
-    def to_cimxml(self):
-        """To be implemented:
-        - Ensure metadata_header has triples.
-        - Ensure correct namespaces?
-        """
+    def to_file(self, file_path: str|Path, strategy) -> None:
+        """To be implemented."""
+
+    # def to_trig(self, file_path: str, enrich_datatypes: bool = False, schema_path: Optional[str|Path]=None) -> None:
+    #     """To be implemented:
+    #     - Merge header
+    #     - Add header triples special for trig? Or do this somewhere else?
+    #     - Enrich datatypes
+    #     """
+
+    # def to_cimxml(self):
+    #     """To be implemented:
+    #     - Ensure metadata_header has triples.
+    #     - Ensure correct namespaces?
+    #     """
 
 # Not in use, but might become usefull later
 def _check_for_namespace_collisions(namespaces1: NamespaceManager, namespaces2: NamespaceManager) -> bool:
