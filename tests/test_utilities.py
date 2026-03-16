@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, call
 import uuid
 from rdflib import Graph, Namespace, URIRef, Literal, BNode, Dataset
 from rdflib.namespace import RDF, RDFS, DCAT
@@ -15,7 +15,8 @@ from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph, make_ci
 from cim_plugin.utilities import (
     extract_uuid,
     _extract_uuid_from_urn, 
-    load_cimxml_graph, 
+    load_cimxml_graph,
+    load_graphs_from_cimxml,
     collect_cimxml_to_dataset,
     extract_subjects_by_object_type,
     group_subjects_by_type,
@@ -799,6 +800,182 @@ def test_load_graphs_from_trig_parseexception(mock_dataset_cls: MagicMock) -> No
 
     ds.parse.assert_called_once_with("dummy.xml", format="trig")
 
+# Unit tests load_graphs_from_cimxml
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_emptygraph(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g = CIMGraph()
+    mock_load.return_value = g
+    mock_header = CIMMetadataHeader.empty(URIRef("h1"))
+    mock_create.return_value = mock_header
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    mock_load.assert_called_once_with("dummy.xml")
+    mock_create.assert_called_once_with(g)
+    assert len(ds) == 1
+    pr = ds[0]
+    assert isinstance(pr, CIMProcessor)
+    assert pr.identifier == URIRef("h1")
+    assert pr.graph != g    # New graph is made in the function, so should not be the same
+    assert isinstance(pr.graph, CIMGraph)
+    assert pr.graph.metadata_header is None # Header is not bound to the graph, though it is temporarily made to extract/create the identifier
+    assert len(pr.graph) == 0
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_parsingerror(mock_load: MagicMock, mock_create: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+    g2 = CIMGraph()
+    mock_header2 = CIMMetadataHeader.empty(URIRef("h2"))
+    mock_create.return_value = mock_header2
+    mock_load.side_effect = [CIMXMLParseError("dummy1.xml", "Error parsing"), g2]
+
+    ds = load_graphs_from_cimxml(["dummy1.xml", "dummy2.xml"])
+    assert len(ds) == 1
+    assert ds[0].identifier == URIRef("h2")
+    mock_load.assert_has_calls([call("dummy1.xml"), call("dummy2.xml")])
+    mock_create.assert_called_once_with(g2)
+    assert caplog.records[0].levelname == "ERROR"
+    assert "dummy1.xml" in caplog.text
+    assert "Error parsing" in caplog.text
+    
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_graphcontent(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g = CIMGraph()
+    g.bind("inc", "included.com")
+    g.add((URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")))
+    mock_load.return_value = g
+    mock_header = CIMMetadataHeader.empty(URIRef("h1"))
+    mock_header.graph.bind("ex", "excluded.org")
+    mock_header.add_triple(URIRef("excluded.org"), Literal("oh"))
+    mock_create.return_value = mock_header
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    mock_load.assert_called_once_with("dummy.xml")
+    mock_create.assert_called_once_with(g)
+    assert len(ds) == 1
+    pr = ds[0]
+    assert pr.graph.namespace_manager.store.namespace("inc") == URIRef("included.com")
+    assert pr.graph.namespace_manager.store.namespace("ex") == None
+    assert (URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")) in pr.graph
+    assert (URIRef("h1"), URIRef("excluded.org"), Literal("oh")) not in pr.graph
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_multiplefiles(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g1 = CIMGraph()
+    g2 = CIMGraph()
+    mock_load.side_effect = [g1, g2]
+    mock_header1 = CIMMetadataHeader.empty(URIRef("h1"))
+    mock_header2 = CIMMetadataHeader.empty(URIRef("h2"))
+    mock_create.side_effect = [mock_header1, mock_header2]
+
+    ds = load_graphs_from_cimxml(["dummy1.xml", "dummy2.xml"])
+
+    mock_load.assert_has_calls([call("dummy1.xml"), call("dummy2.xml")])
+    mock_create.assert_has_calls([call(g1), call(g2)])
+    assert len(ds) == 2
+    assert ds[0].identifier == URIRef("h1")
+    assert ds[1].identifier == URIRef("h2")
+
+
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_integrated(mock_load: MagicMock) -> None:
+    g = CIMGraph()
+    g.bind("inc", "included.com")
+    g.add((URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")))
+    g.add((URIRef("h1"), RDF.type, DCAT.Dataset))
+    mock_load.return_value = g
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    mock_load.assert_called_once_with("dummy.xml")
+
+    assert len(ds) == 1
+    pr = ds[0]
+    assert pr.identifier == URIRef("h1")
+    assert pr.graph.namespace_manager.store.namespace("inc") == URIRef("included.com")
+    assert (URIRef("included.com/s"), URIRef("included.com/p"), Literal("o")) in pr.graph
+    assert (URIRef("h1"), RDF.type, DCAT.Dataset) in pr.graph
+
+
+@pytest.mark.parametrize(
+        "id, expected",
+        [
+            pytest.param(URIRef("graph1"), URIRef("graph1"), id="URIRef"),
+            pytest.param("graph1", URIRef("graph1"), id="String"),
+            pytest.param(BNode("graph1"), None, id="BNode. A random BNode is created"),
+            pytest.param(Literal("graph1"), URIRef("graph1"), id="Literal"),
+            pytest.param("", None, id="Empty string. A random BNode created."),
+            pytest.param(None, None, id="None. A random URIRef created.")
+        ]
+)
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_identifiers(mock_load: MagicMock, mock_create: MagicMock, id: Any, expected: Any) -> None:
+    g = CIMGraph()
+    mock_header = CIMMetadataHeader.empty(id)
+    g.add((URIRef("s1"), URIRef("p1"), Literal("o")))
+    mock_load.return_value = g
+    mock_create.return_value = mock_header
+
+    ds = load_graphs_from_cimxml("dummy.xml")
+
+    identifier = ds[0].graph.identifier
+    if expected:
+        assert identifier == expected
+    else:
+        assert isinstance(identifier, URIRef) or isinstance(identifier, BNode)
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_loadfailure(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    mock_load.return_value = "wrong"
+
+    with pytest.raises(AttributeError):
+        ds = load_graphs_from_cimxml("dummy.xml")
+        assert len(ds) == 0
+
+    mock_load.assert_called_once_with("dummy.xml")
+    mock_create.assert_called_once_with("wrong")
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_nofiles(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    ds = load_graphs_from_cimxml([])
+    assert len(ds) == 0
+    mock_load.assert_not_called()
+    mock_create.assert_not_called()
+
+
+@patch("cim_plugin.utilities.create_header_attribute")
+@patch("cim_plugin.utilities.load_cimxml_graph")
+def test_load_graphs_from_cimxml_generator(mock_load: MagicMock, mock_create: MagicMock) -> None:
+    g1 = CIMGraph()
+    g2 = CIMGraph()
+    mock_load.side_effect = [g1, g2]
+    h1 = CIMMetadataHeader.empty(URIRef("h1"))
+    h2 = CIMMetadataHeader.empty(URIRef("h2"))
+    mock_create.side_effect = [h1, h2]
+
+    def file_gen():
+        yield "file1.xml"
+        yield "file2.xml"
+
+    ds = load_graphs_from_cimxml(file_gen())
+
+    mock_load.assert_has_calls([call("file1.xml"), call("file2.xml")])
+    mock_create.assert_has_calls([call(g1), call(g2)])
+    assert len(ds) == 2
+    assert ds[0].identifier == URIRef("h1")
+    assert ds[1].identifier == URIRef("h2")
 
 if __name__ == "__main__":
     pytest.main()

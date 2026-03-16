@@ -12,6 +12,8 @@ from cim_plugin.namespaces import MD
 from cim_plugin.graph import CIMDataset, CIMGraph
 from cim_plugin.header import create_header_attribute
 from cim_plugin.processor import CIMProcessor
+from typing import Union, Iterable
+from pathlib import Path
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -55,18 +57,17 @@ def _extract_uuid_from_urn(urn: str) -> uuid.UUID:
     
     return uuid.UUID(urn[len(prefix):])
 
-def load_cimxml_graph(file_path: str) -> CIMGraph:
-    """Load one CIMXML file to Graph and get graph uuid.
+def load_cimxml_graph(file_path: str|Path) -> CIMGraph:
+    """Load one CIMXML file to Graph.
     
     Parameters:
         file_path (str): Path to CIMXML file.
-        schema_path (str): Path to linkML file with the cim model
 
     Raises:
         CIMXMLParseError: If errors in the parsing process is raised.
 
     Returns:
-        tuple[uuid.UUID, Graph]: The graph uuid and the Graph object.
+        CIMGraph: The graph as a CIMGraph object.
     """
     try:
         g = CIMGraph() 
@@ -105,11 +106,11 @@ def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[s
     return groups
 
 
-def load_graphs_from_trig(filepath: str) -> list[CIMProcessor]:
+def load_graphs_from_trig(filepath: str|Path) -> list[CIMProcessor]:
     """Load graphs from trig file into individual CIMProcessor objects.
     
     Parameters:
-        file_path (str): Path to trig file.
+        file_path (str|Path): Path to trig file.
 
     Returns:
         list[CIMProcessor]: List of CIMProcessor objects.
@@ -132,10 +133,23 @@ def load_graphs_from_trig(filepath: str) -> list[CIMProcessor]:
 
     return processors
 
-# Needs testing
-def load_graphs_from_cimxml(files: list[str]) -> list[CIMProcessor]:
+
+def load_graphs_from_cimxml(files: Union[str, Path, Iterable[Union[str, Path]]]) -> list[CIMProcessor]:
+    """Load graphs from one or more CIMXML files into a list of CIMProcessor objects.
+
+    The graph identifiers is extracted from the RDF.type triple of each graph, or randomly generated as fallback.
+    
+    Parameters:
+        files (Union[str, Path, Iterable[Union[str, Path]]]): A filepath or a list of filepaths.
+
+    Returns:
+        list[CIMProcessor]: The graphs from the files stored in CIMProcessor objects.
+    """
     processors: list[CIMProcessor] = []
     
+    if isinstance(files, (str, Path)):
+        files = [files]
+
     for file_path in files:
         try:
             graph = load_cimxml_graph(file_path)
