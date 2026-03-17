@@ -4,9 +4,11 @@ from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.namespaces import update_namespace_in_triples
 from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
 from cim_plugin.exceptions import LiteralCastingError
+from cim_plugin.to_file_strategies import _select_strategy
 from rdflib import URIRef, Literal, Node
 from rdflib.namespace import NamespaceManager
 from pathlib import Path
+from copy import deepcopy
 import logging
 from typing import Optional
 
@@ -15,10 +17,13 @@ logger = logging.getLogger('cimxml_logger')
 class CIMProcessor:
     def __init__(self, graph: CIMGraph):
         self.graph: CIMGraph = graph
-        self.identifier: Node = self.graph.identifier
         self.schema: Optional[SchemaView] = None
         self.slot_index: Optional[dict] = None
 
+    @property
+    def identifier(self):
+        return self.graph.identifier
+    
     def set_schema(self, filepath: str|Path) -> None:
         self.schema = SchemaView(filepath)
         self.slot_index = _build_slot_index(self.schema)
@@ -250,8 +255,39 @@ class CIMProcessor:
         logger.info(f"Enriching done. Added datatypes to {updated_count} triples.") # For clarity. May be removed later.
 
 
-    def to_file(self, file_path: str|Path, strategy) -> None:
-        """To be implemented."""
+    def _build_copy_for_serialization(self) -> "CIMProcessor":
+        """Build a copy of the processor that can be mutated and used for serialization."""
+        cim = CIMGraph(identifier=self.identifier)
+
+        for prefix, uri in self.graph.namespace_manager.namespaces():
+            cim.namespace_manager.bind(prefix, uri)
+
+        cim += self.graph
+        cim.metadata_header = self.graph.metadata_header
+
+        proc = CIMProcessor(cim)
+        proc.schema = self.schema
+        proc.slot_index = deepcopy(self.slot_index)
+
+        return proc
+
+    # Not tested. Should it be?
+    def to_file(self, file_path: str|Path, format: str = "cimxml", **kwargs) -> None:
+        """Send graph to file of given format.
+        
+        Parameters:
+            file_path (str|Path): Name and path of the new file.
+            format (str): The format of the file. Accepted values are 'cimxml' (default), 'trig' and 'jsonld'.
+            **kwargs: Options for output.
+                CIMXML:
+                    - 'qualifier' (str): The qualifier to use for uuids.
+                Trig: 
+                    - 'enrich_datatypes' (bool, default False) for allowing enriching of datatypes.
+                    - 'schema_path' (str) for link to linkML file with datatype information.  
+        """
+        output_copy = self._build_copy_for_serialization()
+        strategy = _select_strategy(format, file_path, kwargs)
+        strategy.serialize(output_copy)
 
     # def to_trig(self, file_path: str, enrich_datatypes: bool = False, schema_path: Optional[str|Path]=None) -> None:
     #     """To be implemented:

@@ -81,7 +81,7 @@ def make_graph() -> Callable[..., Graph]:
 @pytest.fixture
 def make_cimgraph():
     """Create a CIMGraph with a metadata header and some predefined namespaces."""
-    g = CIMGraph()
+    g = CIMGraph(identifier="graph1")
 
     # Register namespaces
     g.bind("ex", Namespace("http://example.com/"))

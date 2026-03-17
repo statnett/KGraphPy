@@ -1,3 +1,5 @@
+from unittest import result
+
 import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import URIRef, Literal, BNode
@@ -9,11 +11,28 @@ from cim_plugin.exceptions import LiteralCastingError
 from rdflib.namespace import DCAT, RDF
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition, Prefix
-from tests.fixtures import make_schemaview, make_slot_index
+from tests.fixtures import make_schemaview, make_slot_index, make_cimgraph
 from typing import Callable
 import logging
 
 logger = logging.getLogger('cimxml_logger')
+
+# Unit tests .identifier
+def test_identifier_immutability() -> None:
+    g = CIMGraph(identifier="graph1")
+    pr = CIMProcessor(g)
+    assert pr.identifier == URIRef("graph1")
+    with pytest.raises(AttributeError):
+        # Pylance silenced to test an invalid action
+        pr.identifier = URIRef("graph2")    # type: ignore
+
+
+def test_identifier_updates() -> None:
+    g = CIMGraph(identifier="graph1")
+    pr = CIMProcessor(g)
+
+    pr.graph = CIMGraph(identifier="graph2")
+    assert pr.identifier == URIRef("graph2")
 
 # Unit tests .replace_header
 @patch("cim_plugin.processor.merge_namespace_managers")
@@ -1303,5 +1322,73 @@ def test_replace_namespace_duplicatesinreplacements() -> None:
     assert result in {"https://first.com/p", "https://second.com/p"}
 
 
+# Unit tests ._build_copy_for_serialization
+def test_build_copy_for_serialization_emptygraph() -> None:
+    g = CIMGraph()
+    pr = CIMProcessor(g)
+
+    result = pr._build_copy_for_serialization()
+
+    assert result.graph.identifier is pr.graph.identifier
+    assert result.graph is not pr.graph
+    assert len(result.graph) == 0
+    assert result.schema is None
+    assert result.slot_index is None
+    assert result.graph.metadata_header is None
+
+
+def test_build_copy_for_serialization_basic(make_schemaview: Callable[..., SchemaView], make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    g.add((URIRef("http://foo.org/ns#s1"), URIRef("http://foo.org/ns#s2"), Literal("o")))
+    sv = make_schemaview()
+    pr = CIMProcessor(g)
+    pr.schema = sv
+    pr.slot_index = {"mocked": {"one": 1, "two": 2}}
+
+    result = pr._build_copy_for_serialization()
+
+    assert result.identifier == URIRef("graph1")
+    assert result.graph is not pr.graph
+    assert result.graph.metadata_header is pr.graph.metadata_header
+    assert result.schema is pr.schema
+    assert result.slot_index is not pr.slot_index
+    assert len(result.graph) == 1
+    assert result.graph.metadata_header
+    assert set(result.graph.namespace_manager.namespaces()) == set(pr.graph.namespace_manager.namespaces())
+    assert result.graph.namespace_manager.store.namespace("foo") == URIRef("http://foo.org/ns#")
+    assert result.graph.metadata_header.graph.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
+    assert (URIRef("http://example.com/header"), RDF.type, DCAT.Dataset) in result.graph.metadata_header.graph
+    assert (URIRef("http://foo.org/ns#s1"), URIRef("http://foo.org/ns#s2"), Literal("o")) in result.graph
+    assert result.slot_index == {"mocked": {"one": 1, "two": 2}}
+
+
+def test_build_copy_for_serialization_mutability(make_schemaview: Callable[..., SchemaView], make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    g.add((URIRef("http://foo.org/ns#s1"), URIRef("http://foo.org/ns#s2"), Literal("o")))
+    sv = make_schemaview()
+    pr = CIMProcessor(g)
+    pr.schema = sv
+    pr.slot_index = {"mocked": {"one": 1, "two": 2}}
+
+    result = pr._build_copy_for_serialization()
+    
+    assert result.slot_index
+    result.slot_index["mocked"]["one"] = 999
+    assert pr.slot_index["mocked"]["one"] == 1
+    assert result.slot_index["mocked"]["one"] == 999
+
+    assert result.graph.metadata_header
+    assert pr.graph.metadata_header
+    result.graph.metadata_header.add_triple(RDF.type, DCAT.Distribution)
+    assert (None, None, DCAT.Distribution) in pr.graph.metadata_header.graph
+
+    result.graph.add((URIRef("x"), URIRef("y"), URIRef("z")))
+    assert (URIRef("x"), URIRef("y"), URIRef("z")) not in pr.graph
+
+    assert result.schema
+    result.schema.add_slot(SlotDefinition("new_slot", "string"))
+    assert pr.schema and pr.schema.schema and isinstance(pr.schema.schema.slots, dict)
+    assert pr.schema.schema.slots["new_slot"] == SlotDefinition("new_slot", "string")
+    
 if __name__ == "__main__":
     pytest.main()
