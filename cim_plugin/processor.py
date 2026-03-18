@@ -1,3 +1,5 @@
+"""The CIMProcessor class, which allows for handling and manipulating CIM graphs in memory."""
+
 from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
