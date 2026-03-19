@@ -112,6 +112,19 @@ def build_graph_with_blank_header() -> tuple[Graph, BNode, set[BNode]]:
     return g, header, {header, b1, b2}
 
 
+@pytest.fixture
+def fake_parse_factory() -> Callable[..., Callable[..., Graph]]:
+    """Mocking parse by copying a graph into the triples of the graph being parsed."""
+    def _factory(source_graph: Graph) -> Callable[..., Graph]:
+        def fake_parse(self, *args, **kwargs) -> Graph:
+            self.namespace_manager = source_graph.namespace_manager
+            for triple in source_graph:
+                self.add(triple)
+            return self
+        return fake_parse
+    return _factory
+
+
 # CIMXMLSerializer
 @pytest.fixture
 def capture_writer() -> tuple[list, Callable]:

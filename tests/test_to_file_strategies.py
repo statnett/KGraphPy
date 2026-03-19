@@ -25,7 +25,7 @@ def test_trigstrategy_noschemapath() -> None:
 def test_trigstrategy_setschema() -> None:
     processor = Mock()
     processor.graph = Mock(metadata_header=None)
-    processor.schema = None
+    processor.schema = "fake_schema"
 
     strategy = TrigStrategy("out.trig", enrich_datatypes=True, schema_path="dummy.yaml")
     strategy.serialize(processor)

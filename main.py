@@ -8,7 +8,8 @@ from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
 from pathlib import Path
 from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph, load_graphs_from_trig, load_graphs_from_cimxml
-from cim_plugin.cimxml_serializer import CIMXMLSerializer
+from cim_plugin.header import CIMMetadataHeader
+from cim_plugin.namespaces import EU, CIM
 
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
@@ -64,52 +65,39 @@ def main():
     linkmlfile = "../CoreEquipment.linkml.yaml"
     g = load_graphs_from_cimxml([file])
     g1 = g[0]
-    # g1.extract_header()
+    g1.extract_header()
 
-    tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
-    t = load_graphs_from_trig(tfile)
-    t1 = t[0]
-    t1.extract_header()
+    # tfile = "../Nordic44/instances/Grid/trig/Nordic44-HV_EQ.trig"
+    # t = load_graphs_from_trig(tfile)
+    # t1 = t[0]
+    # t1.extract_header()
     
+    manifest_file = "../Nordic44/instances/Grid/cimxml/manifest.xml"
+    new_header = CIMMetadataHeader.from_manifest(manifest_file, g1.graph.metadata_header.subject)
+    g1.replace_header(new_header)
+
     g1.set_schema(linkmlfile)
-    g1.update_namespace("eu", "http://iec.ch/TC57/CIM100-European#")
-    # diffs = g1.namespaces_different_from_model()
-    # print(diffs)
-    # g1.enrich_literal_datatypes(allow_different_namespaces=True)
+    g1.update_namespace("eu", EU)
+    g1.update_namespace("cim", CIM)
+
+    g1.enrich_literal_datatypes(allow_different_namespaces=True)
     # t1.replace_header(g1.graph.metadata_header)
-    counter = 0
-    for s, p, o in g1.graph:
-        if isinstance(o, Literal):
-            print(s, p, o, o.datatype)
-            counter += 1
-            if counter == 5:
-                break
+    # counter = 0
+    # for s, p, o in g1.graph:
+    #     if isinstance(o, Literal):
+    #         print(s, p, o, o.datatype)
+    #         counter += 1
+    #         if counter == 5:
+    #             break
 
-    # print(g1.slot_index)
-    # output_file = Path.cwd().parent / "cimxml_to_cimxm_grid_eq_parser_changed.xml"
-    # g1.graph.serialize(destination=str(output_file), format="cimxml")
 
-    # output_file2 = Path.cwd().parent / "cimxml_to_cimxml_grid_ssh_parser_changed.xml"
-    # g2.serialize(destination=str(output_file2), format="cimxml")
-
-    # output_file3 = Path.cwd().parent / "cimxml_to_cimxml_networkcode_er_parser_changed.xml"
-    # g3.serialize(destination=str(output_file3), format="cimxml")
-
-    # t1.update_namespace("cim", str(g1.graph.namespace_manager.store.namespace("cim")))
-    # t1.update_namespace("eu", str(g1.graph.namespace_manager.store.namespace("eu")))
-
-    # t1.set_schema(linkmlfile)
-    # diffs = t1.namespaces_different_from_model()
-    # print(diffs)
-    # print(t1.schema.namespaces())
-
-    # output_file3 = Path.cwd().parent / "fromtrig_grid_eq_urn.xml"
+    # output_file = Path.cwd().parent / "fromtrig_grid_eq_urn.xml"
     # t1.to_file(output_file3, format="cimxml", qualifier="urn")
     # t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
 
     # t1.merge_header()
-    # output_file_trig = Path.cwd().parent / "fromxml_totrig_grid_eq.trig"
-    # g1.to_file(output_file_trig, format="trig", enrich_datatypes=True)
+    output_file_trig = Path.cwd().parent / "fromcimxml_totrig_grid_eq_header_switched.trig"
+    g1.to_file(output_file_trig, format="trig", enrich_datatypes=False)
     # g1.graph.serialize(destination=str(output_file_trig), format="trig")
     
 

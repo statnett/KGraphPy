@@ -1,5 +1,7 @@
 """The class which handles metadata header triples and information about them."""
 
+from pathlib import Path
+
 from rdflib import Graph, Node, URIRef, RDF, BNode, Literal
 from rdflib.namespace import DCTERMS, NamespaceManager
 from cim_plugin.namespaces import MD, collect_specific_namespaces
@@ -191,6 +193,44 @@ class CIMMetadataHeader:
             profile_predicates=profile_predicates,
             profile=profile,
         )
+    
+
+    @classmethod
+    def from_manifest(cls, file_path: str|Path, graph_uri: URIRef|str) -> "CIMMetadataHeader":
+        """Creates a header from a manifest file.
+
+        The manifest file can contain headers for multiple graphs. The correct header is found by the graph id.
+        
+        Parameters:
+            file_path (str|Path): Path to manifest file. The file must be an xml file.
+            graph_uri (URIRef|str): The identifier of the graph.
+
+        Raises:
+            ValueError: If no header triples matching the graph_uri is found.
+
+        Returns:
+            CIMMetadataHeader: The new header.
+        """
+        graph_uri = URIRef(graph_uri)
+        
+        manifest_graph = Graph()
+        manifest_graph.parse(source=file_path, format="xml")
+        
+        header_graph = Graph()
+        for triple in manifest_graph.triples((graph_uri, None, None)):
+            header_graph.add(triple)
+        
+        if len(header_graph) == 0:
+            raise ValueError(f"No header triples matching graph identifier {graph_uri} found in manifest file.")
+
+        nm = NamespaceManager(header_graph, bind_namespaces="none")
+        used_namespaces = collect_specific_namespaces(list(header_graph), manifest_graph.namespace_manager)
+        for prefix, ns_uri in used_namespaces.items():
+            nm.bind(prefix, ns_uri, override=True)
+        
+        header_graph.namespace_manager = nm
+
+        return cls(subject=graph_uri, graph=header_graph)
 
     @staticmethod
     def _repair_blank_header_subject(graph: Graph, blank: Node) -> URIRef:

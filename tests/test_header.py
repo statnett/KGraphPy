@@ -1,11 +1,11 @@
-from typing import Iterable
+from typing import Iterable, Callable, Any
 import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import Graph, URIRef, Literal, BNode, Node
 from rdflib.namespace import DCAT, DCTERMS, RDF
 from cim_plugin.namespaces import MD
 from cim_plugin.header import CIMMetadataHeader, create_header_attribute
-from tests.fixtures import build_graph_with_blank_header
+from tests.fixtures import build_graph_with_blank_header, make_graph, fake_parse_factory
 import logging
 
 logger = logging.getLogger('cimxml_logger')
@@ -498,6 +498,212 @@ def test_empty_profile_none_calls_collect(mock_collect: MagicMock) -> None:
     h = CIMMetadataHeader.empty(profile=None)
     assert h.profile == "auto"
     mock_collect.assert_called_once()
+
+# Unit tests .from_manifest
+@patch("cim_plugin.header.collect_specific_namespaces")
+def test_from_manifest_wrongfiletype(mock_collect: MagicMock) -> None:
+    with patch("cim_plugin.header.Graph.parse", side_effect=Exception) as mock_parse:
+        with pytest.raises(Exception) as exc:
+            CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
+            mock_parse.assert_called_once_with("dummy.trig", "graph1")
+    
+    mock_collect.assert_not_called()
+
+
+@patch("cim_plugin.header.collect_specific_namespaces")
+def test_from_manifest_emptyfile(mock_collect: MagicMock, fake_parse_factory: Callable) -> None:
+    mock_graph = Graph()
+    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)) as mock_parse:
+        with pytest.raises(ValueError) as exc:
+            CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+            mock_parse.assert_called_once_with("dummy.xml", "xml")
+    
+    mock_collect.assert_not_called()
+    assert "No header triples matching graph identifier graph1 found in manifest file." in str(exc.value)
+    
+
+@pytest.mark.parametrize(
+    "manifest_triples, subject, expected_triples, expect_error",
+    [
+        pytest.param(
+            [
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph2"), URIRef("http://example.org/p"), Literal("x")),
+            ],
+            URIRef("graph1"),
+            {(URIRef("graph1"), URIRef("http://example.org/p"), Literal("o"))},
+            False,
+            id="URIRef subject, graph with multiple subjects."
+        ),
+        pytest.param(
+            [
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph2"), URIRef("http://example.org/p"), Literal("x")),
+            ],
+            "graph1",
+            {(URIRef("graph1"), URIRef("http://example.org/p"), Literal("o"))},
+            False,
+            id="String subject, graph with multiple subjects."
+        ),
+                pytest.param(
+            [
+                (URIRef("graph1#section"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("x")),
+            ],
+            URIRef("graph1#section"),
+            {(URIRef("graph1#section"), URIRef("http://example.org/p"), Literal("o"))},
+            False,
+            id="URIRef subject with fragment"
+        ),
+        pytest.param(
+            [
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph2"), URIRef("http://example.org/p"), Literal("x")),
+            ],
+            URIRef("graph3"),
+            set(),
+            True,
+            id="Subject not found, no matches."
+        ),
+        pytest.param(
+            [
+                (URIRef("graph1"), URIRef("http://example.org/p1"), Literal("o1")),
+                (URIRef("graph1"), URIRef("http://example.org/p2"), Literal("o2")),
+                (URIRef("graph2"), URIRef("http://example.org/p3"), Literal("o3")),
+            ],
+            URIRef("graph1"),
+            {
+                (URIRef("graph1"), URIRef("http://example.org/p1"), Literal("o1")),
+                (URIRef("graph1"), URIRef("http://example.org/p2"), Literal("o2")),
+            },
+            False,
+            id="Multiple triples for the same subject"
+        ),
+        pytest.param(
+            [
+                (Literal("weird"), URIRef("http://example.org/p"), Literal("o")),
+            ],
+            Literal("weird"),
+            set(),
+            True,
+            id="Literal subject, no matches"
+        ),
+        pytest.param(
+            [
+                (BNode("b1"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("x")),
+            ],
+            BNode("b1"),
+            set(),
+            True,
+            id="Blank node subject, no matches."
+        ),
+        pytest.param(
+            [
+                (BNode("b1"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("x")),
+            ],
+            "b1",
+            set(),
+            True,
+            id="String subject, blank node in manifest, no matches."
+        ),
+        pytest.param(
+            [
+                (BNode("graph1"), URIRef("http://example.org/p"), Literal("o")),
+                (URIRef("graph1"), URIRef("http://example.org/p"), Literal("x")),
+                (Literal("graph1"), URIRef("http://example.org/p"), Literal("y")),
+            ],
+            "graph1",
+            {(URIRef("graph1"), URIRef("http://example.org/p"), Literal("x"))},
+            False,
+            id="Mixed triples case, matches only the URI."
+        ),
+    ]
+)
+@patch("cim_plugin.header.collect_specific_namespaces")
+def test_from_manifest_parametrized(
+    mock_collect: MagicMock,
+    make_graph: Callable[..., Graph],
+    fake_parse_factory: Callable,
+    manifest_triples: list[tuple[Node, Node, Node]],
+    subject: Any,
+    expected_triples: set[tuple[Node, Node, Node]],
+    expect_error: bool,
+) -> None:
+    mock_collect.return_value = {"ex": "http://example.org/"}
+    manifest = make_graph(manifest_triples)
+    print(list(manifest))
+    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(manifest)):
+        
+        if expect_error:
+            with pytest.raises(ValueError) as exc:
+                CIMMetadataHeader.from_manifest("dummy.xml", subject)
+                mock_collect.assert_not_called()
+                assert "No header triples matching graph identifier" in str(exc.value)
+            return
+
+        header = CIMMetadataHeader.from_manifest("dummy.xml", subject)
+
+        mock_collect.assert_called_once()
+        assert set(header.graph) == expected_triples
+        assert header.graph.namespace_manager.store.namespace("ex") == URIRef("http://example.org/")
+
+
+def test_from_manifest_namespaces(fake_parse_factory: MagicMock) -> None:
+    mock_graph = Graph()
+    mock_graph.bind("ex", "https://example.org/")
+    mock_graph.bind("foo", "www.bar.com/")
+    mock_graph.bind("exa", "www.extra.com/")
+    mock_graph.add((URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")))
+    mock_graph.add((URIRef("graph1"), URIRef("www.bar.com/p2"), Literal("o2")))
+    mock_graph.add((URIRef("graph2"), URIRef("www.extra.com/p3"), Literal("o3")))
+    
+    
+    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
+        header = CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+    
+    assert header.subject == URIRef("graph1")
+    assert len(header.graph) == 2
+    assert len(list(header.graph.namespace_manager.store.namespaces())) == 2
+    assert (URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")) in header.graph
+    assert (URIRef("graph1"), URIRef("www.bar.com/p2"), Literal("o2")) in header.graph
+    # The used namespaces are included, but not the one that was not used
+    assert header.graph.namespace_manager.store.namespace("ex") == URIRef("https://example.org/")
+    assert header.graph.namespace_manager.store.namespace("foo") == URIRef("www.bar.com/")
+    assert header.graph.namespace_manager.store.namespace("exa") == None
+
+def test_from_manifest_nonamespacemanager(fake_parse_factory: MagicMock) -> None:
+    # This should not be possible, as there are always default namespaces when parsing.
+    # Documents that everything still works if it ever does.
+    mock_graph = Graph()
+    mock_graph.add((URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")))
+    # Pylance silenced to test an edge case
+    mock_graph.namespace_manager = None    # type: ignore
+    
+    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
+        header = CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+    
+    assert header.subject == URIRef("graph1")
+    assert len(header.graph) == 1
+    assert len(list(header.graph.namespace_manager.store.namespaces())) == 0
+    assert (URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")) in header.graph
+    assert header.graph.namespace_manager.store.namespace("ex") == None
+
+@patch("cim_plugin.header.collect_specific_namespaces")
+def test_from_manifest_differentnamespacereturned(mock_collect: MagicMock, fake_parse_factory: MagicMock) -> None:
+    # Documents what happends if collect_specific_namespaces return a different namespace then in the triples (but same prefix).
+    # This should never happen because it only returns the namespaces used by the triples.
+    mock_graph = Graph()
+    mock_graph.bind("ex", "https://example.org/")
+    mock_graph.add((URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")))
+    mock_collect.return_value = {"ex": "www.new.com/"}
+    
+    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
+        header = CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+    
+    assert (URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")) in header.graph
+    assert header.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
 
 
 # Unit tests ._repair_blank_header_subject
