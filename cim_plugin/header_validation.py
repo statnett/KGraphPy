@@ -64,22 +64,6 @@ def _remove_invalid_triples(graph: Graph, predicates: Optional[URIRef|list[URIRe
             graph.remove((s, p, o))
 
 
-def _fix_dcterms_issued_format(graph: Graph, identifier: URIRef) -> None:
-    triples = list(graph.triples((None, DCTERMS.issued, None)))
-    
-    if not triples:
-        logger.error("Missing required dcterms:issued triple. Creating dummy triple without date.")
-        graph.add((identifier, DCTERMS.issued, Literal("unknown")))
-        return
-    
-    for s, p, o in triples:
-        new_obj = _fix_datetime_format(o)
-        if new_obj != o:
-            graph.remove((s, p, o))
-            graph.add((s, p, new_obj))
-            logger.error(f"Corrected dcterms:issued format for triple ({s}, {p}, {o}) to ({s}, {p}, {new_obj})")
-
-
 def _fix_datetime_format_in_triples(graph: Graph) -> None:
     predicates = {DCAT.endDate, DCAT.startDate, DCTERMS.issued}
     triples = {
@@ -97,6 +81,16 @@ def _fix_datetime_format_in_triples(graph: Graph) -> None:
 
 
 def _fix_datetime_format(obj: Node) -> Node:
+    """Fix datetime of literal object if it does not have required format.
+
+    A casting to datetime is attempted. If it fails, the original object is returned and an error is logged.
+    
+    Parameters:
+        obj (Node): The object node to check and correct if necessary.
+
+    Returns:
+        Node: The original node if no correction was needed, or a new Literal with corrected datetime format.
+    """
     if isinstance(obj, Literal):
         if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}+.*", str(obj)):
             try:
