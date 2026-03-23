@@ -3,6 +3,7 @@ from rdflib import Literal, URIRef
 from rdflib.namespace import XSD
 from cim_plugin.exceptions import LiteralCastingError
 from typing import cast
+from datetime import datetime, timezone, date
 import logging
 
 logger = logging.getLogger('cimxml_logger')
@@ -175,12 +176,29 @@ def cast_bool(value: str) -> bool:
     raise ValueError(f"Invalid boolean lexical form: {value}")
 
 
+# Needs testing
+def cast_datetime_utc(lit: Literal) -> Literal:
+    value = lit.toPython()
+
+    if isinstance(value, date):
+        dt = datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+        return Literal(dt, datatype=XSD.dateTime)
+
+    if isinstance(value, str):
+        parsed = datetime.strptime(value.strip(), "%Y-%m-%d").date()
+        dt = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
+        return Literal(dt, datatype=XSD.dateTime)
+        # Will raise ValueError if not in correct format, which should be sent forward.
+        
+    return lit
+
+
 CASTERS = {
     str(XSD.integer): int,
     str(XSD.float): cast_float,
     str(XSD.boolean): cast_bool,
     str(XSD.date): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
-    str(XSD.dateTime): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),
+    str(XSD.dateTime): lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v),  # Consider using the caster above here too.
 }
 
 

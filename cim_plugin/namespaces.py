@@ -12,6 +12,10 @@ EU = Namespace("https://cim.ucaiug.io/ns/eu#")
 
 MODEL = Namespace("https://model4powersystem.no/")
 
+RDFG = Namespace("http://www.w3.org/2004/03/trix/rdfg-1/")
+
+JSONLD = Namespace("https://www.w3.org/ns/json-ld#")
+
 
 
 def collect_specific_namespaces(triples: list[tuple[Node, Node, Node]], namespace_manager: NamespaceManager) -> dict[str, URIRef]:
