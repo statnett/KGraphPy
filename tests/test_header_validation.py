@@ -112,22 +112,24 @@ def test_remove_invalid_triples_logging(caplog: pytest.LogCaptureFixture) -> Non
 @pytest.mark.parametrize(
     "input, expected, comment",
     [
-        pytest.param(Literal("2025-02-14T00:00:00+00:00"), "2025-02-14T00:00:00+00:00", "no casting", id="UTC with +00:00"),
-        pytest.param(Literal("2025-02-14T01:00:00+01:00"), "2025-02-14T01:00:00+01:00", "no casting", id="Non-UTC timezone"),
-        pytest.param(Literal("2025-02-14T01:00:00Z"), "2025-02-14T01:00:00Z", "no casting", id="Already in correct format"),
-        pytest.param(Literal("2025-02-14"),  datetime.datetime(2025, 2, 14, 0, 0, tzinfo=datetime.timezone.utc), "cast", id="Date only, time added"),
+        pytest.param(Literal("2025-02-14T00:00:00+00:00"), Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), "no casting", id="UTC with +00:00"),
+        pytest.param(Literal("2025-02-14T01:00:00+01:00"), Literal("2025-02-14T01:00:00+01:00", datatype=XSD.dateTime), "no casting", id="Non-UTC timezone"),
+        pytest.param(Literal("2025-02-14T01:00:00Z"), Literal("2025-02-14T01:00:00Z", datatype=XSD.dateTime), "no casting", id="Already in correct format"),
+        pytest.param(Literal("2025-02-14"),  Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), "cast", id="Date only, time added"),
         pytest.param(Literal("Not a date"), "Not a date", "cast error", id="Invalid date string, unchanged"),
         pytest.param(URIRef("o"), URIRef("o"), "literal error", id="Input is URI, unchanged"),
-        pytest.param(Literal("2025-02-14T00:00:00"), "2025-02-14T00:00:00", "no casting", id="Missing timezone, unchanged"),
-        pytest.param(Literal("2025-02-14T00:00:00+0000"), "2025-02-14T00:00:00+0000", "no casting", id="Timezone without colon, unchanged"),
+        pytest.param(Literal("2025-02-14T00:00:00"), Literal("2025-02-14T00:00:00",datatype=XSD.dateTime), "no casting", id="Missing timezone, unchanged"),
+        pytest.param(Literal("2025-02-14T00:00:00+0000"), Literal("2025-02-14T00:00:00+0000",datatype=XSD.dateTime), "no casting", id="Timezone without colon, unchanged"),
         pytest.param("2025-02-14T00:00:00+00:00", "2025-02-14T00:00:00+00:00", "literal error", id="Input is not a Literal, unchanged"),
-        pytest.param(Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), datetime.datetime(2025, 2, 14, 0, 0, tzinfo=datetime.timezone.utc), "no casting", id="Input literal with datatype"),
-        pytest.param(Literal("2025-02-14", datatype=XSD.Date),  datetime.datetime(2025, 2, 14, 0, 0, tzinfo=datetime.timezone.utc), "cast", id="Date with date datatype"),
-        pytest.param(Literal(datetime.datetime(2025, 2, 14, tzinfo=datetime.timezone.utc)), datetime.datetime(2025, 2, 14, 0, 0, tzinfo=datetime.timezone.utc), "cast", id="Datetime with timezone as input"),
-        pytest.param(Literal("2025-13-99T99:99:99Z"), "2025-13-99T99:99:99Z", "no casting", id="Invalid date and time string, unchanged"),
-        pytest.param(Literal("2025-02-14t00:00:00Z"), "2025-02-14t00:00:00Z", "cast error", id="Lowercase 't' in datetime string, casted"),
-        pytest.param(Literal("2025-02-14T00:00:00.123456Z"), "2025-02-14T00:00:00.123456Z", "no casting", id="Datetime string with microseconds, unchanged"),
-        pytest.param(Literal("2025-02-14", lang="en"), datetime.datetime(2025, 2, 14, 0, 0, tzinfo=datetime.timezone.utc), "cast", id="Literal with language tag, unchanged")
+        pytest.param(Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), "no casting", id="Input literal with datatype"),
+        pytest.param(Literal("2025-02-14", datatype=XSD.date),  Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), "cast", id="Date with date datatype"),
+        pytest.param(Literal(datetime.datetime(2025, 2, 14, tzinfo=datetime.timezone.utc)), Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), "cast", id="Datetime with timezone as input"),
+        pytest.param(Literal("2025-13-99T99:99:99Z"), Literal("2025-13-99T99:99:99Z", datatype=XSD.dateTime), "no casting", id="Invalid date and time string, unchanged"),
+        pytest.param(Literal("2025-02-14t00:00:00Z"), Literal("2025-02-14t00:00:00Z", datatype=XSD.dateTime), "no casting", id="Lowercase 't' in datetime string, casted"),
+        pytest.param(Literal("2025-02-14T00:00:00.123456Z"), Literal("2025-02-14T00:00:00.123456Z", datatype=XSD.dateTime), "no casting", id="Datetime string with microseconds, unchanged"),
+        pytest.param(Literal("2025-02-14", lang="en"), Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime), "cast", id="Literal with language tag, unchanged"),
+        pytest.param(Literal("2025-02-14 00:00:00Z"), Literal("2025-02-14 00:00:00Z", datatype=XSD.dateTime), "no casting", id="Datetime string with space instead of 'T', casted"),
+        pytest.param(Literal("20250214T000000Z"), Literal("20250214T000000Z", datatype=XSD.dateTime), "no casting", id="Datetime string with T and no :")
     ]
 )
 def test_fix_datetime_format(input: Any, expected: Any, comment: str|None, caplog: pytest.LogCaptureFixture) -> None:
@@ -135,13 +137,12 @@ def test_fix_datetime_format(input: Any, expected: Any, comment: str|None, caplo
     print(result)
     if comment == "cast":
         assert isinstance(result, Literal)
-        assert result.value.isoformat() == expected.isoformat()
+        assert result == expected
         assert result.datatype == XSD.dateTime
     elif comment == "no casting":
         assert isinstance(result, Literal)
-        assert result.value == expected
-        assert result.value == input.value
-        assert result.datatype == input.datatype
+        assert result == expected
+        assert result.datatype == XSD.dateTime
     elif comment == "cast error":
         assert isinstance(result, Literal)
         assert result.value == expected
@@ -157,21 +158,22 @@ def test_fix_datetime_format(input: Any, expected: Any, comment: str|None, caplo
     [
         pytest.param("2025-02-14", True, id="Date string should call cast"),
         pytest.param("2025-02-14T00:00:00+00:00", False, id="Already correct format should not call cast"),
-        pytest.param("2025-02-14t00:00:00Z", True, id="Lowercase 't' calls cast"),
+        pytest.param("2025-02-14t00:00:00Z", False, id="Lowercase 't' cast not called"),
     ]
 )
 @patch("cim_plugin.header_validation.cast_datetime_utc")
 def test_fix_datetime_format_calls(mock_cast: MagicMock, input: str, calls: bool) -> None:
     o = Literal(input)
-    mock_cast.return_value = Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime)
+    return_value = Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime)
+    mock_cast.return_value = return_value
     fixed_object = _fix_datetime_format(o)
     
     if calls:
         mock_cast.assert_called_once_with(o)
-        assert fixed_object == Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime)
+        assert fixed_object == return_value
     else:
         mock_cast.assert_not_called()
-        assert fixed_object == o
+        assert fixed_object == return_value
 
 
 @patch("cim_plugin.header_validation.cast_datetime_utc")

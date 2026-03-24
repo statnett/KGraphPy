@@ -26,7 +26,7 @@
 import re
 from typing import Tuple, Optional
 
-from rdflib import BNode, Literal, Node, Graph, URIRef
+from rdflib import XSD, BNode, Literal, Node, Graph, URIRef
 from rdflib.namespace import DCAT, DCTERMS, RDF
 
 from cim_plugin.enriching import cast_datetime_utc
@@ -74,34 +74,70 @@ def _fix_datetime_format_in_triples(graph: Graph) -> None:
 
     for s, p, o in triples:
         new_obj = _fix_datetime_format(o)
+        if new_obj is None:
+            logger.error(f"Found None for {p}. Expected a datetime.")
+            continue
+
         if new_obj != o:
             graph.remove((s, p, o))
             graph.add((s, p, new_obj))
             logger.error(f"Corrected date format for triple ({s}, {p}, {o}) to ({s}, {p}, {new_obj})")
 
+DATETIME_REGEX = re.compile(
+    r"""(
+        \d{2}:\d{2}                |  # HH:MM → definitely datetime
+        ^\d{8}[Tt]\d{6}([Zz]|[+-]\d{2}:?\d{2})?$  # compact ISO datetime
+    )""",
+    re.VERBOSE
+)
 
 def _fix_datetime_format(obj: Node) -> Node:
-    """Fix datetime of literal object if it does not have required format.
-
-    A casting to datetime is attempted. If it fails, the original object is returned and an error is logged.
-    
-    Parameters:
-        obj (Node): The object node to check and correct if necessary.
-
-    Returns:
-        Node: The original node if no correction was needed, or a new Literal with corrected datetime format.
-    """
     if isinstance(obj, Literal):
-        if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}+.*", str(obj)):
-            try:
-                return cast_datetime_utc(obj)
-            except ValueError as e:
-                logger.error(f"Failed to correct datetime format for literal {obj}: {e}")
-                return obj
-        return obj
-    else:
-        logger.error(f"Expected a Literal for datetime correction, got: {obj!r}")
-        return obj
+        if obj.value is None:
+            return obj
+
+        text = obj.value.strip() if isinstance(obj.value, str) else str(obj.value).strip()
+
+        # If it matches datetime patterns → leave unchanged
+        if DATETIME_REGEX.search(text):
+            if obj.datatype is None or obj.datatype != XSD.dateTime:
+                return Literal(obj.value, datatype=XSD.dateTime)
+
+            return obj
+
+        # Otherwise, try to cast as datetime
+        try:
+            return cast_datetime_utc(obj)
+        except ValueError as e:
+            logger.error(f"Failed to correct datetime format for literal {obj}: {e}")
+            return obj
+
+    logger.error(f"Expected a Literal for datetime correction, got: {obj!r}")
+    return obj
+
+
+# def _fix_datetime_format(obj: Node) -> Node:
+#     """Fix datetime of literal object if it does not have required format.
+
+#     A casting to datetime is attempted. If it fails, the original object is returned and an error is logged.
+    
+#     Parameters:
+#         obj (Node): The object node to check and correct if necessary.
+
+#     Returns:
+#         Node: The original node if no correction was needed, or a new Literal with corrected datetime format.
+#     """
+#     if isinstance(obj, Literal):
+#         if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}+.*", str(obj)):
+#             try:
+#                 return cast_datetime_utc(obj)
+#             except ValueError as e:
+#                 logger.error(f"Failed to correct datetime format for literal {obj}: {e}")
+#                 return obj
+#         return obj
+#     else:
+#         logger.error(f"Expected a Literal for datetime correction, got: {obj!r}")
+#         return obj
 
 def _check_dcterms_issued_count(graph: Graph, identifier: URIRef) -> None:
     issued_triples = list(graph.triples((None, DCTERMS.issued, None)))

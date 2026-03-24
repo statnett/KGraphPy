@@ -1,3 +1,5 @@
+import re
+
 from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
 from rdflib import Literal, URIRef
 from rdflib.namespace import XSD
@@ -176,21 +178,109 @@ def cast_bool(value: str) -> bool:
     raise ValueError(f"Invalid boolean lexical form: {value}")
 
 
-# Needs testing
+def _parse_slash_date(text: str) -> datetime:
+    """Parse a date of the form N/N/YYYY where N is 1 or 2 digits.
+    
+    Distinguishes American vs European formats based on >12 rule.
+
+    Parameters:
+        text (str): The date string to be parsed.
+
+    Raises:
+        ValueError: If the date is ambiguous or invalid.
+
+    Returns:
+        datetime.date: The parsed date.
+    """
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", text)
+    if not m:
+        raise ValueError("Date format not supported for date parsing or invalid.")
+
+    var1, var2, year = map(int, m.groups())
+
+    # If second number > 12 → must be American (month/day/year)
+    if var2 > 12:
+        return datetime(year, var1, var2)
+
+    # If first number > 12 → must be European (day/month/year)
+    if var1 > 12:
+        return datetime(year, var2, var1)
+
+    # Both ≤ 12 → ambiguous
+    raise ValueError(f"Ambiguous date literal: {text}")
+
+
+EU_DATE_FORMATS = [
+    "%Y-%m-%d",
+    "%Y%m%d",
+    "%d.%m.%Y",
+    "%d-%m-%Y",
+    "%Y/%m/%d",
+]
+
 def cast_datetime_utc(lit: Literal) -> Literal:
+    """Cast a Literal to xsd:dateTime in UTC, correcting common formatting issues.
+    
+    Supports common european and some american date formats, when not ambigouous.
+    Warning: Assumes date input. Any time and timezone information will be lost. The time will be set to 00:00:00 and timezone to UTC.
+    
+    Parameters:
+        lit (Literal): The literal to be cast.
+
+    Raises:
+        ValueError: If the literal is not XSD.datetime, date or string. Other errors can be raised when parsing fails.
+    
+    Returns:
+        Literal: The casted literal.
+    """
     value = lit.toPython()
 
+    # Case 1: Python datetime → keep date, ignore time, force UTC
+    if isinstance(value, datetime):
+        dt = datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+        return Literal(dt, datatype=XSD.dateTime)
+
+    # Case 2: Python date → add zero time + UTC
     if isinstance(value, date):
         dt = datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
         return Literal(dt, datatype=XSD.dateTime)
 
+    # Case 3: String literal
     if isinstance(value, str):
-        parsed = datetime.strptime(value.strip(), "%Y-%m-%d").date()
-        dt = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
+        text = value.strip()
+
+        # Try European formats first
+        for fmt in EU_DATE_FORMATS:
+            try:
+                parsed = datetime.strptime(text, fmt)
+                dt = parsed.replace(tzinfo=timezone.utc)
+                return Literal(dt, datatype=XSD.dateTime)
+            except ValueError:  # The errors are silenced but can be raised again when parsing is attempted by _parse_slash_date.
+                continue
+
+        # Try ambiguous American/European slash format
+        parsed = _parse_slash_date(text)
+        dt = parsed.replace(tzinfo=timezone.utc)
         return Literal(dt, datatype=XSD.dateTime)
-        # Will raise ValueError if not in correct format, which should be sent forward.
+
+    # Anything else → not a valid date type
+    raise ValueError(f"Datatype cannot be cast to datetime: {value!r}")
+
+
+# def cast_datetime_utc(lit: Literal) -> Literal:
+#     value = lit.toPython()
+
+#     if isinstance(value, date) or isinstance(value, datetime):
+#         dt = datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+#         return Literal(dt, datatype=XSD.dateTime)
+
+#     if isinstance(value, str):
+#         parsed = datetime.strptime(value.strip(), "%Y-%m-%d").date()
+#         dt = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
+#         return Literal(dt, datatype=XSD.dateTime)
+#         # Will raise ValueError if not in correct format, which should be sent forward.
         
-    return lit
+#     return lit
 
 
 CASTERS = {

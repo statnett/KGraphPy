@@ -8,7 +8,17 @@ from datetime import date, datetime
 from typing import Callable, Any
 from tests.fixtures import make_schemaview, set_prefixes
 from cim_plugin.exceptions import LiteralCastingError
-from cim_plugin.enriching import slots_equal, _build_slot_index, _resolve_type, resolve_datatype_from_slot, create_typed_literal, cast_bool, cast_float
+from cim_plugin.enriching import (
+    slots_equal, 
+    _build_slot_index, 
+    _resolve_type, 
+    resolve_datatype_from_slot, 
+    create_typed_literal, 
+    cast_bool, 
+    cast_float, 
+    _parse_slash_date, 
+    cast_datetime_utc
+)
 
 # Unit tests slots_equal
 
@@ -496,6 +506,73 @@ def test_resolve_datatype_from_slot_classrange(make_schemaview: Callable[..., Sc
     result = resolve_datatype_from_slot(sv, slot)
     assert result is None
     assert "slot.range 'Person' is a class" in caplog.text
+
+# Unit tests parse_slash_date
+@pytest.mark.parametrize(
+    "input, output, raises",
+    [
+        pytest.param("01/13/2024", datetime(2024, 1, 13), "", id="American valid date"),
+        pytest.param("13/01/2024", datetime(2024, 1, 13), "", id="European valid date"),
+        pytest.param("2024/01/13", None, "Date format not supported for date parsing or invalid.", id="Not a slash-separated date"),
+        pytest.param("01/01/2024", None, "Ambiguous date literal: 01/01/2024", id="Ambiguous date raises error"),
+        pytest.param("what/ever/here", None, "Date format not supported for date parsing or invalid.", id="Random text"),
+        pytest.param("02/30/2024", None, "day is out of range for month", id="Invalid date - american"),
+        pytest.param("30/02/2024", None, "day is out of range for month", id="Invalid date - european"),
+        pytest.param("29/02/2024", datetime(2024, 2, 29), "", id="Leap year - european"),
+        pytest.param("02/29/2024", datetime(2024, 2, 29), "", id="Leap year - american"),
+        pytest.param("29/02/2023", None, "day is out of range for month", id="Leap year invalid"),
+        pytest.param("1/13/2024", datetime(2024, 1, 13), "", id="American valid date - no zeros"),
+        pytest.param("13/1/2024", datetime(2024, 1, 13), "", id="European valid date - no zeros"),
+        pytest.param("1/1/2024", None, "Ambiguous date literal: 1/1/2024", id="Ambiguous date raises error - no zeros"),
+        pytest.param(" 13/01/2024 ", None, "Date format not supported for date parsing or invalid.", id="Whitespaces"),
+    ]
+)
+def test_parse_slash_date_various(input: str, output: datetime, raises: str) -> None:
+    print(output)
+    if raises:
+        with pytest.raises(ValueError, match=raises):
+            _parse_slash_date(input)
+    else:
+        assert _parse_slash_date(input) == output
+
+
+# Unit tests cast_datetime_utc
+@pytest.mark.parametrize(
+    "input, output",
+    [
+        pytest.param(Literal("2024-01-01", datatype=XSD.dateTime), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="Date with datetime format"),
+        pytest.param(Literal("2024-01-01T12:33:44+01:00", datatype=XSD.dateTime), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="Datetime with datetime forma"), # Content gets deleted except for date
+        pytest.param(Literal("2024-01-01", datatype=XSD.date), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="Date with date format"),
+        pytest.param(Literal("2024-01-01", datatype=XSD.string), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="Date with explicit string datatype"),
+        pytest.param(Literal("2024-01-01"), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="%Y-%m-%d format"),
+        pytest.param(Literal("20240101"), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="%Y%m%d format"),
+        pytest.param(Literal("01.01.2024"), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="%d.%m.%Y format"),
+        pytest.param(Literal("01-01-2024"), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="%d-%m-%Y format"),
+        pytest.param(Literal("2024/01/01"), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="%Y/%m/%d format"),
+        pytest.param(Literal("01/13/2024"), Literal("2024-01-13T00:00:00+00:00", datatype=XSD.dateTime), id="American slash format"),
+        pytest.param(Literal("13/01/2024"), Literal("2024-01-13T00:00:00+00:00", datatype=XSD.dateTime), id="European slash format"),
+        pytest.param(Literal(" 2024-01-01 "), Literal("2024-01-01T00:00:00+00:00", datatype=XSD.dateTime), id="Whitespace"),
+        pytest.param(Literal("2024-02-29"), Literal("2024-02-29T00:00:00+00:00", datatype=XSD.dateTime), id="Leap year"),
+    ]
+)
+def test_cast_datetime_utc_various(input: Literal, output: Literal) -> None:
+    assert cast_datetime_utc(input) == output
+
+
+@pytest.mark.parametrize(
+    "input, raises",
+    [
+        pytest.param(Literal(20240101, datatype=XSD.integer), "Datatype cannot be cast to datetime: 20240101", id="Integer literal"),
+        pytest.param(Literal("01/01/2024", datatype=XSD.string), "Ambiguous date literal: 01/01/2024", id="Ambiguous slash date"),
+        # All objects not parsed by datetime.strptime is passed to _parse_slash_date, which raises "Date format not supported for date parsing or invalid." error
+        pytest.param(Literal("not a date", datatype=XSD.string), "Date format not supported for date parsing or invalid.", id="Invalid date string"),
+        pytest.param(Literal("2024-01-41"), "Date format not supported for date parsing or invalid.", id="Invalid date - day out of range"),
+        pytest.param(Literal("2023-02-29"), "Date format not supported for date parsing or invalid.", id="Invalid date - leap year"),
+    ]
+)
+def test_cast_datetime_utc_errors(input: Literal, raises: str) -> None:
+    with pytest.raises(ValueError, match=raises):
+        cast_datetime_utc(input)
 
 
 # Unit tests cast_bool
