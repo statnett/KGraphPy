@@ -64,25 +64,6 @@ def _remove_invalid_triples(graph: Graph, predicates: Optional[URIRef|list[URIRe
             graph.remove((s, p, o))
 
 
-def _fix_datetime_format_in_triples(graph: Graph) -> None:
-    predicates = {DCAT.endDate, DCAT.startDate, DCTERMS.issued}
-    triples = {
-    (s, p, o)
-    for s, p, o in graph.triples((None, None, None))
-    if p in predicates
-    }
-
-    for s, p, o in triples:
-        new_obj = _fix_datetime_format(o)
-        if new_obj is None:
-            logger.error(f"Found None for {p}. Expected a datetime.")
-            continue
-
-        if new_obj != o:
-            graph.remove((s, p, o))
-            graph.add((s, p, new_obj))
-            logger.error(f"Corrected date format for triple ({s}, {p}, {o}) to ({s}, {p}, {new_obj})")
-
 DATETIME_REGEX = re.compile(
     r"""(
         \d{2}:\d{2}                |  # HH:MM → definitely datetime
@@ -116,28 +97,34 @@ def _fix_datetime_format(obj: Node) -> Node:
     return obj
 
 
-# def _fix_datetime_format(obj: Node) -> Node:
-#     """Fix datetime of literal object if it does not have required format.
-
-#     A casting to datetime is attempted. If it fails, the original object is returned and an error is logged.
+def _fix_datetime_format_in_triples(graph: Graph) -> None:
+    """Fix datetime format for triples with these predicates:
     
-#     Parameters:
-#         obj (Node): The object node to check and correct if necessary.
+        - dcat:endDate
+        - dcat:startDate
+        - dcterms:issued
 
-#     Returns:
-#         Node: The original node if no correction was needed, or a new Literal with corrected datetime format.
-#     """
-#     if isinstance(obj, Literal):
-#         if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}+.*", str(obj)):
-#             try:
-#                 return cast_datetime_utc(obj)
-#             except ValueError as e:
-#                 logger.error(f"Failed to correct datetime format for literal {obj}: {e}")
-#                 return obj
-#         return obj
-#     else:
-#         logger.error(f"Expected a Literal for datetime correction, got: {obj!r}")
-#         return obj
+    Parameters:
+        graph (Graph): The graph to fix.
+    """
+    predicates = {DCAT.endDate, DCAT.startDate, DCTERMS.issued}
+    triples = {
+    (s, p, o)
+    for s, p, o in graph.triples((None, None, None))
+    if p in predicates
+    }
+
+    for s, p, o in triples:
+        new_obj = _fix_datetime_format(o)
+        if new_obj is None:
+            logger.error(f"Found None for {p}. Expected a datetime.")
+            continue
+
+        if new_obj != o:
+            graph.remove((s, p, o))
+            graph.add((s, p, new_obj))
+            logger.error(f"Corrected date format for predicate {p}: from {o} to {new_obj}.")
+
 
 def _check_dcterms_issued_count(graph: Graph, identifier: URIRef) -> None:
     issued_triples = list(graph.triples((None, DCTERMS.issued, None)))
