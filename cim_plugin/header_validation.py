@@ -23,6 +23,7 @@
 #   - Should not have rdf:type rdfg:Graph triple, but should have rdf:type dcat:Dataset or md:FullModel triple (issue #12)
 #   - There should be no json-ld:base triple (issue #11)
 
+from email import header
 import re
 from typing import Tuple, Optional
 
@@ -30,8 +31,9 @@ from rdflib import XSD, BNode, Literal, Node, Graph, URIRef
 from rdflib.namespace import DCAT, DCTERMS, RDF
 
 from cim_plugin.enriching import cast_datetime_utc
-from cim_plugin.namespaces import RDFG, JSONLD
+from cim_plugin.namespaces import RDFG, JSONLD, MD
 from cim_plugin.header import CIMMetadataHeader
+
 import logging
 
 logger = logging.getLogger("cimxml_logger")
@@ -154,6 +156,24 @@ def _check_dcterms_issued_count(graph: Graph, identifier: URIRef) -> None:
     if len(issued_triples) > 1:
         logger.error(f"Multiple dcterms:issued triples found ({len(issued_triples)}): {issued_triples}. All but one should be removed.")
 
+def _correct_triple_representation_by_predicate(graph: Graph, predicate: URIRef, identifier: URIRef) -> None:
+    """Check that there is at least one triple with the given predicate. 
+    
+    Subject and object is ignored in search.
+    If not, add a dummy triple with "unknown" as object and an identifier as subject.
+    Logs error if multiple triples with the given predicate are found, but does not remove them.
+    
+    Parameters:
+        graph (Graph): The graph to check.
+        predicate (URIRef): The predicate to check for.
+        identifier (URIRef): The identifier to use for the dummy triple if missing.
+    """
+    triples = list(graph.triples((None, predicate, None)))
+    if len(triples) > 1:
+        logger.error(f"Multiple {predicate} triples found. All but one should be removed.")
+    if not triples:
+        logger.error(f"Missing required {predicate} triple. Creating dummy triple without date.")
+        graph.add((identifier, predicate, Literal("unknown")))
 
 # ── TriG-specific checks ──────────────────────────────────────────────────────
 
@@ -195,7 +215,6 @@ def _make_bnode_date_triple_for_period_of_time(graph: Graph, bnode: BNode, predi
         logger.error(f"Missing required {predicate} triple for PeriodOfTime. Creating dummy triple with no date.")
         graph.add((bnode, predicate, Literal("unknown")))
 
-
 def _check_trig_rdfg_graph(graph: Graph, identifier: URIRef) -> None:
     """Check that an rdf:type rdfg:Graph triple is present in trig header.
     
@@ -226,26 +245,7 @@ def _fix_cimxml_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
     _correct_triple_representation_by_predicate(graph, DCAT.startDate, identifier)
 
 
-def _correct_triple_representation_by_predicate(graph: Graph, predicate: URIRef, identifier: URIRef) -> None:
-    """Check that there is at least one triple with the given predicate. 
-    
-    Subject and object is ignored in search.
-    If not, add a dummy triple with "unknown" as object and an identifier as subject.
-    Logs error if multiple triples with the given predicate are found, but does not remove them.
-    
-    Parameters:
-        graph (Graph): The graph to check.
-        predicate (URIRef): The predicate to check for.
-        identifier (URIRef): The identifier to use for the dummy triple if missing.
-    """
-    triples = list(graph.triples((None, predicate, None)))
-    if len(triples) > 1:
-        logger.error(f"Multiple {predicate} triples found. All but one should be removed.")
-    if not triples:
-        logger.error(f"Missing required {predicate} triple. Creating dummy triple without date.")
-        graph.add((identifier, predicate, Literal("unknown")))
-
-
+# Cannot use _remove_invalid_triples here because it would remove all triples with rdf:type as predicate.
 def _remove_cimxml_rdfg_graph(graph: Graph) -> None:
     """Remove rdf:type rdfg:Graph triple if present in CIMXML header.
     
@@ -265,13 +265,31 @@ def _remove_cimxml_rdfg_graph(graph: Graph) -> None:
 
 
 def validate_header(header: CIMMetadataHeader, format: str="cimxml") -> None:
-    """Validate a CIMMetadataHeader according to the format specification. Logs errors for any issues found, but does not raise exceptions or modify the header.
+    """Validate a CIMMetadataHeader according to the format specification.
     
+    The validation is only performed for dcat:Dataset headers. md:FullModel and custom headers are ignored.
+
     Parameters:
         header (CIMMetadataHeader): The header to validate.
         format (str): The format to validate against ("cimxml" or "trig"). Default is "cimxml".
     """
-    format = format.lower()
+    if format is None:
+        format = "cimxml"
+
+    if header is None or len(header.graph) == 0:
+        logger.error("Header graph is empty. No validation performed.")
+        return
+
+    if header.header_type not in CIMMetadataHeader.DEFAULT_METADATA_OBJECTS:
+        logger.error(f"Unknown header type: {header.header_type}. No validation performed.")
+        return
+
+    if header.header_type == MD.FullModel:
+        logger.error(f"Validation for MD.FullModel header is not implemented yet. No validation performed for this header type.")
+        return
+    
+
+    format = format.lower().strip()
     identifier = header.subject
     
     # Common checks
@@ -280,17 +298,20 @@ def validate_header(header: CIMMetadataHeader, format: str="cimxml") -> None:
     _correct_triple_representation_by_predicate(header.graph, DCTERMS.issued, identifier)
 
     if format == "cimxml":
-        _fix_cimxml_period_of_time_format(header.graph, identifier)
-        _remove_invalid_triples(header.graph, predicates=RDF.type, obj=RDFG.Graph)
-        # _remove_cimxml_rdfg_graph(header.graph)
+        if header.header_type == DCAT.Dataset:
+            _fix_cimxml_period_of_time_format(header.graph, identifier)
+            _remove_cimxml_rdfg_graph(header.graph)
+        
     elif format == "trig":
         # Not using _fix_trig_period_of_time_format because the trig serializer would have to be changed for it to give intended result.
         # Using the _fix_cimxml_period_of_time_format for now, which makes sure the format of the dates is correct and that they are present. 
         # _fix_trig_period_of_time_format(graph)
         _fix_cimxml_period_of_time_format(header.graph, identifier)
         _check_trig_rdfg_graph(header.graph, identifier)
+
     elif format == "jsonld":
          logger.error("Header validation for JSON-LD format is not implemented yet.")
+    
     else:
         logger.error(f"Unknown format specified for header validation: {format}. No validation performed.")
 

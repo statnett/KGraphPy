@@ -278,10 +278,18 @@ class CIMMetadataHeader:
         Returns:
             Node: The object node.
         """
+        headertypes = set()
         for (_, p, o) in self.graph.triples((self.subject, RDF.type, None)):
             if o in self.metadata_objects:
-                return o
-        raise ValueError("No triple with rdf:type found in header.")
+                headertypes.add(o)
+        
+        if len(headertypes) == 1:
+            return headertypes.pop()
+        elif len(headertypes) == 0:
+            raise ValueError("No header type found in header.")
+        else:
+            raise ValueError("Multiple header types found in header.")
+
 
     def collect_profile(self) -> Optional[str]:
         """Collect the profile of a graph from the triple with predicate in self.profile_predicates.

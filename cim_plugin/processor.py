@@ -3,6 +3,7 @@
 from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
+from cim_plugin.header_validation import validate_header
 from cim_plugin.namespaces import update_namespace_in_triples
 from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
 from cim_plugin.exceptions import LiteralCastingError
@@ -272,6 +273,21 @@ class CIMProcessor:
         proc.slot_index = deepcopy(self.slot_index)
 
         return proc
+    
+    # Not tested. Should it be?  
+    def validate_header(self, format: str = "cimxml") -> None:
+        """Validate the header of the graph according to the format specification.
+        
+        The validation is only performed for dcat:Dataset headers. md:FullModel and custom headers are ignored.
+        
+        Parameters:
+            format (str): The format of the file. Accepted values are 'cimxml' (default), 'trig' and 'jsonld'.
+        """
+        if self.graph.metadata_header:
+            validate_header(self.graph.metadata_header, format=format)
+        else:
+            logger.warning("No metadata header found for validation.")
+
 
     # Not tested. Should it be?
     def to_file(self, file_path: str|Path, format: str = "cimxml", **kwargs) -> None:

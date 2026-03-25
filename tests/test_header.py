@@ -633,7 +633,7 @@ def test_from_manifest_parametrized(
 ) -> None:
     mock_collect.return_value = {"ex": "http://example.org/"}
     manifest = make_graph(manifest_triples)
-    print(list(manifest))
+    
     with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(manifest)):
         
         if expect_error:
@@ -815,7 +815,6 @@ def test_repair_blank_header_subject_norepairneeded(mock_repair: MagicMock, head
             pytest.param([(RDF.type, MD.FullModel)], None, MD.FullModel, id="Fullmodel header"),
             pytest.param([(RDF.type, DCAT.Dataset)], None, DCAT.Dataset, id="Dcat header"),
             pytest.param([(RDF.type, URIRef("www.custom.org/type"))], [URIRef("www.custom.org/type")], URIRef("www.custom.org/type"), id="Custom type header"),
-            pytest.param([(RDF.type, MD.FullModel), (RDF.type, DCAT.Dataset)], None, MD.FullModel, id="Multiple header types -> First encountered wins"),
         ]
 )
 def test_header_type_success(triples: tuple, metadata_objects: Iterable|None, expected: str) -> None:
@@ -834,7 +833,7 @@ def test_header_type_noheadertype() -> None:
     with pytest.raises(ValueError) as exc:
         header.header_type
 
-    assert "No triple with rdf:type found in header." in str(exc.value)
+    assert "No header type found in header." in str(exc.value)
 
 
 def test_header_type_notriples() -> None:
@@ -843,7 +842,17 @@ def test_header_type_notriples() -> None:
     with pytest.raises(ValueError) as exc:
         header.header_type
 
-    assert "No triple with rdf:type found in header." in str(exc.value)
+    assert "No header type found in header." in str(exc.value)
+
+def test_header_type_multipletypes() -> None:
+    header = CIMMetadataHeader.empty(URIRef("s1"))
+    header.add_triple(RDF.type, MD.FullModel)
+    header.add_triple(RDF.type, DCAT.Dataset)
+
+    with pytest.raises(ValueError) as exc:
+        header.header_type
+
+    assert "Multiple header types found in header." in str(exc.value)    
 
 # Unit tests .collect_profile
 @pytest.mark.parametrize(

@@ -112,10 +112,9 @@ def main():
     # for triple in t1.graph.metadata_header.graph.triples((None, None, DCTERMS.PeriodOfTime)):
     #       print(triple)
 
-    validate_header(new_header)
-    validate_header(t1.graph.metadata_header, format="trig")    
-    t1.graph.metadata_header.graph.remove((t1.identifier, DCTERMS.issued, Literal('2025-02-14T00:00:00+00:00', datatype=XSD.dateTime)))
-    # for triple in t1.graph.metadata_header.graph.triples((None, None, DCTERMS.PeriodOfTime)):
+    t1.graph.metadata_header.remove_triple(DCTERMS.issued, Literal('2025-02-14', datatype=XSD.date))
+    # t1.graph.metadata_header.remove_triple(DCTERMS.issued, Literal('2025-02-14T00:00:00+00:00', datatype=XSD.dateTime))
+    # for triple in t1.graph.metadata_header.graph.triples((None, DCTERMS.issued, None)):
     #       print(triple)
 
     # for triple in new_header.graph.triples((new_header.subject, DCAT.startDate, None)):
@@ -125,14 +124,13 @@ def main():
     # print("CIMXML header issues:", cimxml_issues)
     # print("TRIG header issues:", len(trig_issues), trig_issues)
     g1.replace_header(new_header)
+    g1.validate_header(format="cimxml")
     output_file = Path.cwd().parent / "fromcimxml_grid_eq_corrected_header.xml"
     g1.to_file(output_file, format="cimxml", qualifier="underscore")
-    # t1.graph.serialize(destination=str(output_file3), format="cimxml", qualifier="underscore")
-
-    # t1.merge_header()
+    
+    t1.validate_header(format="trig")
     output_file_trig = Path.cwd().parent / "fromtrig_grid_eq_corrected_header.trig"
     t1.to_file(output_file_trig, format="trig", enrich_datatypes=False)
-    # g1.graph.serialize(destination=str(output_file_trig), format="trig")
     
 
 if __name__ == "__main__":
