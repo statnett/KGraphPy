@@ -7,12 +7,15 @@ from typing import Any
 import datetime
 
 from cim_plugin.header_validation import (
-    _check_dcterms_issued_count, 
+    # _check_dcterms_issued_count, 
     _check_trig_rdfg_graph,
-    _remove_cimxml_rdfg_graph, 
+    _correct_triple_representation_by_predicate,
+    _remove_cimxml_rdfg_graph,
+    # _remove_cimxml_rdfg_graph, 
     _remove_invalid_triples, 
     _fix_datetime_format_in_triples, 
     _fix_datetime_format,
+    _fix_cimxml_period_of_time_format
 )
 
 
@@ -115,6 +118,20 @@ def test_remove_invalid_triples_logging(caplog: pytest.LogCaptureFixture) -> Non
     
     assert f"Invalid triple detected in header, removing: ({s}, {p}, {o})" in caplog.text
 
+def test_remove_invalid_triples_idempotency(caplog: pytest.LogCaptureFixture) -> None:
+    # Check that if the function is run multiple times, it does not remove more triples than necessary.
+    g = Graph()
+    identifier = URIRef("id1")
+    g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
+    g.add((identifier, RDF.type, RDFG.Graph))
+
+    _remove_invalid_triples(g, predicates=RDF.type, obj=RDFG.Graph)
+    _remove_invalid_triples(g, predicates=RDF.type, obj=RDFG.Graph)
+
+    assert caplog.text.count("Invalid triple detected in header, removing:") == 1    
+    assert len(g) == 1
+    assert (identifier, RDF.type, RDFG.Graph) not in g
+    assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
 
 # Unit tests _fix_datetime_format
 @pytest.mark.parametrize(
@@ -354,71 +371,72 @@ def test_fix_datetime_format_in_triples_objecturi(caplog: pytest.LogCaptureFixtu
 
 
 # Unit tests _check_dcterms_issued_count
-@pytest.mark.parametrize(
-    "identifier, triples, expected_count",
-    [
-        pytest.param(URIRef("id1"), [], 0, id="No triples"),
-        pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple"),
-        pytest.param(URIRef("id1"), [(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple, different identifier"),
-        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, same identifier"),
-        pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, different identifier"),
-        pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Multiple triples, one dcterms:issued triple"),
-        pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 2, id="Multiple issued triples, different identifiers"),
-        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-02"))], 2, id="Multiple issued triples, same identifiers, not duplicates"),
-        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, URIRef("2020-01-01"))], 1, id="Has issued triple, URIRef object"),
-        pytest.param(URIRef("id1"), [(BNode(), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, blank node identifier")
-    ]
-)
-def test_check_dcterms_issued_count_various(identifier: URIRef, triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
-    g = Graph()
-    for s, p, o in triples:
-        g.add((s, p, o))
+# Function replaced by _correct_triple_representation_by_predicate
+# @pytest.mark.parametrize(
+#     "identifier, triples, expected_count",
+#     [
+#         pytest.param(URIRef("id1"), [], 0, id="No triples"),
+#         pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple"),
+#         pytest.param(URIRef("id1"), [(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple, different identifier"),
+#         pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, same identifier"),
+#         pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, different identifier"),
+#         pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Multiple triples, one dcterms:issued triple"),
+#         pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 2, id="Multiple issued triples, different identifiers"),
+#         pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-02"))], 2, id="Multiple issued triples, same identifiers, not duplicates"),
+#         pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, URIRef("2020-01-01"))], 1, id="Has issued triple, URIRef object"),
+#         pytest.param(URIRef("id1"), [(BNode(), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, blank node identifier")
+#     ]
+# )
+# def test_check_dcterms_issued_count_various(identifier: URIRef, triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
+#     g = Graph()
+#     for s, p, o in triples:
+#         g.add((s, p, o))
 
-    _check_dcterms_issued_count(g, identifier)
+#     _check_dcterms_issued_count(g, identifier)
 
-    if expected_count == 0:
-        assert "Missing required dcterms:issued triple. Creating dummy triple without date." in caplog.text
-        assert (identifier, DCTERMS.issued, Literal("unknown")) in g
-        assert len(g) == len(triples) + 1
-    if expected_count == 1:
-        assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
-        assert "All but one should be removed." not in caplog.text
-        assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
-        assert len(g) == len(triples)
-    if expected_count > 1:
-        assert "All but one should be removed." in caplog.text
-        assert len(g) == len(triples) 
-        assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
-
-
-def test_check_dcterms_issued_count_duplicates(caplog: pytest.LogCaptureFixture) -> None:
-    # Triple duplicates are removed by rdflib, so only one dcterms:issued triple remains.
-    g = Graph()
-    identifier = URIRef("id1")
-    g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
-    g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
-
-    _check_dcterms_issued_count(g, identifier)
-
-    assert "All but one should be removed." not in caplog.text
-    assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
-    assert len(g) == 1
+#     if expected_count == 0:
+#         assert "Missing required dcterms:issued triple. Creating dummy triple without date." in caplog.text
+#         assert (identifier, DCTERMS.issued, Literal("unknown")) in g
+#         assert len(g) == len(triples) + 1
+#     if expected_count == 1:
+#         assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
+#         assert "All but one should be removed." not in caplog.text
+#         assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
+#         assert len(g) == len(triples)
+#     if expected_count > 1:
+#         assert "All but one should be removed." in caplog.text
+#         assert len(g) == len(triples) 
+#         assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
 
 
-def test_check_dcterms_issued_count_onlyonedummy(caplog: pytest.LogCaptureFixture) -> None:
-    # Check that a new dummy triple is not created if the function is run multiple times.
-    g = Graph()
-    identifier = URIRef("id1")
-    g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
+# def test_check_dcterms_issued_count_duplicates(caplog: pytest.LogCaptureFixture) -> None:
+#     # Triple duplicates are removed by rdflib, so only one dcterms:issued triple remains.
+#     g = Graph()
+#     identifier = URIRef("id1")
+#     g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
+#     g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
 
-    _check_dcterms_issued_count(g, identifier)
-    _check_dcterms_issued_count(g, identifier)
+#     _check_dcterms_issued_count(g, identifier)
 
-    assert "All but one should be removed." not in caplog.text
-    assert caplog.text.count("Creating dummy triple without date.") == 1
-    assert len(g) == 2
-    assert (identifier, DCTERMS.issued, Literal("unknown")) in g
-    assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
+#     assert "All but one should be removed." not in caplog.text
+#     assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
+#     assert len(g) == 1
+
+
+# def test_check_dcterms_issued_count_onlyonedummy(caplog: pytest.LogCaptureFixture) -> None:
+#     # Check that a new dummy triple is not created if the function is run multiple times.
+#     g = Graph()
+#     identifier = URIRef("id1")
+#     g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
+
+#     _check_dcterms_issued_count(g, identifier)
+#     _check_dcterms_issued_count(g, identifier)
+
+#     assert "All but one should be removed." not in caplog.text
+#     assert caplog.text.count("Creating dummy triple without date.") == 1
+#     assert len(g) == 2
+#     assert (identifier, DCTERMS.issued, Literal("unknown")) in g
+#     assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
 
 
 # Unit tests _check_trig_rdfg_graph
@@ -492,47 +510,173 @@ def test_check_trig_rdfg_graph_identifierbnode(caplog: pytest.LogCaptureFixture)
 
 
 # Unit tests _remove_cimxml_rdfg_graph
+# Replaced by _remove_invalid_triples with predicate filter for RDF.type and object filter for RDFG.Graph.
+# @pytest.mark.parametrize(
+#     "triples, expected_count",
+#     [
+#         pytest.param([], 0, id="Empty graph"),
+#         pytest.param([(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="Graph without rdfg:graph triple"),
+#         pytest.param([(URIRef("s"), RDF.type, RDFG.Graph)], 1, id="Graph with one rdfg:graph triple"),
+#         pytest.param([(URIRef("s1"), RDF.type, RDFG.Graph), (URIRef("s2"), RDF.type, RDFG.Graph)], 2, id="Graph with two rdfg:graph triple"),
+#         pytest.param([(URIRef("id1"), RDF.type, RDFG.Graph), (URIRef("id1"), RDF.type, DCAT.Dataset)], 1, id="Graph with multiple rdf:type triples. Only one rdfg:Graph."),
+#     ]
+# )
+# def test_remove_cimxml_rdfg_graph_various(triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
+#     g = Graph()
+#     for s, p, o in triples:
+#         g.add((s, p, o))
+
+#     _remove_cimxml_rdfg_graph(g)
+
+#     if expected_count == 0:
+#         assert len(g) == len(triples)
+#         assert "Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it." not in caplog.text
+#         for triple in triples:  # Check that other triples are not removed.
+#             assert triple in g
+#     elif expected_count > 0:
+#         assert len(g) == len(triples) - expected_count
+#         assert caplog.text.count("Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it.") == 1
+
+
+# def test_remove_cimxml_rdfg_graph_idempotency(caplog: pytest.LogCaptureFixture) -> None:
+#     # Check that if the function is run multiple times, it does not remove more triples than necessary.
+#     g = Graph()
+#     identifier = URIRef("id1")
+#     g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
+#     g.add((identifier, RDF.type, RDFG.Graph))
+
+#     _remove_cimxml_rdfg_graph(g)
+#     _remove_cimxml_rdfg_graph(g)
+
+#     assert caplog.text.count("Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it.") == 1    
+#     assert len(g) == 1
+#     assert (identifier, RDF.type, RDFG.Graph) not in g
+#     assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
+
+
+# Unit tests _fix_cimxml_period_of_time_format
 @pytest.mark.parametrize(
-    "triples, expected_count",
+    "occurences",
     [
-        pytest.param([], 0, id="Empty graph"),
-        pytest.param([(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="Graph without rdfg:graph triple"),
-        pytest.param([(URIRef("s"), RDF.type, RDFG.Graph)], 1, id="Graph with one rdfg:graph triple"),
-        pytest.param([(URIRef("s1"), RDF.type, RDFG.Graph), (URIRef("s2"), RDF.type, RDFG.Graph)], 2, id="Graph with two rdfg:graph triple"),
-        pytest.param([(URIRef("id1"), RDF.type, RDFG.Graph), (URIRef("id1"), RDF.type, DCAT.Dataset)], 1, id="Graph with multiple rdf:type triples. Only one rdfg:Graph."),
+        pytest.param(0, id="No periodOfTime triple"),
+        pytest.param(1, id="One periodOfTime triple"),
+        pytest.param(2, id="Two periodOfTime triples"),
     ]
 )
-def test_remove_cimxml_rdfg_graph_various(triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
+def test_fix_cimxml_period_of_time_format_periodoftime(occurences: int) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    g.add((id, DCTERMS.conformsTo, Literal("whatever")))
+    g.add((id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((id, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")))
+    for i in range(occurences):
+        g.add((URIRef(f"s{i}"), RDF.type, DCTERMS.PeriodOfTime))
+
+    _fix_cimxml_period_of_time_format(g, id)
+
+    assert (id, DCTERMS.conformsTo, Literal("whatever")) in g
+    assert (id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (id, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) in g
+    assert len(g) == 3
+    for i in range(occurences):
+        assert (URIRef(f"s{i}"), RDF.type, DCTERMS.PeriodOfTime) not in g
+
+
+@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+def test_fix_cimxml_period_of_time_format_emptygraph(mock_correct: MagicMock) -> None:
+    g = Graph()
+    id = URIRef("id1")
+
+    _fix_cimxml_period_of_time_format(g, id)
+
+    mock_correct.assert_has_calls([call(g, DCAT.endDate, id), call(g, DCAT.startDate, id)])
+    assert len(g) == 0
+
+
+@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+def test_fix_cimxml_period_of_time_format_blanknodes(mock_correct: MagicMock) -> None:
+    g = Graph()
+    id = BNode("id1")
+    other_bnode = BNode("other")
+    g.add((id, RDF.type, DCTERMS.PeriodOfTime))
+    g.add((other_bnode, RDF.type, DCAT.Dataset))
+
+    # Pylance silenced to test wrong input datatype.
+    _fix_cimxml_period_of_time_format(g, id)    # type: ignore
+
+    mock_correct.assert_has_calls([call(g, DCAT.endDate, id), call(g, DCAT.startDate, id)])
+    assert len(g) == 1
+    assert (other_bnode, RDF.type, DCAT.Dataset) in g
+    assert (id, RDF.type, DCTERMS.PeriodOfTime) not in g
+
+
+# Unit tests _correct_triple_representation_by_predicate
+@pytest.mark.parametrize(
+    "identifier, triples, expected_count",
+    [
+        pytest.param(URIRef("id1"), [], 0, id="No triples"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple"),
+        pytest.param(URIRef("id1"), [(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple, different identifier"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, same identifier"),
+        pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, different identifier"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Multiple triples, one dcterms:issued triple"),
+        pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 2, id="Multiple issued triples, different identifiers"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-02"))], 2, id="Multiple issued triples, same identifiers, not duplicates"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, URIRef("2020-01-01"))], 1, id="Has issued triple, URIRef object"),
+        pytest.param(URIRef("id1"), [(BNode(), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, blank node identifier")
+    ]
+)
+def test_correct_triple_representation_by_predicate_various(identifier: URIRef, triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
     for s, p, o in triples:
         g.add((s, p, o))
 
-    _remove_cimxml_rdfg_graph(g)
+    _correct_triple_representation_by_predicate(g, DCTERMS.issued, identifier)
 
     if expected_count == 0:
+        assert "Missing required http://purl.org/dc/terms/issued triple. Creating dummy triple without date." in caplog.text
+        assert (identifier, DCTERMS.issued, Literal("unknown")) in g
+        assert len(g) == len(triples) + 1
+    if expected_count == 1:
+        assert "Missing required http://purl.org/dc/terms/issued triple. Creating dummy triple without date." not in caplog.text
+        assert "All but one should be removed." not in caplog.text
+        assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
         assert len(g) == len(triples)
-        assert "Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it." not in caplog.text
-        for triple in triples:  # Check that other triples are not removed.
-            assert triple in g
-    elif expected_count > 0:
-        assert len(g) == len(triples) - expected_count
-        assert caplog.text.count("Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it.") == 1
+    if expected_count > 1:
+        assert "All but one should be removed." in caplog.text
+        assert len(g) == len(triples) 
+        assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
 
 
-def test_remove_cimxml_rdfg_graph_idempotency(caplog: pytest.LogCaptureFixture) -> None:
-    # Check that if the function is run multiple times, it does not remove more triples than necessary.
+def test_correct_triple_representation_by_predicate_duplicates(caplog: pytest.LogCaptureFixture) -> None:
+    # Triple duplicates are removed by rdflib, so only one dcterms:issued triple remains.
+    g = Graph()
+    identifier = URIRef("id1")
+    g.add((identifier, DCAT.endDate, Literal("2020-01-01")))
+    g.add((identifier, DCAT.endDate, Literal("2020-01-01")))
+
+    _correct_triple_representation_by_predicate(g, DCAT.endDate, identifier)
+
+    assert "All but one should be removed." not in caplog.text
+    assert f"Missing required {DCAT.endDate} triple. Creating dummy triple without date." not in caplog.text
+    assert len(g) == 1
+
+
+def test_correct_triple_representation_by_predicate_onlyonedummy(caplog: pytest.LogCaptureFixture) -> None:
+    # Check that a new dummy triple is not created if the function is run multiple times.
     g = Graph()
     identifier = URIRef("id1")
     g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
-    g.add((identifier, RDF.type, RDFG.Graph))
 
-    _remove_cimxml_rdfg_graph(g)
-    _remove_cimxml_rdfg_graph(g)
+    _correct_triple_representation_by_predicate(g, DCAT.startDate, identifier)
+    _correct_triple_representation_by_predicate(g, DCAT.startDate, identifier)
 
-    assert caplog.text.count("Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it.") == 1    
-    assert len(g) == 1
-    assert (identifier, RDF.type, RDFG.Graph) not in g
+    assert "All but one should be removed." not in caplog.text
+    assert caplog.text.count("Creating dummy triple without date.") == 1
+    assert len(g) == 2
+    assert (identifier, DCAT.startDate, Literal("unknown")) in g
     assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
+
 
 if __name__ == "__main__":
     pytest.main()
