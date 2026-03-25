@@ -127,6 +127,15 @@ def _fix_datetime_format_in_triples(graph: Graph) -> None:
 
 
 def _check_dcterms_issued_count(graph: Graph, identifier: URIRef) -> None:
+    """Check that there is exactly one dcterms:issued triple for any subject. 
+    
+    If there are none, add a dummy triple with "unknown" as object and an identifier as subject. 
+    If there are multiple, log an error.
+    
+    Parameters:
+        graph (Graph): The graph to check.
+        identifier (URIRef): The identifier to use for the dummy triple.
+    """
     issued_triples = list(graph.triples((None, DCTERMS.issued, None)))
     if not issued_triples:
         logger.error("Missing required dcterms:issued triple. Creating dummy triple without date.")
@@ -177,10 +186,17 @@ def _make_bnode_date_triple_for_period_of_time(graph: Graph, bnode: BNode, predi
 
 
 def _check_trig_rdfg_graph(graph: Graph, identifier: URIRef) -> None:
-    """Check that an rdf:type rdfg:Graph triple is present (issue #12, TriG)."""
+    """Check that an rdf:type rdfg:Graph triple is present in trig header.
+    
+    Will add the triple if missing.
+
+    Parameters:
+        graph (Graph): The graph to check.
+        identifier (URIRef): The identifier (subject) of the triple.
+    """
     graphtype = next(graph.triples((identifier, RDF.type, RDFG.Graph)), None)
     if not graphtype:
-        logger.error("Missing required rdf:type rdfg:Graph triple for TriG header (issue #12). Adding it.")
+        logger.error("Missing required rdf:type rdfg:Graph triple for Trig header. Adding it.")
         graph.add((identifier, RDF.type, RDFG.Graph))
 
 # ── CIMXML-specific checks ────────────────────────────────────────────────────
@@ -207,10 +223,18 @@ def _fix_cimxml_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
 
 
 def _remove_cimxml_rdfg_graph(graph: Graph) -> None:
-    graphtype = next(graph.triples((None, RDF.type, RDFG.Graph)), None)
+    """Remove rdf:type rdfg:Graph triple if present in CIMXML header.
+    
+    The triple is removed regardless of what the subject is.
+
+    Parameters:
+        graph (Graph): The graph to check and modify.
+    """
+    graphtype = list(graph.triples((None, RDF.type, RDFG.Graph)))
     if graphtype:
         logger.error("Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it.")
-        graph.remove(graphtype)
+        for triple in graphtype:
+            graph.remove(triple)
 
 
 # ── Public validators ─────────────────────────────────────────────────────────
