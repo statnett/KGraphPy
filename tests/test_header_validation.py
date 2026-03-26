@@ -11,6 +11,7 @@ from cim_plugin.header_validation import (
     # _check_dcterms_issued_count, 
     _check_trig_rdfg_graph,
     _correct_triple_representation_by_predicate,
+    _make_bnode_triple_for_given_predicate,
     _remove_cimxml_rdfg_graph,
     _remove_cimxml_rdfg_graph, 
     _remove_invalid_triples, 
@@ -439,6 +440,80 @@ def test_fix_datetime_format_in_triples_objecturi(caplog: pytest.LogCaptureFixtu
 #     assert len(g) == 2
 #     assert (identifier, DCTERMS.issued, Literal("unknown")) in g
 #     assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
+
+# Unit tests _make_bnode_triple_for_given_predicate
+def test_make_bnode_triple_for_given_predicate_emptygraph(caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    bnode = BNode()
+    _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
+
+    assert len(g) == 1
+    assert (bnode, DCAT.endDate, Literal("unknown")) in g
+    assert f"Missing required {DCAT.endDate} triple. Creating dummy triple with no date." in caplog.text
+
+
+@pytest.mark.parametrize(
+    "triples, expected_triples, triples_found",
+    [
+        pytest.param([], [Literal("unknown")], 0, id="No triple found"),
+        pytest.param([(URIRef("s"), Literal("2025-02-14"))], [Literal("2025-02-14")], 1, id="One triple found"),
+        pytest.param([(URIRef("s"), Literal("2025-02-14")), (URIRef("s"), Literal("2025-02-31"))], [Literal("2025-02-14"), Literal("2025-02-31")], 2, id="Two triples found"),
+        pytest.param([(URIRef("s1"), Literal("2025-02-14")), (URIRef("s2"), Literal("2025-02-31"))], [Literal("2025-02-14"), Literal("2025-02-31")], 2, id="Two triples found with different subjects"),    # The invalid date is kept as is
+        pytest.param([(URIRef("s1"), Literal("2025-02-14")), (URIRef("s2"), Literal("2025-02-14"))], [Literal("2025-02-14")], 1, id="Two triples, different subjects, same object"),    # They are made duplicates which rdflib removes
+        pytest.param([(BNode("s"), Literal("2025-02-14"))], [Literal("2025-02-14")], 1, id="BNode triple found"),
+        pytest.param([(URIRef("s"), URIRef("2025-02-14"))], [URIRef("2025-02-14")], 1, id="One triple found with uri as object"),   # The type of object is irrelevant
+    ]
+)
+def test_make_bnode_triple_for_given_predicate_various(triples: list[tuple[Node, Node]], expected_triples: list[Node], triples_found: int, caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    g.add((URIRef("s"), URIRef("p"), Literal("o")))
+    for s, o in triples:
+        g.add((s, DCAT.endDate, o))
+    original_len = len(g)
+    bnode = BNode()
+    _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
+
+    assert (URIRef("s"), URIRef("p"), Literal("o")) in g
+    for o in expected_triples:
+        assert (bnode, DCAT.endDate, o) in g
+    
+    if triples_found == 0:
+        assert f"Missing required {DCAT.endDate} triple. Creating dummy triple with no date." in caplog.text
+        assert len(g) == original_len + 1  # Original triple + new triple
+    elif triples_found >= 1:
+        for s, o in triples:
+            assert (s, DCAT.endDate, o) not in g
+    
+    if triples_found > 1:    
+        assert f"Multiple {DCAT.endDate} triples. All but one should be removed." in caplog.text
+    
+
+def test_make_bnode_triple_for_given_predicate_idempotency(caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    g.add((URIRef("s"), URIRef("p"), Literal("o")))
+    bnode = BNode()
+    _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
+    _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
+
+    assert len(g) == 2
+    assert (URIRef("s"), URIRef("p"), Literal("o")) in g
+    assert (bnode, DCAT.endDate, Literal("unknown")) in g
+    assert caplog.text.count(f"Missing required {DCAT.endDate} triple. Creating dummy triple with no date.") == 1
+
+
+def test_make_bnode_triple_for_given_predicate_subjectissamebnode() -> None:
+    # Same bnode already a subject of a triple with the predicate. Documenting that no infinite loop or error occurs.
+    g = Graph()
+    g.add((URIRef("s"), URIRef("p"), Literal("o")))
+    bnode = BNode()
+    g.add((bnode, DCAT.endDate, Literal("2025-02-14")))
+
+    _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
+
+    assert len(g) == 2
+    assert (URIRef("s"), URIRef("p"), Literal("o")) in g
+    assert (bnode, DCAT.endDate, Literal("2025-02-14")) in g
+    
 
 
 # Unit tests _check_trig_rdfg_graph

@@ -188,11 +188,21 @@ def _fix_trig_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
         graph.remove((s, RDF.type, DCTERMS.PeriodOfTime))
     graph.add((bnode, RDF.type, DCTERMS.PeriodOfTime))
 
-    _make_bnode_date_triple_for_period_of_time(graph, bnode, DCAT.startDate)
-    _make_bnode_date_triple_for_period_of_time(graph, bnode, DCAT.endDate)
+    _make_bnode_triple_for_given_predicate(graph, bnode, DCAT.startDate)
+    _make_bnode_triple_for_given_predicate(graph, bnode, DCAT.endDate)
 
 
-def _make_bnode_date_triple_for_period_of_time(graph: Graph, bnode: BNode, predicate: URIRef) -> None:
+def _make_bnode_triple_for_given_predicate(graph: Graph, bnode: BNode, predicate: URIRef) -> None:
+    """Remake triples into a blank node triple with the given predicate and blank node as subject.
+    
+    If there already are triples with the given predicate, they are removed and replaced with triples with the same objects but the blank node as subject.
+    If there are no triples with the given predicate, a new triple with the blank node as subject and "unknown" as object is created.
+
+    Parameters:
+        graph (Graph): The graph to modify.
+        bnode (BNode): The blank node to use as the subject.
+        predicate (URIRef): The predicate to use for the triple.
+    """
     triples = list(graph.triples((None, predicate, None)))
 
     if len(triples) > 1:
