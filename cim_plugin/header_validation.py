@@ -178,10 +178,14 @@ def _correct_triple_representation_by_predicate(graph: Graph, predicate: URIRef,
 # ── TriG-specific checks ──────────────────────────────────────────────────────
 
 def _fix_trig_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
-    bnode = BNode()
+    for s, p, o in list(graph.triples((None, DCTERMS.temporal, None))):
+        graph.remove((s, p, o))
 
-    graph.remove((None, RDF.type, DCTERMS.PeriodOfTime))
+    bnode = BNode()
     graph.add((identifier, DCTERMS.temporal, bnode))
+
+    for s in graph.subjects(RDF.type, DCTERMS.PeriodOfTime):
+        graph.remove((s, RDF.type, DCTERMS.PeriodOfTime))
     graph.add((bnode, RDF.type, DCTERMS.PeriodOfTime))
 
     _make_bnode_date_triple_for_period_of_time(graph, bnode, DCAT.startDate)
@@ -191,29 +195,17 @@ def _fix_trig_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
 def _make_bnode_date_triple_for_period_of_time(graph: Graph, bnode: BNode, predicate: URIRef) -> None:
     triples = list(graph.triples((None, predicate, None)))
 
-    if len(triples) == 1:
-        graph.remove(triples[0])
-        new_obj = _fix_datetime_format(triples[0][2])
-        if new_obj != triples[0][2]:
-            logger.error(f"Corrected {predicate} format for {triples[0][2]} -> {new_obj})")
-            graph.add((bnode, predicate, new_obj))
-        else:
-            graph.add((bnode, predicate, triples[0][2]))
+    if len(triples) > 1:
+        logger.error(f"Multiple {predicate} triples. All but one should be removed.")
 
-    elif len(triples) > 1:
-        logger.error(f"Multiple {predicate} triples found for PeriodOfTime. Keeping only the first one and removing the rest.")
-        for triple in triples[1:]:
-            graph.remove(triple)
-        new_obj = _fix_datetime_format(triples[0][2])
-        if new_obj != triples[0][2]:
-            logger.error(f"Corrected {predicate} format for {triples[0][2]} -> {new_obj})")
-            graph.add((bnode, predicate, new_obj))
-        else:
-            graph.add((bnode, predicate, triples[0][2]))
-
+    if triples:
+        for s, p, o in triples:
+            graph.remove((s, p, o))
+            graph.add((bnode, p, o))
     else:
-        logger.error(f"Missing required {predicate} triple for PeriodOfTime. Creating dummy triple with no date.")
+        logger.error(f"Missing required {predicate} triple. Creating dummy triple with no date.")
         graph.add((bnode, predicate, Literal("unknown")))
+
 
 def _check_trig_rdfg_graph(graph: Graph, identifier: URIRef) -> None:
     """Check that an rdf:type rdfg:Graph triple is present in trig header.
@@ -239,7 +231,8 @@ def _fix_cimxml_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
         graph (Graph): The graph to fix.
         identifier (URIRef): The identifier to use for the dummy triple of startDate and endDate if missing.
     """
-    graph.remove((None, RDF.type, DCTERMS.PeriodOfTime))
+    for s in graph.subjects(RDF.type, DCTERMS.PeriodOfTime):
+        graph.remove((s, RDF.type, DCTERMS.PeriodOfTime))
 
     _correct_triple_representation_by_predicate(graph, DCAT.endDate, identifier)
     _correct_triple_representation_by_predicate(graph, DCAT.startDate, identifier)
@@ -294,19 +287,15 @@ def validate_header(header: CIMMetadataHeader, format: str="cimxml") -> None:
     
     # Common checks
     _remove_invalid_triples(header.graph, predicates=[DCAT.distribution, JSONLD.base], obj=DCAT.Distribution)
-    _fix_datetime_format_in_triples(header.graph) # This should be done before _check_dcterms_issued_count as correction may remove duplicates automatically.
+    _fix_datetime_format_in_triples(header.graph) # This should be done before checking DCTERMS.issued as correction may remove duplicates automatically.
     _correct_triple_representation_by_predicate(header.graph, DCTERMS.issued, identifier)
 
     if format == "cimxml":
-        if header.header_type == DCAT.Dataset:
-            _fix_cimxml_period_of_time_format(header.graph, identifier)
-            _remove_cimxml_rdfg_graph(header.graph)
+        _fix_cimxml_period_of_time_format(header.graph, identifier)
+        _remove_cimxml_rdfg_graph(header.graph)
         
     elif format == "trig":
-        # Not using _fix_trig_period_of_time_format because the trig serializer would have to be changed for it to give intended result.
-        # Using the _fix_cimxml_period_of_time_format for now, which makes sure the format of the dates is correct and that they are present. 
-        # _fix_trig_period_of_time_format(graph)
-        _fix_cimxml_period_of_time_format(header.graph, identifier)
+        _fix_trig_period_of_time_format(header.graph, identifier)
         _check_trig_rdfg_graph(header.graph, identifier)
 
     elif format == "jsonld":

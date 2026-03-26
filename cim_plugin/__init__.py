@@ -20,6 +20,12 @@ register(
     "cim_plugin.cimxml_serializer",
     "CIMXMLSerializer",
 )
+register(
+    "cimtrig",
+    Serializer,
+    "cim_plugin.cimtrig_serializer",
+    "CIMTrigSerializer",
+)
 
 
 # Set the default metadata object types for CIM

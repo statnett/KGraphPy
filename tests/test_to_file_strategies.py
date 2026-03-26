@@ -20,7 +20,7 @@ def test_trigstrategy_noschemapath() -> None:
     strategy = TrigStrategy("out.trig", enrich_datatypes=False, schema_path=None)
     strategy.serialize(processor)
     processor.set_schema.assert_not_called()
-    processor.graph.serialize.assert_called_once_with("out.trig", format="trig") 
+    processor.graph.serialize.assert_called_once_with("out.trig", format="cimtrig") 
 
 def test_trigstrategy_setschema() -> None:
     processor = Mock()
@@ -32,7 +32,7 @@ def test_trigstrategy_setschema() -> None:
 
     processor.set_schema.assert_called_once_with("dummy.yaml")
     processor.enrich_literal_datatypes.assert_called_once()
-    processor.graph.serialize.assert_called_once_with("out.trig", format="trig") 
+    processor.graph.serialize.assert_called_once_with("out.trig", format="cimtrig") 
 
 def test_trigstrategy_setschemaenrichfalse() -> None:
     # Technically this is pointless as you don't need schema if you are not doing enriching.
@@ -46,7 +46,7 @@ def test_trigstrategy_setschemaenrichfalse() -> None:
 
     processor.set_schema.assert_called_once_with("dummy.yaml")
     processor.enrich_literal_datatypes.assert_not_called()
-    processor.graph.serialize.assert_called_once_with("out.trig", format="trig") 
+    processor.graph.serialize.assert_called_once_with("out.trig", format="cimtrig") 
 
 
 def test_trigstrategy_noenrichwithschema():
@@ -58,7 +58,7 @@ def test_trigstrategy_noenrichwithschema():
     strategy.serialize(processor)
 
     processor.enrich_literal_datatypes.assert_not_called()
-    processor.graph.serialize.assert_called_once_with("out.trig", format="trig") 
+    processor.graph.serialize.assert_called_once_with("out.trig", format="cimtrig") 
 
 @pytest.mark.parametrize("schema", ["fake_schema", None])
 def test_trigstrategy_enrichesdatatypes(schema: str|None, caplog: pytest.LogCaptureFixture) -> None:
@@ -76,7 +76,7 @@ def test_trigstrategy_enrichesdatatypes(schema: str|None, caplog: pytest.LogCapt
         assert "Cannot enrich datatypes" in caplog.text
         processor.enrich_literal_datatypes.assert_not_called()
 
-    processor.graph.serialize.assert_called_once_with("out.trig", format="trig") 
+    processor.graph.serialize.assert_called_once_with("out.trig", format="cimtrig") 
 
 @pytest.mark.parametrize("header", ["fake_header", None])
 def test_trigstrategy_mergeheader(header: str|None) -> None:
@@ -92,7 +92,7 @@ def test_trigstrategy_mergeheader(header: str|None) -> None:
     else:
         processor.merge_header.assert_not_called()
 
-    processor.graph.serialize.assert_called_once_with("out.trig", format="trig") 
+    processor.graph.serialize.assert_called_once_with("out.trig", format="cimtrig") 
 
 # Unit tests CIMXMLStrategy
 @pytest.mark.parametrize("header", ["fake_header", None])
@@ -210,7 +210,7 @@ def test_trigstrategy_integration(make_cimgraph: CIMGraph, make_schemaview: Call
     
     assert (URIRef("http://example.com/header"), RDF.type, DCAT.Dataset) in pr.graph
     assert (URIRef("http://www.example.com/s1"), URIRef("http://www.example.com/c1"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in pr.graph
-    pr.graph.serialize.assert_called_once_with("dummy.trig", format="trig")
+    pr.graph.serialize.assert_called_once_with("dummy.trig", format="cimtrig")
 
 if __name__ == "__main__":
     pytest.main()

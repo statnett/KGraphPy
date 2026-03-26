@@ -39,8 +39,8 @@ class TrigStrategy(SerializationStrategy):
                 processor.enrich_literal_datatypes()
             else:
                 logger.error("Cannot enrich datatypes without schema with datatypes.")
-
-        processor.graph.serialize(self.file_path, format="trig")
+        
+        processor.graph.serialize(self.file_path, format="cimtrig")
 
 
 class CIMXMLStrategy(SerializationStrategy):
@@ -54,7 +54,7 @@ class CIMXMLStrategy(SerializationStrategy):
         """Serialize cim graph to CIMXML file."""
         if not processor.graph.metadata_header:
             logger.error("Serializing without an extracted header may create a corrupt CIMXML file.")
-        
+
         processor.graph.serialize(self.file_path, format="cimxml", qualifier=self.qualifier)
 
 class JSONLDStrategy(SerializationStrategy):
