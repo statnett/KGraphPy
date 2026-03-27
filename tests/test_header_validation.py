@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import call, patch, MagicMock
+from unittest.mock import ANY, call, patch, MagicMock
 from rdflib import BNode, Graph, Literal, Node, URIRef
 from rdflib.namespace import XSD, DCAT, DCTERMS, RDF
 from cim_plugin.header import CIMMetadataHeader
@@ -18,6 +18,7 @@ from cim_plugin.header_validation import (
     _fix_datetime_format_in_triples, 
     _fix_datetime_format,
     _fix_cimxml_period_of_time_format,
+    _fix_trig_period_of_time_format,
     validate_header
 )
 
@@ -441,6 +442,7 @@ def test_fix_datetime_format_in_triples_objecturi(caplog: pytest.LogCaptureFixtu
 #     assert (identifier, DCTERMS.issued, Literal("unknown")) in g
 #     assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
 
+
 # Unit tests _make_bnode_triple_for_given_predicate
 def test_make_bnode_triple_for_given_predicate_emptygraph(caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
@@ -685,6 +687,173 @@ def test_fix_cimxml_period_of_time_format_blanknodes(mock_correct: MagicMock) ->
     assert (other_bnode, RDF.type, DCAT.Dataset) in g
     assert (id, RDF.type, DCTERMS.PeriodOfTime) not in g
 
+# Unit tests _fix_trig_period_of_time_format
+@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+def test__fix_trig_period_of_time_format_emptygraph(mock_make_bnode: MagicMock) -> None:
+    g = Graph()
+    id = URIRef("id1")
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 2
+
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert len(temporal_triple) == 1
+    assert temporal_triple[0] in g
+    bnode = temporal_triple[0][2]
+    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
+    mock_make_bnode.assert_has_calls([call(g, bnode, DCAT.endDate), call(g, bnode, DCAT.startDate)], any_order=True)
+
+@pytest.mark.parametrize(
+    "occurences",
+    [
+        pytest.param(0, id="No temporal triple"),
+        pytest.param(1, id="One temporal triple"),
+        pytest.param(2, id="Two temporal triples"),
+    ]
+)
+@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+def test__fix_trig_period_of_time_format_temporalremoval(mock_make_bnode: MagicMock, occurences: int) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    for i in range(occurences):
+        g.add((URIRef(f"s{i}"), DCTERMS.temporal, URIRef(f"o{i}")))
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 2
+
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert len(temporal_triple) == 1
+    assert temporal_triple[0] in g
+    bnode = temporal_triple[0][2]
+    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
+    mock_make_bnode.assert_has_calls([call(g, bnode, DCAT.endDate), call(g, bnode, DCAT.startDate)], any_order=True)
+    for i in range(occurences):
+        assert (URIRef(f"s{i}"), DCTERMS.temporal, URIRef(f"o{i}")) not in g
+
+
+@pytest.mark.parametrize(
+    "occurences",
+    [
+        pytest.param(0, id="No temporal triple"),
+        pytest.param(1, id="One temporal triple"),
+        pytest.param(2, id="Two temporal triples"),
+    ]
+)
+@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+def test__fix_trig_period_of_time_format_periodoftimeremoval(mock_make_bnode: MagicMock, occurences: int) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    for i in range(occurences):
+        g.add((URIRef(f"s{i}"), RDF.type, DCTERMS.PeriodOfTime))
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 2
+
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert len(temporal_triple) == 1
+    assert temporal_triple[0] in g
+    bnode = temporal_triple[0][2]
+    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
+    mock_make_bnode.assert_has_calls([call(g, bnode, DCAT.endDate), call(g, bnode, DCAT.startDate)], any_order=True)
+    for i in range(occurences):
+        assert (URIRef(f"s{i}"), RDF.type, DCTERMS.PeriodOfTime) not in g
+
+
+def test__fix_trig_period_of_time_format_temporalgroupexistswrongid() -> None:
+    # Documents that if a temporal node group exists under wrong identifier, it is removed and the information moved to a new temporal node group with a new blank node.
+    # This is to ensure that the temporal node group contains all the required information under the correct identifier.
+    g = Graph()
+    id = URIRef("id2")
+    first_bnode = BNode("first")
+    g.add((URIRef("id1"), DCTERMS.temporal, first_bnode))
+    g.add((first_bnode, RDF.type, DCTERMS.PeriodOfTime))
+    g.add((first_bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((first_bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")))
+    g.add((URIRef("id1"), RDF.type, DCAT.Dataset))  # Triple that should not be removed.
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 5
+    assert (URIRef("id1"), RDF.type, DCAT.Dataset) in g # Other triples are unchanged
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert temporal_triple[0] in g
+    bnode = temporal_triple[0][2]
+    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
+    assert (bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) in g
+    assert (URIRef("id1"), DCTERMS.temporal, first_bnode) not in g
+    assert (first_bnode, RDF.type, DCTERMS.PeriodOfTime) not in g
+    assert (first_bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) not in g
+    assert (first_bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) not in g
+
+
+def test__fix_trig_period_of_time_format_temporalgroupexistscorrectid() -> None:
+    # Documents that even if a temporal node group exists under correct identifier, it is still removed and the information moved to a new temporal node group with a new blank node. 
+    # This is to ensure that the temporal node group contains all the required information under the correct identifier, and that any incorrect formatting is fixed.
+    g = Graph()
+    id = URIRef("id1")
+    first_bnode = BNode("first")
+    g.add((URIRef("id1"), DCTERMS.temporal, first_bnode))
+    g.add((first_bnode, RDF.type, DCTERMS.PeriodOfTime))
+    g.add((first_bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((first_bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")))
+    g.add((URIRef("id1"), RDF.type, DCAT.Dataset))  # Triple that should not be removed.
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 5
+    assert (URIRef("id1"), RDF.type, DCAT.Dataset) in g # Other triples are unchanged
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert temporal_triple[0] in g
+    bnode = temporal_triple[0][2]
+    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
+    assert (bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) in g
+    assert (URIRef("id1"), DCTERMS.temporal, first_bnode) not in g
+    assert (first_bnode, RDF.type, DCTERMS.PeriodOfTime) not in g
+    assert (first_bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) not in g
+    assert (first_bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) not in g
+
+
+def test__fix_trig_period_of_time_format_multipletemporalgroupexists() -> None:
+    # Documents that when multiple temporal node groups exist, the information from all of them are moved to a new temporal node group with a new blank node. 
+    g = Graph()
+    id = URIRef("id1")
+    first_bnode = BNode("first")
+    second_bnode = BNode("second")
+    g.add((URIRef("id1"), DCTERMS.temporal, first_bnode))
+    g.add((URIRef("id1"), DCTERMS.temporal, second_bnode))
+    g.add((first_bnode, RDF.type, DCTERMS.PeriodOfTime))
+    g.add((first_bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((first_bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")))
+    g.add((URIRef("id1"), RDF.type, DCAT.Dataset))  # Triple that should not be removed.
+    g.add((second_bnode, RDF.type, DCTERMS.PeriodOfTime))
+    g.add((second_bnode, DCAT.endDate, Literal("2025-03-14")))
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 6
+    assert (URIRef("id1"), RDF.type, DCAT.Dataset) in g # Other triples are unchanged
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert temporal_triple[0] in g
+    bnode = temporal_triple[0][2]
+    # The triples that should remain
+    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
+    assert (bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (bnode, DCAT.endDate, Literal("2025-03-14")) in g
+    assert (bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) in g
+    # The triples that are removed
+    assert (URIRef("id1"), DCTERMS.temporal, first_bnode) not in g
+    assert (first_bnode, RDF.type, DCTERMS.PeriodOfTime) not in g
+    assert (first_bnode, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) not in g
+    assert (first_bnode, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) not in g
+    assert (URIRef("id1"), DCTERMS.temporal, second_bnode) not in g
+    assert (second_bnode, RDF.type, DCTERMS.PeriodOfTime) not in g
+    assert (second_bnode, DCAT.endDate, Literal("2025-03-14")) not in g
+    
 
 # Unit tests _correct_triple_representation_by_predicate
 @pytest.mark.parametrize(

@@ -176,8 +176,31 @@ def _correct_triple_representation_by_predicate(graph: Graph, predicate: URIRef,
         graph.add((identifier, predicate, Literal("unknown")))
 
 # ── TriG-specific checks ──────────────────────────────────────────────────────
+# Keeping this for now in case we want to use it for checking the presence of a complete temporal triple before fixing the format.
+def has_complete_temporal(graph: Graph, identifier: URIRef) -> bool:
+    # Find the blank node connected via dcterms:temporal
+    for o in graph.objects(identifier, DCTERMS.temporal):
+        if isinstance(o, BNode):
+            # Check required triples
+            type_ok = (o, RDF.type, DCTERMS.PeriodOfTime) in graph
+            start_ok = any(graph.objects(o, DCAT.startDate))
+            end_ok = any(graph.objects(o, DCAT.endDate))
+
+            if type_ok and start_ok and end_ok:
+                return True
+
+    return False
+
 
 def _fix_trig_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
+    """Fix the format of dcterms:PeriodOfTime representation in Trig header.
+    
+    Triples with dcat:startDate and dcat:endDate predicates are moved into a new blank node connected to the identifier via dcterms:temporal.
+
+    Parameters:
+        graph (Graph): The graph to fix.
+        identifier (URIRef): The identifier for the node group.
+    """
     for s, p, o in list(graph.triples((None, DCTERMS.temporal, None))):
         graph.remove((s, p, o))
 
@@ -229,6 +252,7 @@ def _check_trig_rdfg_graph(graph: Graph, identifier: URIRef) -> None:
     graphtype = next(graph.triples((identifier, RDF.type, RDFG.Graph)), None)
     if not graphtype:
         logger.error("Missing required rdf:type rdfg:Graph triple for Trig header. Adding it.")
+        graph.bind("rdfg", RDFG, override=False) # Needs testing
         graph.add((identifier, RDF.type, RDFG.Graph))
 
 # ── CIMXML-specific checks ────────────────────────────────────────────────────
