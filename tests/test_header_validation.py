@@ -8,7 +8,7 @@ from typing import Any
 import datetime
 
 from cim_plugin.header_validation import (
-    # _check_dcterms_issued_count, 
+    _check_dcterms_issued_count, 
     _check_trig_rdfg_graph,
     _correct_triple_representation_by_predicate,
     _make_bnode_triple_for_given_predicate,
@@ -375,89 +375,87 @@ def test_fix_datetime_format_in_triples_objecturi(caplog: pytest.LogCaptureFixtu
 
 
 # Unit tests _check_dcterms_issued_count
-# Function replaced by _correct_triple_representation_by_predicate
-# @pytest.mark.parametrize(
-#     "identifier, triples, expected_count",
-#     [
-#         pytest.param(URIRef("id1"), [], 0, id="No triples"),
-#         pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple"),
-#         pytest.param(URIRef("id1"), [(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple, different identifier"),
-#         pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, same identifier"),
-#         pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, different identifier"),
-#         pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Multiple triples, one dcterms:issued triple"),
-#         pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 2, id="Multiple issued triples, different identifiers"),
-#         pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-02"))], 2, id="Multiple issued triples, same identifiers, not duplicates"),
-#         pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, URIRef("2020-01-01"))], 1, id="Has issued triple, URIRef object"),
-#         pytest.param(URIRef("id1"), [(BNode(), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, blank node identifier")
-#     ]
-# )
-# def test_check_dcterms_issued_count_various(identifier: URIRef, triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
-#     g = Graph()
-#     for s, p, o in triples:
-#         g.add((s, p, o))
+# Function could potentially be replaced by _correct_triple_representation_by_predicate
+@pytest.mark.parametrize(
+    "identifier, triples, expected_count",
+    [
+        pytest.param(URIRef("id1"), [], 0, id="No triples"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple"),
+        pytest.param(URIRef("id1"), [(URIRef("s"), URIRef("p"), Literal("o"))], 0, id="No dcterms:issued triple, different identifier"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, same identifier"),
+        pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, different identifier"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), URIRef("p"), Literal("o")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Multiple triples, one dcterms:issued triple"),
+        pytest.param(URIRef("id1"), [(URIRef("s"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-01"))], 2, id="Multiple issued triples, different identifiers"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, Literal("2020-01-01")), (URIRef("id1"), DCTERMS.issued, Literal("2020-01-02"))], 2, id="Multiple issued triples, same identifiers, not duplicates"),
+        pytest.param(URIRef("id1"), [(URIRef("id1"), DCTERMS.issued, URIRef("2020-01-01"))], 1, id="Has issued triple, URIRef object"),
+        pytest.param(URIRef("id1"), [(BNode(), DCTERMS.issued, Literal("2020-01-01"))], 1, id="Has issued triple, blank node identifier")
+    ]
+)
+def test_check_dcterms_issued_count_various(identifier: URIRef, triples: list[tuple[Node, Node, Node]], expected_count: int, caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    for s, p, o in triples:
+        g.add((s, p, o))
 
-#     _check_dcterms_issued_count(g, identifier)
+    _check_dcterms_issued_count(g, identifier)
 
-#     if expected_count == 0:
-#         assert "Missing required dcterms:issued triple. Creating dummy triple without date." in caplog.text
-#         assert (identifier, DCTERMS.issued, Literal("unknown")) in g
-#         assert len(g) == len(triples) + 1
-#     if expected_count == 1:
-#         assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
-#         assert "All but one should be removed." not in caplog.text
-#         assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
-#         assert len(g) == len(triples)
-#     if expected_count > 1:
-#         assert "All but one should be removed." in caplog.text
-#         assert len(g) == len(triples) 
-#         assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
-
-
-# def test_check_dcterms_issued_count_duplicates(caplog: pytest.LogCaptureFixture) -> None:
-#     # Triple duplicates are removed by rdflib, so only one dcterms:issued triple remains.
-#     g = Graph()
-#     identifier = URIRef("id1")
-#     g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
-#     g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
-
-#     _check_dcterms_issued_count(g, identifier)
-
-#     assert "All but one should be removed." not in caplog.text
-#     assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
-#     assert len(g) == 1
+    if expected_count == 0:
+        assert "Missing required dcterms:issued triple." in caplog.text
+        assert len(g) == len(triples)
+    if expected_count == 1:
+        assert "Missing required dcterms:issued triple. Creating dummy triple without date." not in caplog.text
+        assert "All but one should be removed." not in caplog.text
+        assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
+        assert len(g) == len(triples)
+    if expected_count > 1:
+        assert "All but one should be removed." in caplog.text
+        assert len(g) == len(triples) 
+        assert (identifier, DCTERMS.issued, Literal("unknown")) not in g
 
 
-# def test_check_dcterms_issued_count_onlyonedummy(caplog: pytest.LogCaptureFixture) -> None:
-#     # Check that a new dummy triple is not created if the function is run multiple times.
-#     g = Graph()
-#     identifier = URIRef("id1")
-#     g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
+def test_check_dcterms_issued_count_duplicates(caplog: pytest.LogCaptureFixture) -> None:
+    # Triple duplicates are removed by rdflib, so only one dcterms:issued triple remains.
+    g = Graph()
+    identifier = URIRef("id1")
+    g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
+    g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
 
-#     _check_dcterms_issued_count(g, identifier)
-#     _check_dcterms_issued_count(g, identifier)
+    _check_dcterms_issued_count(g, identifier)
 
-#     assert "All but one should be removed." not in caplog.text
-#     assert caplog.text.count("Creating dummy triple without date.") == 1
-#     assert len(g) == 2
-#     assert (identifier, DCTERMS.issued, Literal("unknown")) in g
-#     assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
+    assert "All but one should be removed." not in caplog.text
+    assert "Missing required dcterms:issued triple." not in caplog.text
+    assert len(g) == 1
 
+
+def test_check_dcterms_issued_count_idempotency(caplog: pytest.LogCaptureFixture) -> None:
+    # Check that nothing strange happens if the function is run multiple times.
+    g = Graph()
+    identifier = URIRef("id1")
+    g.add((identifier, DCTERMS.conformsTo, Literal("whatever")))
+    g.add((identifier, DCTERMS.issued, Literal("2020-01-01")))
+
+    _check_dcterms_issued_count(g, identifier)
+    _check_dcterms_issued_count(g, identifier)
+
+    assert "All but one should be removed." not in caplog.text
+    assert "Missing required dcterms:issued triple." not in caplog.text
+    assert len(g) == 2
+    assert (identifier, DCTERMS.conformsTo, Literal("whatever")) in g
+    assert (identifier, DCTERMS.issued, Literal("2020-01-01")) in g
 
 # Unit tests _make_bnode_triple_for_given_predicate
 def test_make_bnode_triple_for_given_predicate_emptygraph(caplog: pytest.LogCaptureFixture) -> None:
+    # Nothing happens if there are no triples with the given predicate.
     g = Graph()
     bnode = BNode()
     _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
 
-    assert len(g) == 1
-    assert (bnode, DCAT.endDate, Literal("unknown")) in g
-    assert f"Missing required {DCAT.endDate} triple. Creating dummy triple with no date." in caplog.text
+    assert len(g) == 0
 
 
 @pytest.mark.parametrize(
     "triples, expected_triples, triples_found",
     [
-        pytest.param([], [Literal("unknown")], 0, id="No triple found"),
+        pytest.param([], [], 0, id="No triple found"),
         pytest.param([(URIRef("s"), Literal("2025-02-14"))], [Literal("2025-02-14")], 1, id="One triple found"),
         pytest.param([(URIRef("s"), Literal("2025-02-14")), (URIRef("s"), Literal("2025-02-31"))], [Literal("2025-02-14"), Literal("2025-02-31")], 2, id="Two triples found"),
         pytest.param([(URIRef("s1"), Literal("2025-02-14")), (URIRef("s2"), Literal("2025-02-31"))], [Literal("2025-02-14"), Literal("2025-02-31")], 2, id="Two triples found with different subjects"),    # The invalid date is kept as is
@@ -476,31 +474,31 @@ def test_make_bnode_triple_for_given_predicate_various(triples: list[tuple[Node,
     _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
 
     assert (URIRef("s"), URIRef("p"), Literal("o")) in g
+    
     for o in expected_triples:
         assert (bnode, DCAT.endDate, o) in g
-    
-    if triples_found == 0:
-        assert f"Missing required {DCAT.endDate} triple. Creating dummy triple with no date." in caplog.text
-        assert len(g) == original_len + 1  # Original triple + new triple
-    elif triples_found >= 1:
+            
+    if triples_found >= 1:
         for s, o in triples:
             assert (s, DCAT.endDate, o) not in g
     
     if triples_found > 1:    
-        assert f"Multiple {DCAT.endDate} triples. All but one should be removed." in caplog.text
+        assert f"Multiple {DCAT.endDate} triples found. All but one should be removed." in caplog.text
     
 
 def test_make_bnode_triple_for_given_predicate_idempotency(caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
     g.add((URIRef("s"), URIRef("p"), Literal("o")))
+    g.add((URIRef("s"), DCAT.endDate, Literal("2025-02-14")))
     bnode = BNode()
+    
     _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
     _make_bnode_triple_for_given_predicate(g, bnode, DCAT.endDate)
 
-    assert len(g) == 2
+    assert len(g) == 2 # No more triples are added after the first call, as the triple with bnode already exists.
     assert (URIRef("s"), URIRef("p"), Literal("o")) in g
-    assert (bnode, DCAT.endDate, Literal("unknown")) in g
-    assert caplog.text.count(f"Missing required {DCAT.endDate} triple. Creating dummy triple with no date.") == 1
+    assert (bnode, DCAT.endDate, Literal("2025-02-14")) in g
+    assert (URIRef("s"), DCAT.endDate, Literal("2025-02-14")) not in g
 
 
 def test_make_bnode_triple_for_given_predicate_subjectissamebnode() -> None:
@@ -660,19 +658,80 @@ def test_fix_cimxml_period_of_time_format_periodoftime(occurences: int) -> None:
         assert (URIRef(f"s{i}"), RDF.type, DCTERMS.PeriodOfTime) not in g
 
 
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
-def test_fix_cimxml_period_of_time_format_emptygraph(mock_correct: MagicMock) -> None:
+@pytest.mark.parametrize(
+    "occurences",
+    [
+        pytest.param(0, id="No temporal triple"),
+        pytest.param(1, id="One temporal triple"),
+        pytest.param(2, id="Two temporal triples"),
+    ]
+)
+def test_fix_cimxml_period_of_time_format_dctermstemporal(occurences: int) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    g.add((id, DCTERMS.conformsTo, Literal("whatever")))
+    g.add((id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((id, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")))
+    for i in range(occurences):
+        g.add((URIRef(f"s{i}"), DCTERMS.temporal, Literal(f"object{i}")))
+
+    _fix_cimxml_period_of_time_format(g, id)
+
+    assert (id, DCTERMS.conformsTo, Literal("whatever")) in g
+    assert (id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (id, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) in g
+    assert len(g) == 3
+    for i in range(occurences):
+        assert (URIRef(f"s{i}"), DCTERMS.temporal, Literal(f"object{i}")) not in g
+
+
+def test_fix_cimxml_period_of_time_format_multipledatesiddifferent(caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    g.add((id, DCTERMS.conformsTo, Literal("whatever")))
+    g.add((id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((URIRef("id2"), DCAT.endDate, Literal("2025-02-14T12:00:00+00:00")))
+
+    _fix_cimxml_period_of_time_format(g, id)
+
+    assert (id, DCTERMS.conformsTo, Literal("whatever")) in g
+    assert (id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (URIRef("id2"), DCAT.endDate, Literal("2025-02-14T12:00:00+00:00")) in g
+    assert len(g) == 3
+    assert f"Multiple {DCAT.endDate} triples found. All but one should be removed." in caplog.text
+    
+
+def test_fix_cimxml_period_of_time_format_multipledates(caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    g.add((id, DCTERMS.conformsTo, Literal("whatever")))
+    g.add((id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
+    g.add((id, DCAT.endDate, Literal("2025-02-14T12:00:00+00:00")))
+    g.add((id, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")))
+    g.add((id, DCAT.startDate, Literal("2025-02-01T12:00:00+00:00")))
+
+    _fix_cimxml_period_of_time_format(g, id)
+
+    assert (id, DCTERMS.conformsTo, Literal("whatever")) in g
+    assert (id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")) in g
+    assert (id, DCAT.endDate, Literal("2025-02-14T12:00:00+00:00")) in g
+    assert (id, DCAT.startDate, Literal("2025-02-01T00:00:00+00:00")) in g
+    assert (id, DCAT.startDate, Literal("2025-02-01T12:00:00+00:00")) in g
+    assert len(g) == 5
+    assert f"Multiple {DCAT.endDate} triples found. All but one should be removed." in caplog.text
+    assert f"Multiple {DCAT.startDate} triples found. All but one should be removed." in caplog.text
+
+
+def test_fix_cimxml_period_of_time_format_emptygraph() -> None:
     g = Graph()
     id = URIRef("id1")
 
     _fix_cimxml_period_of_time_format(g, id)
 
-    mock_correct.assert_has_calls([call(g, DCAT.endDate, id), call(g, DCAT.startDate, id)])
     assert len(g) == 0
 
 
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
-def test_fix_cimxml_period_of_time_format_blanknodes(mock_correct: MagicMock) -> None:
+def test_fix_cimxml_period_of_time_format_blanknodes() -> None:
     g = Graph()
     id = BNode("id1")
     other_bnode = BNode("other")
@@ -682,7 +741,6 @@ def test_fix_cimxml_period_of_time_format_blanknodes(mock_correct: MagicMock) ->
     # Pylance silenced to test wrong input datatype.
     _fix_cimxml_period_of_time_format(g, id)    # type: ignore
 
-    mock_correct.assert_has_calls([call(g, DCAT.endDate, id), call(g, DCAT.startDate, id)])
     assert len(g) == 1
     assert (other_bnode, RDF.type, DCAT.Dataset) in g
     assert (id, RDF.type, DCTERMS.PeriodOfTime) not in g
@@ -695,14 +753,30 @@ def test__fix_trig_period_of_time_format_emptygraph(mock_make_bnode: MagicMock) 
 
     _fix_trig_period_of_time_format(g, id)
 
-    assert len(g) == 2
+    assert len(g) == 0
 
     temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
-    assert len(temporal_triple) == 1
-    assert temporal_triple[0] in g
-    bnode = temporal_triple[0][2]
-    assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in g
-    mock_make_bnode.assert_has_calls([call(g, bnode, DCAT.endDate), call(g, bnode, DCAT.startDate)], any_order=True)
+    assert len(temporal_triple) == 0
+    mock_make_bnode.assert_not_called()
+
+
+@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+def test__fix_trig_period_of_time_format_nodatetriples(mock_make_bnode: MagicMock) -> None:
+    g = Graph()
+    id = URIRef("id1")
+    g.add((id, RDF.type, DCAT.Dataset))
+    g.add((id, DCTERMS.temporal, URIRef("o1")))
+    g.add((id, RDF.type, DCTERMS.PeriodOfTime))
+
+    _fix_trig_period_of_time_format(g, id)
+
+    assert len(g) == 1
+
+    temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
+    assert len(temporal_triple) == 0
+    assert (id, RDF.type, DCAT.Dataset) in g
+    assert (id, RDF.type, DCTERMS.PeriodOfTime) not in g
+    mock_make_bnode.assert_not_called()
 
 @pytest.mark.parametrize(
     "occurences",
@@ -716,12 +790,13 @@ def test__fix_trig_period_of_time_format_emptygraph(mock_make_bnode: MagicMock) 
 def test__fix_trig_period_of_time_format_temporalremoval(mock_make_bnode: MagicMock, occurences: int) -> None:
     g = Graph()
     id = URIRef("id1")
+    g.add((id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00")))
     for i in range(occurences):
         g.add((URIRef(f"s{i}"), DCTERMS.temporal, URIRef(f"o{i}")))
 
     _fix_trig_period_of_time_format(g, id)
-
-    assert len(g) == 2
+    
+    assert len(g) == 3
 
     temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
     assert len(temporal_triple) == 1
@@ -745,12 +820,13 @@ def test__fix_trig_period_of_time_format_temporalremoval(mock_make_bnode: MagicM
 def test__fix_trig_period_of_time_format_periodoftimeremoval(mock_make_bnode: MagicMock, occurences: int) -> None:
     g = Graph()
     id = URIRef("id1")
+    g.add((id, DCAT.startDate, Literal("2025-02-14T00:00:00+00:00")))
     for i in range(occurences):
         g.add((URIRef(f"s{i}"), RDF.type, DCTERMS.PeriodOfTime))
 
     _fix_trig_period_of_time_format(g, id)
 
-    assert len(g) == 2
+    assert len(g) == 3
 
     temporal_triple = list(g.triples((id, DCTERMS.temporal, None)))
     assert len(temporal_triple) == 1
@@ -942,17 +1018,17 @@ def test_correct_triple_representation_by_predicate_onlyonedummy(caplog: pytest.
 @patch("cim_plugin.header_validation._check_trig_rdfg_graph")
 @patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
 @patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+@patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_calls(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_correct: MagicMock, mock_fix_period_xml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, mock_fix_period_trig: MagicMock, format: str, caplog: pytest.LogCaptureFixture) -> None:
+def test_validate_header_calls(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_xml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, mock_fix_period_trig: MagicMock, format: str, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, DCAT.Dataset)
     validate_header(header=header, format=format)
 
     mock_remove.assert_called_once_with(header.graph, predicates=[DCAT.distribution, JSONLD.base], obj=DCAT.Distribution)
     mock_fix_datetime.assert_called_once_with(header.graph)
-    mock_correct.assert_called_once_with(header.graph, DCTERMS.issued, URIRef("id1"))
+    mock_check_issued.assert_called_once_with(header.graph, URIRef("id1"))
 
     format = format.lower().strip() if format is not None else "cimxml"
     if format == "cimxml":
@@ -974,10 +1050,10 @@ def test_validate_header_calls(mock_remove: MagicMock, mock_fix_datetime: MagicM
 @patch("cim_plugin.header_validation._check_trig_rdfg_graph")
 @patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
 @patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+@patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_nordftype(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_correct: MagicMock, mock_fix_period_cimxml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, mock_fix_period_trig: MagicMock) -> None:
+def test_validate_header_nordftype(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, mock_fix_period_trig: MagicMock) -> None:
     # If there are no rdf.type triples the header is invalid and ValueError is raised.
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(DCAT.distribution, URIRef("dist1"))
@@ -987,7 +1063,7 @@ def test_validate_header_nordftype(mock_remove: MagicMock, mock_fix_datetime: Ma
 
     mock_remove.assert_not_called()
     mock_fix_datetime.assert_not_called()
-    mock_correct.assert_not_called()
+    mock_check_issued.assert_not_called()
     mock_fix_period_cimxml.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
     mock_check_rdfgraph.assert_not_called()
@@ -997,17 +1073,17 @@ def test_validate_header_nordftype(mock_remove: MagicMock, mock_fix_datetime: Ma
 @patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
 @patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
 @patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+@patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_correct: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, MD.FullModel)
     validate_header(header=header, format="cimxml")
 
     mock_remove.assert_not_called()
     mock_fix_datetime.assert_not_called()
-    mock_correct.assert_not_called()
+    mock_check_issued.assert_not_called()
     mock_fix_period_cimxml.assert_not_called()
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
@@ -1019,10 +1095,10 @@ def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_dateti
 @patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
 @patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
 @patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+@patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_correct: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     # Header should never have two header_type triples.
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, MD.FullModel)
@@ -1032,7 +1108,7 @@ def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datet
 
     mock_remove.assert_not_called()
     mock_fix_datetime.assert_not_called()
-    mock_correct.assert_not_called()
+    mock_check_issued.assert_not_called()
     mock_fix_period_cimxml.assert_not_called()
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
@@ -1043,17 +1119,17 @@ def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datet
 @patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
 @patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
 @patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+@patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_unknownheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_correct: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+def test_validate_header_unknownheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"), metadata_objects=[URIRef("www.custom.org/header")])
     header.add_triple(RDF.type, URIRef("www.custom.org/header"))
     validate_header(header=header, format="cimxml")
 
     mock_remove.assert_not_called()
     mock_fix_datetime.assert_not_called()
-    mock_correct.assert_not_called()
+    mock_check_issued.assert_not_called()
     mock_fix_period_cimxml.assert_not_called()
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
@@ -1066,16 +1142,16 @@ def test_validate_header_unknownheader(mock_remove: MagicMock, mock_fix_datetime
 @patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
 @patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
 @patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._correct_triple_representation_by_predicate")
+@patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_emptyheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_correct: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, header: Any, caplog: pytest.LogCaptureFixture) -> None:
+def test_validate_header_emptyheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, header: Any, caplog: pytest.LogCaptureFixture) -> None:
     header = header
     validate_header(header=header, format="cimxml")
 
     mock_remove.assert_not_called()
     mock_fix_datetime.assert_not_called()
-    mock_correct.assert_not_called()
+    mock_check_issued.assert_not_called()
     mock_fix_period_cimxml.assert_not_called()
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
@@ -1091,25 +1167,28 @@ def test_validate_header_integration_cimxml(caplog: pytest.LogCaptureFixture) ->
     header.add_triple(DCAT.distribution, URIRef("dist1"))
     header.add_triple(JSONLD.base, URIRef("base1"))
     header.add_triple(DCAT.endDate, Literal("2025-02-14 00:00:00Z"))
+    header.add_triple(DCAT.endDate, Literal("2025-02-14 12:00:00+00:00"))
     header.add_triple(DCTERMS.issued, Literal("2020-01-01"))
+    header.add_triple(DCTERMS.issued, Literal("2020-01-01T00:00:00+00:00"))
     header.add_triple(RDF.type, RDFG.Graph)
     header.add_triple(RDF.type, DCTERMS.PeriodOfTime)
 
     validate_header(header=header, format="cimxml")
 
     expected_triples = {(id, RDF.type, DCAT.Dataset), 
-                        (id, DCTERMS.issued, Literal("2020-01-01T00:00:00+00:00", datatype=XSD.dateTime)), 
-                        (id, DCAT.endDate, Literal("2025-02-14T00:00:00Z", datatype=XSD.dateTime)), 
-                        (id, DCAT.startDate, Literal("unknown"))}
-    
+                        (id, DCTERMS.issued, Literal("2020-01-01T00:00:00+00:00", datatype=XSD.dateTime)), # Dateformat has been corrected making two dcterms:issued triples identical, so only one remains. 
+                        (id, DCAT.endDate, Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime)), 
+                        (id, DCAT.endDate, Literal("2025-02-14T12:00:00+00:00", datatype=XSD.dateTime)) 
+    }
+
+    assert len(header.graph) == 4
     assert set(header.graph) == expected_triples
     assert f"Invalid triple detected in header, removing: ({id}, {RDF.type}, {DCAT.Distribution})" in caplog.text
     assert f"Invalid triple detected in header, removing: ({id}, {JSONLD.base}, {URIRef('base1')})" in caplog.text
     assert f"Invalid triple detected in header, removing: ({id}, {DCAT.distribution}, {URIRef('dist1')})" in caplog.text
     assert "Invalid rdf:type rdfg:Graph triple detected in CIMXML header, removing it." in caplog.text
     assert f"Corrected date format for predicate {DCTERMS.issued}: from {Literal('2020-01-01')} to {Literal('2020-01-01T00:00:00+00:00', datatype=XSD.dateTime)}." in caplog.text
-    assert f"Missing required {DCAT.startDate} triple. Creating dummy triple without date." in caplog.text
-
+    assert f"Multiple {DCAT.endDate} triples found. All but one should be removed." in caplog.text
 
 def test_validate_header_integration_trig(caplog: pytest.LogCaptureFixture) -> None:
     id = URIRef("id1")
@@ -1119,13 +1198,15 @@ def test_validate_header_integration_trig(caplog: pytest.LogCaptureFixture) -> N
     header.add_triple(DCAT.distribution, URIRef("dist1"))
     header.add_triple(JSONLD.base, URIRef("base1"))
     header.add_triple(DCAT.endDate, Literal("2025-02-14 00:00:00Z"))
+    header.add_triple(DCAT.endDate, Literal("2025-02-14 12:00:00+00:00"))
     header.add_triple(DCTERMS.issued, Literal("2020-01-01"))
+    header.add_triple(DCTERMS.issued, Literal("2020-01-01T00:00:00+00:00"))
     header.add_triple(RDF.type, DCTERMS.PeriodOfTime)
 
     validate_header(header=header, format="trig")
 
     expected_triples = {(id, RDF.type, DCAT.Dataset), 
-                        (id, DCTERMS.issued, Literal("2020-01-01T00:00:00+00:00", datatype=XSD.dateTime)),
+                        (id, DCTERMS.issued, Literal("2020-01-01T00:00:00+00:00", datatype=XSD.dateTime)),  # Dateformat has been corrected making two dcterms:issued triples identical, so only one remains. 
                         (id, RDF.type, RDFG.Graph)}
 
     # Expected triples present
@@ -1137,17 +1218,16 @@ def test_validate_header_integration_trig(caplog: pytest.LogCaptureFixture) -> N
     assert len(temporal_bnodes) == 1
     bnode = temporal_bnodes[0]
     assert (bnode, RDF.type, DCTERMS.PeriodOfTime) in header.graph
-    assert (bnode, DCAT.endDate, Literal("2025-02-14T00:00:00Z", datatype=XSD.dateTime)) in header.graph
-    assert (bnode, DCAT.startDate, Literal("unknown")) in header.graph
+    assert (bnode, DCAT.endDate, Literal("2025-02-14T00:00:00Z", datatype=XSD.dateTime)) in header.graph    # Dateformat has been corrected making two endDate triples identical, so only one remains.
+    assert (bnode, DCAT.endDate, Literal("2025-02-14T12:00:00+00:00", datatype=XSD.dateTime)) in header.graph
 
     # Log messages
     assert f"Invalid triple detected in header, removing: ({id}, {RDF.type}, {DCAT.Distribution})" in caplog.text
     assert f"Invalid triple detected in header, removing: ({id}, {JSONLD.base}, {URIRef('base1')})" in caplog.text
     assert f"Invalid triple detected in header, removing: ({id}, {DCAT.distribution}, {URIRef('dist1')})" in caplog.text
     assert f"Corrected date format for predicate {DCTERMS.issued}: from {Literal('2020-01-01')} to {Literal('2020-01-01T00:00:00+00:00', datatype=XSD.dateTime)}." in caplog.text
-    assert f"Missing required {DCAT.startDate} triple. Creating dummy triple with no date." in caplog.text
     assert "Missing required rdf:type rdfg:Graph triple for Trig header. Adding it." in caplog.text
-
+    assert f"Multiple {DCAT.endDate} triples found. All but one should be removed." in caplog.text
     
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ from email import header
 import re
 from typing import Tuple, Optional
 
-from rdflib import XSD, BNode, Literal, Node, Graph, URIRef
+from rdflib import XSD, BNode, Literal, Node, Graph, URIRef, graph
 from rdflib.namespace import DCAT, DCTERMS, RDF
 
 from cim_plugin.enriching import cast_datetime_utc
@@ -142,8 +142,7 @@ def _fix_datetime_format_in_triples(graph: Graph) -> None:
 def _check_dcterms_issued_count(graph: Graph, identifier: URIRef) -> None:
     """Check that there is exactly one dcterms:issued triple for any subject. 
     
-    If there are none, add a dummy triple with "unknown" as object and an identifier as subject. 
-    If there are multiple, log an error.
+    If there are multiple or None, log an error.
     
     Parameters:
         graph (Graph): The graph to check.
@@ -151,11 +150,12 @@ def _check_dcterms_issued_count(graph: Graph, identifier: URIRef) -> None:
     """
     issued_triples = list(graph.triples((None, DCTERMS.issued, None)))
     if not issued_triples:
-        logger.error("Missing required dcterms:issued triple. Creating dummy triple without date.")
-        graph.add((identifier, DCTERMS.issued, Literal("unknown")))
+        logger.error("Missing required dcterms:issued triple.")
+        # graph.add((identifier, DCTERMS.issued, Literal("unknown"))) # Kept commented out in case we decide later that there always should be a dcterms:issued triple, even if the format is not correct.
     if len(issued_triples) > 1:
         logger.error(f"Multiple dcterms:issued triples found ({len(issued_triples)}): {issued_triples}. All but one should be removed.")
 
+# Not used right now, but keeping it in case needed later
 def _correct_triple_representation_by_predicate(graph: Graph, predicate: URIRef, identifier: URIRef) -> None:
     """Check that there is at least one triple with the given predicate. 
     
@@ -177,6 +177,7 @@ def _correct_triple_representation_by_predicate(graph: Graph, predicate: URIRef,
 
 # ── TriG-specific checks ──────────────────────────────────────────────────────
 # Keeping this for now in case we want to use it for checking the presence of a complete temporal triple before fixing the format.
+# Untested
 def has_complete_temporal(graph: Graph, identifier: URIRef) -> bool:
     # Find the blank node connected via dcterms:temporal
     for o in graph.objects(identifier, DCTERMS.temporal):
@@ -201,14 +202,20 @@ def _fix_trig_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
         graph (Graph): The graph to fix.
         identifier (URIRef): The identifier for the node group.
     """
+    # Remove all existing triples related to dcterms:temporal
     for s, p, o in list(graph.triples((None, DCTERMS.temporal, None))):
         graph.remove((s, p, o))
 
-    bnode = BNode()
-    graph.add((identifier, DCTERMS.temporal, bnode))
-
     for s in graph.subjects(RDF.type, DCTERMS.PeriodOfTime):
         graph.remove((s, RDF.type, DCTERMS.PeriodOfTime))
+
+    # Nothing more needs doing if neither dcat:startDate or dcat:endDate is present.
+    if not any(next(graph.triples((None, p, None)), None) for p in (DCAT.startDate, DCAT.endDate)):
+        return
+
+    # Create a new dcterms:temporal node group with the required structure and move the startDate and/or endDate triples there.
+    bnode = BNode()
+    graph.add((identifier, DCTERMS.temporal, bnode))
     graph.add((bnode, RDF.type, DCTERMS.PeriodOfTime))
 
     _make_bnode_triple_for_given_predicate(graph, bnode, DCAT.startDate)
@@ -219,8 +226,7 @@ def _make_bnode_triple_for_given_predicate(graph: Graph, bnode: BNode, predicate
     """Remake triples into a blank node triple with the given predicate and blank node as subject.
     
     If there already are triples with the given predicate, they are removed and replaced with triples with the same objects but the blank node as subject.
-    If there are no triples with the given predicate, a new triple with the blank node as subject and "unknown" as object is created.
-
+    
     Parameters:
         graph (Graph): The graph to modify.
         bnode (BNode): The blank node to use as the subject.
@@ -229,15 +235,17 @@ def _make_bnode_triple_for_given_predicate(graph: Graph, bnode: BNode, predicate
     triples = list(graph.triples((None, predicate, None)))
 
     if len(triples) > 1:
-        logger.error(f"Multiple {predicate} triples. All but one should be removed.")
+        logger.error(f"Multiple {predicate} triples found. All but one should be removed.")
 
     if triples:
         for s, p, o in triples:
             graph.remove((s, p, o))
             graph.add((bnode, p, o))
-    else:
-        logger.error(f"Missing required {predicate} triple. Creating dummy triple with no date.")
-        graph.add((bnode, predicate, Literal("unknown")))
+    
+    # Keeping this commented out for now in case we decide later that there always should be a startDate and endDate triple, even if the format is not correct.
+    # else:
+    #     logger.error(f"Missing required {predicate} triple. Creating dummy triple with no date.")
+    #     graph.add((bnode, predicate, Literal("unknown")))
 
 
 def _check_trig_rdfg_graph(graph: Graph, identifier: URIRef) -> None:
@@ -260,16 +268,27 @@ def _check_trig_rdfg_graph(graph: Graph, identifier: URIRef) -> None:
 
 def _fix_cimxml_period_of_time_format(graph: Graph, identifier: URIRef) -> None:
     """Fix the format of dcterms:PeriodOfTime representation in CIMXML header, including dcat:startDate and dcat:endDate triples.
+
+    dcterms:temporal and rdf:type dcterms:PeriodOfTime triples are removed if any are present.
     
     Parameters:
         graph (Graph): The graph to fix.
         identifier (URIRef): The identifier to use for the dummy triple of startDate and endDate if missing.
     """
+    for s, p, o in list(graph.triples((None, DCTERMS.temporal, None))):
+        graph.remove((s, p, o))
+
     for s in graph.subjects(RDF.type, DCTERMS.PeriodOfTime):
         graph.remove((s, RDF.type, DCTERMS.PeriodOfTime))
 
-    _correct_triple_representation_by_predicate(graph, DCAT.endDate, identifier)
-    _correct_triple_representation_by_predicate(graph, DCAT.startDate, identifier)
+    for predicate in [DCAT.startDate, DCAT.endDate]:
+        triples = list(graph.triples((None, predicate, None)))
+        if len(triples) > 1:
+            logger.error(f"Multiple {predicate} triples found. All but one should be removed.")
+    
+    # These are kept commented out in case we decide later that there always should be a startDate and endDate triple, even if the format is not correct. 
+    # _correct_triple_representation_by_predicate(graph, DCAT.endDate, identifier)
+    # _correct_triple_representation_by_predicate(graph, DCAT.startDate, identifier)
 
 
 # Cannot use _remove_invalid_triples here because it would remove all triples with rdf:type as predicate.
@@ -322,7 +341,8 @@ def validate_header(header: CIMMetadataHeader, format: str="cimxml") -> None:
     # Common checks
     _remove_invalid_triples(header.graph, predicates=[DCAT.distribution, JSONLD.base], obj=DCAT.Distribution)
     _fix_datetime_format_in_triples(header.graph) # This should be done before checking DCTERMS.issued as correction may remove duplicates automatically.
-    _correct_triple_representation_by_predicate(header.graph, DCTERMS.issued, identifier)
+    _check_dcterms_issued_count(header.graph, identifier)
+    # _correct_triple_representation_by_predicate(header.graph, DCTERMS.issued, identifier)
 
     if format == "cimxml":
         _fix_cimxml_period_of_time_format(header.graph, identifier)
