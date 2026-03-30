@@ -23,7 +23,7 @@ from cim_plugin.graph import CIMGraph
 
 
 class CIMTrigSerializer(TrigSerializer):
-    """Trig serializer with CIM-specific ordering behavior."""
+    """Trig serializer with CIM-specific behaviour."""
 
     def reset(self) -> None:
         super().reset()
@@ -31,11 +31,10 @@ class CIMTrigSerializer(TrigSerializer):
         self._object_refs = {}
 
     def preprocess(self) -> None:
-        """Preprocess contexts and merge header namespaces when available.
-
-        The header may carry namespace bindings not present in the graph.
-        Copying those bindings into the graph namespace manager allows stable,
-        meaningful prefixes in output rather than generated fallback prefixes.
+        """Preprocess contexts and namespaces.
+        
+        Namespaces and triples from the metadata header are merged into the main graph to ensure they 
+        are serialized together.
         """
         for context in self.contexts:
             if isinstance(context, CIMGraph):
@@ -46,12 +45,13 @@ class CIMTrigSerializer(TrigSerializer):
                         if existing is None:
                             context.bind(prefix, ns_uri, override=False)
 
-                    context += header.graph # Adds in all the header triples if they are not alreary present.
+                    context += header.graph # Adds in all the header triples if they are not already present.
 
         super().preprocess()
 
     
     def preprocessTriple(self, triple: tuple[Node, Node, Node]) -> None:
+        """Count object references for blank nodes. Otherwise, default subject counting is used."""
         s, p, o = triple
 
         # Count object references for bnodes
@@ -62,15 +62,14 @@ class CIMTrigSerializer(TrigSerializer):
         super().preprocessTriple(triple)
     
 
-    def orderSubjects(self):  # type: ignore[override]
+    def orderSubjects(self):
         """Order subjects with header and linked blank-node prioritization.
 
-        Rules:
-        - If the active store is not a CIMGraph, or if it lacks a metadata
-          header, the default TrigSerializer ordering is used.
-        - Header subjects are emitted first (with the main header subject first).
-        - Unlinked blank-node subjects are emitted before other subjects.
-        - Remaining subjects keep default ordering semantics from TrigSerializer.
+        Rules specific for CIMGraphs with metadata headers:
+            - Header triples are emitted first.
+            - Unlinked blank-node subjects are emitted before other subjects.
+
+        For other graphs, the default ordering for trig is used.
         """
         if not isinstance(self.store, CIMGraph):
             return super().orderSubjects()
@@ -124,6 +123,14 @@ class CIMTrigSerializer(TrigSerializer):
         return ordered
 
     def p_squared(self, node: Node, position: int, newline: bool = False) -> bool:
+        """Determine if a node should be serialized in p-squared form.
+        
+        If subject is a blank node linked to another triple as an object, it should be p-squared. 
+        This is to ensure that connected blank nodes are serialized together in the same graph.
+
+        Returns:
+            bool: True if the node was serialized in p-squared form, False otherwise.
+        """
         if not isinstance(node, BNode):
             return False
         
