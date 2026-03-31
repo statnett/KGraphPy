@@ -126,7 +126,7 @@ class CIMTrigSerializer(TrigSerializer):
         """Determine if a node should be serialized in p-squared form.
         
         If subject is a blank node linked to another triple as an object, it should be p-squared. 
-        This is to ensure that connected blank nodes are serialized together in the same graph.
+        This is to ensure that connected blank nodes are serialized together.
 
         Returns:
             bool: True if the node was serialized in p-squared form, False otherwise.

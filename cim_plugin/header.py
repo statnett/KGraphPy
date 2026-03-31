@@ -196,14 +196,15 @@ class CIMMetadataHeader:
     
 
     @classmethod
-    def from_manifest(cls, file_path: str|Path, graph_uri: URIRef|str) -> "CIMMetadataHeader":
+    def from_manifest(cls, file_path: str|Path, graph_uri: URIRef|str, format: str="trig") -> "CIMMetadataHeader":
         """Creates a header from a manifest file.
 
         The manifest file can contain headers for multiple graphs. The correct header is found by the graph id.
         
         Parameters:
-            file_path (str|Path): Path to manifest file. The file must be an xml file.
+            file_path (str|Path): Path to manifest file. The file must be a valid RDF file.
             graph_uri (URIRef|str): The identifier of the graph.
+            format (str): The format of the manifest file. Default is "trig".
 
         Raises:
             ValueError: If no header triples matching the graph_uri is found.
@@ -214,7 +215,7 @@ class CIMMetadataHeader:
         graph_uri = URIRef(graph_uri)
         
         manifest_graph = Graph()
-        manifest_graph.parse(source=file_path, format="xml")
+        manifest_graph.parse(source=file_path, format=format)
         
         header_graph = Graph()
         for triple in manifest_graph.triples((graph_uri, None, None)):

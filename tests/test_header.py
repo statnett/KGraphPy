@@ -504,8 +504,8 @@ def test_empty_profile_none_calls_collect(mock_collect: MagicMock) -> None:
 def test_from_manifest_wrongfiletype(mock_collect: MagicMock) -> None:
     with patch("cim_plugin.header.Graph.parse", side_effect=Exception) as mock_parse:
         with pytest.raises(Exception) as exc:
-            CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
-            mock_parse.assert_called_once_with("dummy.trig", "graph1")
+            CIMMetadataHeader.from_manifest("dummy.ttl", "graph1")
+            mock_parse.assert_called_once_with("dummy.ttl", format="trig")
     
     mock_collect.assert_not_called()
 
@@ -515,8 +515,8 @@ def test_from_manifest_emptyfile(mock_collect: MagicMock, fake_parse_factory: Ca
     mock_graph = Graph()
     with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)) as mock_parse:
         with pytest.raises(ValueError) as exc:
-            CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
-            mock_parse.assert_called_once_with("dummy.xml", "xml")
+            CIMMetadataHeader.from_manifest("dummy.xml", "graph1", format="xml")    # Trying with xml format to check that the format argument is passed correctly
+            mock_parse.assert_called_once_with("dummy.xml", format="xml")
     
     mock_collect.assert_not_called()
     assert "No header triples matching graph identifier graph1 found in manifest file." in str(exc.value)
@@ -638,12 +638,12 @@ def test_from_manifest_parametrized(
         
         if expect_error:
             with pytest.raises(ValueError) as exc:
-                CIMMetadataHeader.from_manifest("dummy.xml", subject)
+                CIMMetadataHeader.from_manifest("dummy.trig", subject)
                 mock_collect.assert_not_called()
                 assert "No header triples matching graph identifier" in str(exc.value)
             return
 
-        header = CIMMetadataHeader.from_manifest("dummy.xml", subject)
+        header = CIMMetadataHeader.from_manifest("dummy.trig", subject)
 
         mock_collect.assert_called_once()
         assert set(header.graph) == expected_triples
@@ -661,7 +661,7 @@ def test_from_manifest_namespaces(fake_parse_factory: MagicMock) -> None:
     
     
     with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
-        header = CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+        header = CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
     
     assert header.subject == URIRef("graph1")
     assert len(header.graph) == 2
@@ -682,7 +682,7 @@ def test_from_manifest_nonamespacemanager(fake_parse_factory: MagicMock) -> None
     mock_graph.namespace_manager = None    # type: ignore
     
     with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
-        header = CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+        header = CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
     
     assert header.subject == URIRef("graph1")
     assert len(header.graph) == 1
@@ -700,7 +700,7 @@ def test_from_manifest_differentnamespacereturned(mock_collect: MagicMock, fake_
     mock_collect.return_value = {"ex": "www.new.com/"}
     
     with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
-        header = CIMMetadataHeader.from_manifest("dummy.xml", "graph1")
+        header = CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
     
     assert (URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")) in header.graph
     assert header.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
