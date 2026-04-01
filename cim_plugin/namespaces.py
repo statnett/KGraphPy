@@ -1,10 +1,10 @@
 """The namespaces used which are not default to rdflib."""
 
 from rdflib import Namespace, Node, URIRef, Graph
-from rdflib.namespace import NamespaceManager
+from rdflib.namespace import NamespaceManager, DefinedNamespace, DCAT
 
 
-MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
+# MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
 
 CIM = Namespace("https://cim.ucaiug.io/ns#")
 
@@ -16,10 +16,38 @@ RDFG = Namespace("http://www.w3.org/2004/03/trix/rdfg-1/")
 
 JSONLD = Namespace("https://www.w3.org/ns/json-ld#")
 
+class DCAT_CIM(DCAT):
+    version: URIRef  # The version indicator (name or identifier) of a resource. Info taken from https://www.w3.org/TR/vocab-dcat/#Property:resource_version
+    isVersionOf: URIRef  # This property is intended for relating a non-versioned or abstract resource to several versioned resources, e.g., snapshots. Info taken from https://eepublicdownloads.entsoe.eu/clean-documents/CIM_documents/Grid_Model_CIM/MetadataDatasetDistributionSpecification_v2-4-0.pdf.
 
+class _MDModelNamespace:
+    def __init__(self, ns):
+        self._ns = ns
+
+    def __getattr__(self, name):
+        # Produces URIs like Model.profile, Model.description, etc.
+        return URIRef(self._ns[f"Model.{name}"])
+
+
+class MD(DefinedNamespace):
+    _NS = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#")
+
+    FullModel = _NS["FullModel"]
+    Model = _MDModelNamespace(_NS)
+
+    _extras = [ # None of these literals have datatype and are therefore string
+        "Model.profile", # URIRef or Literal uri? Possibly could be either.
+        "Model.description", # Literal
+        "Model.version", # Literal integer
+        "Model.created", # Literal datetime
+        "Model.scenarioTime", # Literal datetime
+        "Model.modelingAuthoritySet", # Literal uri or URIRef?
+        "Model.DependentOn", # URIRef
+        "Model.Supersedes"  # Unsure. Not used in any of the sample files.
+    ]
 
 def collect_specific_namespaces(triples: list[tuple[Node, Node, Node]], namespace_manager: NamespaceManager) -> dict[str, URIRef]:
-    """Collect namespaces used in the a list of triples.
+    """Collect namespaces used in a list of triples.
 
     Parameters:
         triples (list[tuple[Node, Node, Node]]): The list of triples. Can be extracted from a Graph object.

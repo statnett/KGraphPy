@@ -5,6 +5,7 @@ from pathlib import Path
 from rdflib import Graph, Node, URIRef, RDF, BNode, Literal
 from rdflib.namespace import DCTERMS, NamespaceManager
 from cim_plugin.namespaces import MD, collect_specific_namespaces
+from cim_plugin.header_conversion import convert_triple
 from typing import Iterable, List, Tuple, Optional, Set
 import logging
 import uuid
@@ -25,7 +26,7 @@ class CIMMetadataHeader:
 
     DEFAULT_METADATA_OBJECTS: Set[URIRef] = set()
     DEFAULT_PROFILE_PREDICATES: Set[URIRef] = {
-        MD["Model.profile"],
+        MD.Model.profile,
         DCTERMS.conformsTo,
     }
 
@@ -177,7 +178,7 @@ class CIMMetadataHeader:
         profile_predicates: Optional[Set[URIRef]] = None,
         profile: Optional[str] = None,
     ):
-        """Creates and empty instance with optional attributes.
+        """Creates an empty instance with optional attributes.
         
         Parameters:
             subject (URIRef): Subject used for all header triples. Should be a valid uuid.

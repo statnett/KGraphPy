@@ -4,12 +4,13 @@ from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.header_validation import validate_header
-from cim_plugin.namespaces import update_namespace_in_triples
+from cim_plugin.namespaces import update_namespace_in_triples, MD, DCAT_CIM
 from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.to_file_strategies import _select_strategy
-from rdflib import URIRef, Literal, Node
-from rdflib.namespace import NamespaceManager
+from cim_plugin.header_conversion import convert_triple
+from rdflib import URIRef, Literal, Graph
+from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path
 from copy import deepcopy
 import logging
@@ -84,6 +85,37 @@ class CIMProcessor:
         # Replace header
         self.graph.metadata_header = header
 
+    
+    def convert_header(self) -> None:
+        """Header conversion between dcat:Dataset and 552 md:FullModel.
+
+        No other format conversions are possible.
+        Triples that cannot be converted will be dropped and logged. 
+        This is especially notable for dcat -> md conversion because the dcat:Dataset format typically contains more information.
+        """
+        if not self.graph.metadata_header or not self.graph.metadata_header.triples:
+            logger.error("No metadata header found for conversion.")
+            return
+        
+        target_format, temp_graph = _make_header_graph_for_conversion(self.graph.metadata_header)
+            
+        unconverted_triples = set()
+        for triple in self.graph.metadata_header.triples:
+            if triple[2] == self.graph.metadata_header.header_type:
+                continue
+
+            converted = convert_triple(triple, target_format=target_format)
+            if converted:
+                temp_graph.add(converted)
+            else:
+                unconverted_triples.add(triple)
+
+        logger.info(f"Converted {len(temp_graph)-1} header triples to {target_format}.")
+        self.graph.metadata_header = CIMMetadataHeader.from_graph(temp_graph)
+
+        if unconverted_triples:
+            logger.info(f"{len(unconverted_triples)} triples could not be converted and was not included in the new header:\n" +
+                        "\n".join(str(triple) for triple in unconverted_triples))
 
     def merge_header(self) -> None:
         """Merge header back into graph.
@@ -389,6 +421,34 @@ def replace_namespace(predicate: str, graph: CIMGraph, replacements: set[tuple[s
 
     return predicate
 
+
+def _make_header_graph_for_conversion(header: CIMMetadataHeader) -> tuple[str, Graph]:
+    """Make a graph with the correct type for conversion.
+    
+    The correct rdf:type triple is added to the graph. 
+    
+    Parameters:
+        header (CIMMetadataHeader): The header to be converted.
+
+    Raises:
+        ValueError: If the header is an unknown type.
+    
+    Returns:
+        tuple[str, Graph]: The target format and the graph with the correct type triple.
+    """    
+    graph = Graph()
+
+    if header.header_type == DCAT_CIM.Dataset:
+        graph.bind("md", MD)    # Must be bound explicitly because it is not a default namespace in rdflib. 
+        graph.add((header.subject, RDF.type, MD.FullModel))
+        target_format = "md_fullmodel"
+    elif header.header_type == MD.FullModel:
+        graph.add((header.subject, RDF.type, DCAT_CIM.Dataset))
+        target_format = "dcat_dataset"
+    else:
+        raise ValueError(f"Unknown header type: {header.header_type}. Conversion not possible.")
+
+    return target_format, graph
 
 if __name__ == "__main__":
     print("CIMProcessor for processing cim graphs.")
