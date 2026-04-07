@@ -306,7 +306,6 @@ class CIMProcessor:
 
         return proc
     
-    # Not tested. Should it be?  
     def validate_header(self, format: str = "cimxml") -> None:
         """Validate the header of the graph according to the format specification.
         
@@ -318,7 +317,7 @@ class CIMProcessor:
         if self.graph.metadata_header:
             validate_header(self.graph.metadata_header, format=format)
         else:
-            logger.warning("No metadata header found for validation.")
+            logger.error("No metadata header found. Validation not possible.")
 
 
     # Not tested. Should it be?

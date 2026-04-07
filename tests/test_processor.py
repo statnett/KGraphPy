@@ -1434,6 +1434,34 @@ def test_replace_namespace_duplicatesinreplacements() -> None:
     # Sets are not ordered, so sometimes it gives one result and sometimes the other
     assert result in {"https://first.com/p", "https://second.com/p"}
 
+# Unit tests .validate_header
+@patch("cim_plugin.processor.validate_header")
+def test_validate_header_noheader(mock_validate: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+    g = CIMGraph()
+    pr = CIMProcessor(g)
+
+    pr.validate_header()
+
+    mock_validate.assert_not_called()
+    assert "No metadata header found. Validation not possible." in caplog.text
+
+@patch("cim_plugin.processor.validate_header")
+def test_validate_header_headerpresent(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
+    g = make_cimgraph
+    pr = CIMProcessor(g)
+
+    pr.validate_header()
+
+    mock_validate.assert_called_once_with(g.metadata_header, format="cimxml")
+
+@patch("cim_plugin.processor.validate_header")
+def test_validate_header_trigformat(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
+    g = make_cimgraph
+    pr = CIMProcessor(g)
+
+    pr.validate_header(format="trig")
+
+    mock_validate.assert_called_once_with(g.metadata_header, format="trig")
 
 # Unit tests ._build_copy_for_serialization
 def test_build_copy_for_serialization_emptygraph() -> None:
