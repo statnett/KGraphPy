@@ -70,28 +70,6 @@ def test_init_profilepredicatesoverride() -> None:
     assert h.profile_predicates is preds
 
 
-@patch.object(CIMMetadataHeader, "collect_profile")
-def test_init_profilenone(mock_collect: MagicMock) -> None:
-    mock_collect.return_value = "profile"
-    h = CIMMetadataHeader(profile=None)
-    assert h.profile == "profile"
-    mock_collect.assert_called_once()
-
-
-def test_init_profileoverride() -> None:
-    h = CIMMetadataHeader(profile="manual")
-    assert h.profile == "manual"
-
-
-@patch.object(CIMMetadataHeader, "collect_profile")
-def test_init_profilepredicatesusedincollect(mock_collect: MagicMock) -> None:
-    preds = {URIRef("urn:test:profile")}
-    h = CIMMetadataHeader(profile=None, profile_predicates=preds)
-    mock_collect.assert_called_once()
-    assert h.profile_predicates is preds
-
-
-
 # Unit tests .from_graph
 @patch("cim_plugin.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
@@ -261,7 +239,7 @@ def test_from_graph_integration_namespaces() -> None:
     g.bind("md", MD)
     g.add((header, RDF.type, DCAT.Dataset))
     g.add((header, DCTERMS.identifier, Literal("fixed")))
-    g.add((header, MD.profile, Literal("profile1")))
+    g.add((header, MD.Model.profile, Literal("profile1")))
 
     result = CIMMetadataHeader.from_graph(g)
 
@@ -484,20 +462,6 @@ def test_empty_profilepredicatesoverride() -> None:
     h = CIMMetadataHeader.empty(profile_predicates=preds)
     assert h.profile_predicates is preds
 
-
-@patch.object(CIMMetadataHeader, "collect_profile")
-def test_empty_profile_override(mock_collect: MagicMock) -> None:
-    h = CIMMetadataHeader.empty(profile="manual")
-    assert h.profile == "manual"
-    mock_collect.assert_not_called()
-
-
-@patch.object(CIMMetadataHeader, "collect_profile")
-def test_empty_profile_none_calls_collect(mock_collect: MagicMock) -> None:
-    mock_collect.return_value = "auto"
-    h = CIMMetadataHeader.empty(profile=None)
-    assert h.profile == "auto"
-    mock_collect.assert_called_once()
 
 # Unit tests .from_manifest
 @patch("cim_plugin.header.collect_specific_namespaces")
@@ -893,8 +857,10 @@ def test_collect_profile_multipleprofiles() -> None:
     header.add_triple(DCTERMS.conformsTo, Literal("model1"))
     header.add_triple(DCTERMS.conformsTo, Literal("model2"))
     
-    result = header.collect_profile()
-    assert result == "model1"   # First encountered wins
+    with pytest.raises(ValueError) as exc:
+        header.collect_profile()
+
+    assert "Multiple profiles found in header: ['model1', 'model2']" in str(exc.value)
 
 
 # Unit tests .set_subject

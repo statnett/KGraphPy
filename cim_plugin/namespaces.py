@@ -3,12 +3,10 @@
 from rdflib import Namespace, Node, URIRef, Graph
 from rdflib.namespace import NamespaceManager, DefinedNamespace, DCAT
 
+# Default namespaces
+CIM = Namespace("https://cim.ucaiug.io/ns#")    # Sometimes CGMES_CIM is used instead
 
-# MD = Namespace("http://iec.ch/TC57/61970-552/ModelDescription/1#") 
-
-CIM = Namespace("https://cim.ucaiug.io/ns#")
-
-EU = Namespace("https://cim.ucaiug.io/ns/eu#")
+EU = Namespace("https://cim.ucaiug.io/ns/eu#")  # Sometimes CGMES_EU is used instead
 
 MODEL = Namespace("https://model4powersystem.no/")
 
@@ -16,9 +14,19 @@ RDFG = Namespace("http://www.w3.org/2004/03/trix/rdfg-1/")
 
 JSONLD = Namespace("https://www.w3.org/ns/json-ld#")
 
-class DCAT_CIM(DCAT):
+EUMD = Namespace("https://cim4.eu/ns/Metadata-European#")   # Sometimes MD is used instead
+
+# CGMES exception namespaces
+CGMES_CIM = Namespace("http://iec.ch/TC57/CIM100#")
+
+CGMES_EU = Namespace("http://iec.ch/TC57/CIM100-EuropeanExtension/1/0#")
+
+
+# Custom namespaces for this project
+class DCAT_CIM(DCAT):   # This is exactly the same as dcat, but with a few extra cim specific properties added.
     version: URIRef  # The version indicator (name or identifier) of a resource. Info taken from https://www.w3.org/TR/vocab-dcat/#Property:resource_version
     isVersionOf: URIRef  # This property is intended for relating a non-versioned or abstract resource to several versioned resources, e.g., snapshots. Info taken from https://eepublicdownloads.entsoe.eu/clean-documents/CIM_documents/Grid_Model_CIM/MetadataDatasetDistributionSpecification_v2-4-0.pdf.
+
 
 class _MDModelNamespace:
     def __init__(self, ns):

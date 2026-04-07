@@ -37,7 +37,6 @@ class CIMMetadataHeader:
         metadata_objects: Optional[Iterable[URIRef]] = None,
         reachable_nodes: Optional[Set[Node]] = None,
         profile_predicates: Optional[Set[URIRef]] = None,
-        profile: Optional[str] = None,
     ):
         if subject is None:
             subject = URIRef(f"urn:uuid:{uuid.uuid4()}")
@@ -53,8 +52,6 @@ class CIMMetadataHeader:
 
         self.reachable_nodes: Set[Node] = reachable_nodes or set()
         self.profile_predicates = profile_predicates or self.DEFAULT_PROFILE_PREDICATES
-
-        self.profile: Optional[str] = profile or self.collect_profile()
 
 
     @classmethod
@@ -176,7 +173,6 @@ class CIMMetadataHeader:
         subject: Optional[URIRef] = None,
         metadata_objects: Optional[Iterable[URIRef]] = None,
         profile_predicates: Optional[Set[URIRef]] = None,
-        profile: Optional[str] = None,
     ):
         """Creates an empty instance with optional attributes.
         
@@ -184,7 +180,6 @@ class CIMMetadataHeader:
             subject (URIRef): Subject used for all header triples. Should be a valid uuid.
             metadata_objects (URIRef): A custom rdf:type object. Default are md:FullModel and dcat:Dataset.
             profile_predicates (set[URIRef]): A custom predicate that holds the profile information. Default are md:Model.Profile and dcterms.conformsTo.
-            profile (str): A custom profile.
         """
         g = Graph()
         return cls(
@@ -192,7 +187,6 @@ class CIMMetadataHeader:
             graph=g,
             metadata_objects=metadata_objects,
             profile_predicates=profile_predicates,
-            profile=profile,
         )
     
 
@@ -292,6 +286,10 @@ class CIMMetadataHeader:
         else:
             raise ValueError("Multiple header types found in header.")
 
+    @property
+    def profile(self) -> Optional[str]:
+        """The profile of the header, if found."""
+        return self.collect_profile()
 
     def collect_profile(self) -> Optional[str]:
         """Collect the profile of a graph from the triple with predicate in self.profile_predicates.
@@ -299,13 +297,19 @@ class CIMMetadataHeader:
         Returns:
             str: The profile or None if no profile is found.
         """
+
+        profiles: list = []
         for (_, p, o) in self.graph.triples((self.subject, None, None)):
             if p in self.profile_predicates:
                 if isinstance(o, Literal):
-                    return str(o.value)
+                    profiles.append(str(o.value))
                 elif isinstance(o, URIRef):
-                    return str(o)
-        return None
+                    profiles.append(str(o))
+
+        if len(profiles) > 1:
+            raise ValueError(f"Multiple profiles found in header: {profiles}")
+        
+        return profiles[0] if profiles else None
 
 
     def set_subject(self, new_subject: URIRef) -> None:

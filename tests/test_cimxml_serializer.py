@@ -7,7 +7,7 @@ import logging
 
 from rdflib import Namespace, URIRef, Graph, Literal, Node, BNode
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
-from rdflib.namespace import XSD, RDF, DCAT
+from rdflib.namespace import XSD, RDF, DCAT, DCTERMS
 from xml.sax.saxutils import escape
 from cim_plugin.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
 from cim_plugin.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, uuid_namespace
@@ -836,9 +836,9 @@ def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLS
 def test_subject_rdfid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     mock_qualified.return_value = False
-    g = ser.store
-    g.metadata_header.profile = "http://cim-profile.ucaiug.io/grid/Dynamics/2.0"    # pyright: ignore[reportAttributeAccessIssue]
-
+    g = ser.store    
+    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://cim-profile.ucaiug.io/grid/Dynamics/2.0")) # pyright: ignore[reportAttributeAccessIssue]
+    
     g.bind("ex", "http://example.com/")
 
     s = URIRef("s123")
@@ -1489,8 +1489,8 @@ def test_subject_and_predicate_resolver_integration_with_special_qualifier(
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty()
     g.bind("ex", "http://example.com/")
-    g.metadata_header.profile = "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"
-
+    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"))
+    
     s = URIRef(subject_uri)
     t = URIRef("http://example.com/Class")
     p = URIRef("http://example.com/p")
