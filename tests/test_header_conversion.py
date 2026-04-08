@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import BNode, URIRef, Literal
 from rdflib.namespace import XSD, DCTERMS
-from cim_plugin.namespaces import MD, DCAT_CIM
+from cim_plugin.namespaces import MD, DCAT_EXT
 from typing import Any
 import copy
 
@@ -32,11 +32,11 @@ def test_convert_triple_targetformatmismatch(mock_convert: MagicMock) -> None:
     "predicate_in, predicate_out, object_type",
     [
         pytest.param(DCTERMS.issued, MD.Model.created, "literal", id="DCTERMS.issued to MD.Model.created"),
-        pytest.param(DCAT_CIM.startDate, MD.Model.scenarioTime, "literal", id="DCAT_CIM.startDate to MD.Model.scenarioTime"),
+        pytest.param(DCAT_EXT.startDate, MD.Model.scenarioTime, "literal", id="DCAT_CIM.startDate to MD.Model.scenarioTime"),
         pytest.param(DCTERMS.description, MD.Model.description, "literal", id="DCTERMS.description to MD.Model.description"),
-        pytest.param(DCAT_CIM.isVersionOf, MD.Model.modelingAuthoritySet, "uri", id="DCAT_CIM.isVersionOf to MD.Model.modelingAuthoritySet"),
+        pytest.param(DCAT_EXT.isVersionOf, MD.Model.modelingAuthoritySet, "uri", id="DCAT_CIM.isVersionOf to MD.Model.modelingAuthoritySet"),
         pytest.param(DCTERMS.conformsTo, MD.Model.profile, "uri", id="DCTERMS.conformsTo to MD.Model.profile"),
-        pytest.param(DCAT_CIM.version, MD.Model.version, "literal", id="DCAT_CIM.version to MD.Model.version"),
+        pytest.param(DCAT_EXT.version, MD.Model.version, "literal", id="DCAT_CIM.version to MD.Model.version"),
         pytest.param(DCTERMS.references, MD.Model.DependentOn, "uri", id="DCTERMS.references to MD.Model.DependentOn"),
         pytest.param(DCTERMS.requires, MD.Model.DependentOn, "uri", id="DCTERMS.requires to MD.Model.DependentOn"),
         pytest.param(DCTERMS.replaces, MD.Model.Supersedes, "uri", id="DCTERMS.replaces to MD.Model.Supersedes"),
@@ -57,11 +57,11 @@ def test_convert_triple_mdfullmodel(mock_convert: MagicMock, predicate_in: URIRe
     "predicate_in, predicate_out, object_type, datatype",
     [
         pytest.param(MD.Model.created, DCTERMS.issued, "literal", XSD.dateTime, id="MD.Model.created to DCTERMS.issued with datetime datatype"),
-        pytest.param(MD.Model.scenarioTime, DCAT_CIM.startDate, "literal", XSD.dateTime, id="MD.Model.scenarioTime to DCAT_CIM.startDate with datetime datatype"),
+        pytest.param(MD.Model.scenarioTime, DCAT_EXT.startDate, "literal", XSD.dateTime, id="MD.Model.scenarioTime to DCAT_CIM.startDate with datetime datatype"),
         pytest.param(MD.Model.description, DCTERMS.description, "literal", XSD.string, id="MD.Model.description to DCTERMS.description with string datatype"),
-        pytest.param(MD.Model.modelingAuthoritySet, DCAT_CIM.isVersionOf, "uri", None, id="MD.Model.modelingAuthoritySet to DCAT_CIM.isVersionOf"),
+        pytest.param(MD.Model.modelingAuthoritySet, DCAT_EXT.isVersionOf, "uri", None, id="MD.Model.modelingAuthoritySet to DCAT_CIM.isVersionOf"),
         pytest.param(MD.Model.profile, DCTERMS.conformsTo, "uri", None, id="MD.Model.profile to DCTERMS.conformsTo"),
-        pytest.param(MD.Model.version, DCAT_CIM.version, "literal", XSD.string, id="MD.Model.version to DCAT_CIM.version with string datatype"),
+        pytest.param(MD.Model.version, DCAT_EXT.version, "literal", XSD.string, id="MD.Model.version to DCAT_CIM.version with string datatype"),
         pytest.param(MD.Model.DependentOn, DCTERMS.requires, "uri", None, id="MD.Model.DependentOn to DCTERMS.requires"),
         pytest.param(MD.Model.Supersedes, DCTERMS.replaces, "uri", None, id="MD.Model.Supersedes to DCTERMS.replaces"),
     ]

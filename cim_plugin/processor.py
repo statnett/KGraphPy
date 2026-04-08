@@ -4,7 +4,7 @@ from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.header_validation import validate_header
-from cim_plugin.namespaces import update_namespace_in_triples, MD, DCAT_CIM
+from cim_plugin.namespaces import update_namespace_in_triples, MD, DCAT_EXT
 from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.to_file_strategies import _select_strategy
@@ -437,12 +437,12 @@ def _make_header_graph_for_conversion(header: CIMMetadataHeader) -> tuple[str, G
     """    
     graph = Graph()
 
-    if header.header_type == DCAT_CIM.Dataset:
+    if header.header_type == DCAT_EXT.Dataset:
         graph.bind("md", MD)    # Must be bound explicitly because it is not a default namespace in rdflib. 
         graph.add((header.subject, RDF.type, MD.FullModel))
         target_format = "md_fullmodel"
     elif header.header_type == MD.FullModel:
-        graph.add((header.subject, RDF.type, DCAT_CIM.Dataset))
+        graph.add((header.subject, RDF.type, DCAT_EXT.Dataset))
         target_format = "dcat_dataset"
     else:
         raise ValueError(f"Unknown header type: {header.header_type}. Conversion not possible.")

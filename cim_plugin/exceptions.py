@@ -12,5 +12,9 @@ class LiteralCastingError(Exception):
     """Error when casting datatype of a Literal."""
     pass
 
+class NamespaceEmptyError(Exception):
+    """Error when a namespace is empty."""
+    pass
+
 if __name__ == "__main__":
     print("exceptions for cim_plugin")

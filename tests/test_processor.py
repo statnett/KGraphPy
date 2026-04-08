@@ -5,7 +5,7 @@ from unittest.mock import call, patch, MagicMock
 from rdflib import Namespace, URIRef, Literal, BNode, Graph
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
-from cim_plugin.namespaces import MD, DCAT_CIM
+from cim_plugin.namespaces import MD, DCAT_EXT
 from cim_plugin.exceptions import LiteralCastingError
 from rdflib.namespace import RDF
 from linkml_runtime import SchemaView
@@ -190,7 +190,7 @@ def test_extract_header_createexception(mock_create: MagicMock) -> None:
 
 def test_extract_header_basic() -> None:
     g = CIMGraph()
-    g.add((URIRef("h1"), RDF.type, DCAT_CIM.Dataset))
+    g.add((URIRef("h1"), RDF.type, DCAT_EXT.Dataset))
     g.add((URIRef("s1"), URIRef("p1"), URIRef("o")))
 
     pr = CIMProcessor(g)
@@ -199,7 +199,7 @@ def test_extract_header_basic() -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
 
@@ -207,7 +207,7 @@ def test_extract_header_basic() -> None:
 def test_extract_header_headeralready(caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
-    g.metadata_header.add_triple(RDF.type, DCAT_CIM.Dataset)
+    g.metadata_header.add_triple(RDF.type, DCAT_EXT.Dataset)
     g.add((URIRef("s1"), URIRef("p1"), URIRef("o")))
 
     pr = CIMProcessor(g)
@@ -216,7 +216,7 @@ def test_extract_header_headeralready(caplog: pytest.LogCaptureFixture) -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1") # Header remains unchanged
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
     assert caplog.records[0].levelname == "ERROR"
@@ -225,7 +225,7 @@ def test_extract_header_headeralready(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_extract_header_multiplecalls(caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
-    g.add((URIRef("h1"), RDF.type, DCAT_CIM.Dataset))
+    g.add((URIRef("h1"), RDF.type, DCAT_EXT.Dataset))
     g.add((URIRef("s1"), URIRef("p1"), URIRef("o")))
 
     pr = CIMProcessor(g)
@@ -235,7 +235,7 @@ def test_extract_header_multiplecalls(caplog: pytest.LogCaptureFixture) -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
     assert "Metadata header already exist. Use .replace_header instead." in caplog.text
@@ -243,8 +243,8 @@ def test_extract_header_multiplecalls(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_extract_header_largergraphs() -> None:
     g = CIMGraph()
-    g.add((URIRef("h1"), RDF.type, DCAT_CIM.Dataset))
-    g.add((URIRef("h1"), DCAT_CIM.keyword, Literal("header")))
+    g.add((URIRef("h1"), RDF.type, DCAT_EXT.Dataset))
+    g.add((URIRef("h1"), DCAT_EXT.keyword, Literal("header")))
     g.add((URIRef("s1"), URIRef("p1"), URIRef("o")))
     g.add((URIRef("s2"), URIRef("p2"), URIRef("o2")))
 
@@ -256,8 +256,8 @@ def test_extract_header_largergraphs() -> None:
     assert pr.graph.metadata_header.subject == URIRef("h1")
     header_triples = pr.graph.metadata_header.triples
     assert len(header_triples) == 2
-    assert (URIRef("h1"), DCAT_CIM.keyword, Literal("header")) in header_triples
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in header_triples
+    assert (URIRef("h1"), DCAT_EXT.keyword, Literal("header")) in header_triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in header_triples
     assert len(pr.graph) == 2
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
     assert (URIRef("s2"), URIRef("p2"), URIRef("o2")) in pr.graph
@@ -265,7 +265,7 @@ def test_extract_header_largergraphs() -> None:
 
 def test_extract_header_bnodes() -> None:
     g = CIMGraph()
-    g.add((URIRef("h1"), RDF.type, DCAT_CIM.Dataset))
+    g.add((URIRef("h1"), RDF.type, DCAT_EXT.Dataset))
     g.add((URIRef("s1"), URIRef("p1"), URIRef("o")))
     b1 = BNode() 
     b2 = BNode() 
@@ -279,7 +279,7 @@ def test_extract_header_bnodes() -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
     assert (URIRef("h1"), URIRef("urn:p:3"), Literal("value")) in pr.graph.metadata_header.triples
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
@@ -327,8 +327,8 @@ def test_convert_header_success(mock_make: MagicMock, mock_convert: MagicMock, m
     caplog.set_level(logging.INFO)
     g = make_cimgraph
     assert g.metadata_header
-    g.metadata_header.add_triple(DCAT_CIM.keyword, Literal("test"))
-    g.metadata_header.add_triple(DCAT_CIM.version, Literal("unconverted_description"))
+    g.metadata_header.add_triple(DCAT_EXT.keyword, Literal("test"))
+    g.metadata_header.add_triple(DCAT_EXT.version, Literal("unconverted_description"))
     header_subject = g.metadata_header.subject
     pr = CIMProcessor(g)
     new_graph = Graph()
@@ -337,7 +337,7 @@ def test_convert_header_success(mock_make: MagicMock, mock_convert: MagicMock, m
     
     def convert_side_effect(triple, target_format=None):
         s, p, o = triple
-        if p == DCAT_CIM.keyword:
+        if p == DCAT_EXT.keyword:
             return (s, MD.Model.description, Literal("converted_keyword"))
         else:
             return None
@@ -349,8 +349,8 @@ def test_convert_header_success(mock_make: MagicMock, mock_convert: MagicMock, m
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == header_subject
     mock_make.assert_called_once()
-    mock_convert.assert_has_calls([call((header_subject, DCAT_CIM.keyword, Literal("test")), target_format="md_fullmodel"),
-                                   call((header_subject, DCAT_CIM.version, Literal("unconverted_description")), target_format="md_fullmodel")], any_order=True)
+    mock_convert.assert_has_calls([call((header_subject, DCAT_EXT.keyword, Literal("test")), target_format="md_fullmodel"),
+                                   call((header_subject, DCAT_EXT.version, Literal("unconverted_description")), target_format="md_fullmodel")], any_order=True)
 
     assert len(pr.graph.metadata_header.triples) == 2
     assert (header_subject, RDF.type, MD.FullModel) in pr.graph.metadata_header.triples
@@ -380,7 +380,7 @@ def test_convert_header_converttripleerror(mock_make: MagicMock, mock_convert: M
     caplog.set_level(logging.INFO)
     g = make_cimgraph
     assert g.metadata_header
-    g.metadata_header.add_triple(DCAT_CIM.keyword, Literal("test"))
+    g.metadata_header.add_triple(DCAT_EXT.keyword, Literal("test"))
     header_subject = g.metadata_header.subject
     pr = CIMProcessor(g)
     new_graph = Graph()
@@ -392,7 +392,7 @@ def test_convert_header_converttripleerror(mock_make: MagicMock, mock_convert: M
         pr.convert_header()
 
     mock_make.assert_called_once()
-    mock_convert.assert_called_once_with((header_subject, DCAT_CIM.keyword, Literal("test")), target_format="md_fullmodel")
+    mock_convert.assert_called_once_with((header_subject, DCAT_EXT.keyword, Literal("test")), target_format="md_fullmodel")
     assert pr.graph.metadata_header is g.metadata_header  # No changes to header
     
 
@@ -413,7 +413,7 @@ def test_merge_header_headernone(mock_merge: MagicMock) -> None:
 
 def test_merge_header_basic() -> None:
     header = CIMMetadataHeader.empty(URIRef("h1"))
-    header.add_triple(RDF.type, DCAT_CIM.Dataset)
+    header.add_triple(RDF.type, DCAT_EXT.Dataset)
     g = CIMGraph()
     g.bind("ex", "https://example.com/")
     g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), Literal("o")))
@@ -422,7 +422,7 @@ def test_merge_header_basic() -> None:
     pr = CIMProcessor(g)
     pr.merge_header()
 
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in pr.graph
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph
     assert len(pr.graph) == 2
 
 @patch("cim_plugin.processor.merge_namespace_managers")
@@ -1498,7 +1498,7 @@ def test_build_copy_for_serialization_basic(make_schemaview: Callable[..., Schem
     assert set(result.graph.namespace_manager.namespaces()) == set(pr.graph.namespace_manager.namespaces())
     assert result.graph.namespace_manager.store.namespace("foo") == URIRef("http://foo.org/ns#")
     assert result.graph.metadata_header.graph.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
-    assert (URIRef("http://example.com/header"), RDF.type, DCAT_CIM.Dataset) in result.graph.metadata_header.graph
+    assert (URIRef("http://example.com/header"), RDF.type, DCAT_EXT.Dataset) in result.graph.metadata_header.graph
     assert (URIRef("http://foo.org/ns#s1"), URIRef("http://foo.org/ns#s2"), Literal("o")) in result.graph
     assert result.slot_index == {"mocked": {"one": 1, "two": 2}}
 
@@ -1520,8 +1520,8 @@ def test_build_copy_for_serialization_mutability(make_schemaview: Callable[..., 
 
     assert result.graph.metadata_header
     assert pr.graph.metadata_header
-    result.graph.metadata_header.add_triple(RDF.type, DCAT_CIM.Distribution)
-    assert (None, None, DCAT_CIM.Distribution) in pr.graph.metadata_header.graph
+    result.graph.metadata_header.add_triple(RDF.type, DCAT_EXT.Distribution)
+    assert (None, None, DCAT_EXT.Distribution) in pr.graph.metadata_header.graph
 
     result.graph.add((URIRef("x"), URIRef("y"), URIRef("z")))
     assert (URIRef("x"), URIRef("y"), URIRef("z")) not in pr.graph
@@ -1556,12 +1556,12 @@ def test_make_header_graph_for_conversion_fullmodel() -> None:
 
     assert target_format == "dcat_dataset"
     assert len(graph) == 1
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in graph
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in graph
     assert graph.namespace_manager.store.namespace("dcat") == URIRef("http://www.w3.org/ns/dcat#") # Dcat is rdflib default
 
 def test_make_header_graph_for_conversion_dcatdataset() -> None:
     header = CIMMetadataHeader.empty(subject=URIRef("h1"))
-    header.add_triple(RDF.type, DCAT_CIM.Dataset)
+    header.add_triple(RDF.type, DCAT_EXT.Dataset)
     target_format, graph = _make_header_graph_for_conversion(header)
 
     assert target_format == "md_fullmodel"
@@ -1578,20 +1578,20 @@ def test_make_header_graph_for_conversion_extrardftype() -> None:
 
     assert target_format == "dcat_dataset"
     assert len(graph) == 1
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in graph
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in graph
     assert (URIRef("h1"), RDF.type, URIRef("custom_type")) not in graph
 
 def test_make_header_graph_for_conversion_ambiguoustype() -> None:
     header = CIMMetadataHeader.empty(subject=URIRef("h1"))
     header.add_triple(RDF.type, MD.FullModel)
-    header.add_triple(RDF.type, DCAT_CIM.Dataset)
+    header.add_triple(RDF.type, DCAT_EXT.Dataset)
     with pytest.raises(ValueError, match='Multiple header types found in header.'): # ValueError carried forward from header.header_type.
         _make_header_graph_for_conversion(header)
 
 
 def test_make_header_graph_for_conversion_notype() -> None:
     header = CIMMetadataHeader.empty(subject=URIRef("h1"))
-    header.add_triple(DCAT_CIM.keyword, Literal("value"))
+    header.add_triple(DCAT_EXT.keyword, Literal("value"))
     with pytest.raises(ValueError, match='No header type found in header.'): # ValueError carried forward from header.header_type.
         _make_header_graph_for_conversion(header)
 
@@ -1602,7 +1602,7 @@ def test_make_header_graph_for_conversion_headerunchanged() -> None:
     header.add_triple(RDF.type, URIRef("custom_type"))
 
     assert len(graph) == 1
-    assert (URIRef("h1"), RDF.type, DCAT_CIM.Dataset) in graph
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in graph
     assert (URIRef("h1"), RDF.type, URIRef("custom_type")) not in graph # Changes to header do not affect the graph returned.
     assert (URIRef("h1"), RDF.type, URIRef("custom_type")) in header.graph
 

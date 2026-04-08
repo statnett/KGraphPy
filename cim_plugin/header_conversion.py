@@ -1,27 +1,27 @@
 """Conversion between DCAT Dataset header and 552 MD FullModel header."""
 from rdflib import Node, Literal, URIRef
 from rdflib.namespace import DCTERMS, XSD
-from cim_plugin.namespaces import MD, DCAT_CIM
+from cim_plugin.namespaces import MD, DCAT_EXT
 from typing import Any
 
 TO_FULLMODEL: dict[URIRef, dict[str, Any]] = {
     DCTERMS.issued: {"pred": MD.Model.created, "object_type": "literal"},
-    DCAT_CIM.startDate: {"pred": MD.Model.scenarioTime, "object_type": "literal"},
+    DCAT_EXT.startDate: {"pred": MD.Model.scenarioTime, "object_type": "literal"},
     DCTERMS.description: {"pred": MD.Model.description, "object_type": "literal"},
-    DCAT_CIM.isVersionOf: {"pred": MD.Model.modelingAuthoritySet, "object_type": "uri"},
+    DCAT_EXT.isVersionOf: {"pred": MD.Model.modelingAuthoritySet, "object_type": "uri"},
     DCTERMS.conformsTo: {"pred": MD.Model.profile, "object_type": "uri"},
-    DCAT_CIM.version: {"pred": MD.Model.version, "object_type": "literal"},
+    DCAT_EXT.version: {"pred": MD.Model.version, "object_type": "literal"},
     DCTERMS.references: {"pred": MD.Model.DependentOn, "object_type": "uri"},
     DCTERMS.requires: {"pred": MD.Model.DependentOn, "object_type": "uri"},
     DCTERMS.replaces: {"pred": MD.Model.Supersedes, "object_type": "uri"},
 }
 TO_DCAT: dict[URIRef, dict[str, Any]] = {
     MD.Model.created: {"pred": DCTERMS.issued, "object_type": "literal", "datatype": XSD.dateTime},
-    MD.Model.scenarioTime: {"pred": DCAT_CIM.startDate, "object_type": "literal", "datatype": XSD.dateTime},
+    MD.Model.scenarioTime: {"pred": DCAT_EXT.startDate, "object_type": "literal", "datatype": XSD.dateTime},
     MD.Model.description: {"pred": DCTERMS.description, "object_type": "literal", "datatype": XSD.string},
-    MD.Model.modelingAuthoritySet: {"pred": DCAT_CIM.isVersionOf, "object_type": "uri"},
+    MD.Model.modelingAuthoritySet: {"pred": DCAT_EXT.isVersionOf, "object_type": "uri"},
     MD.Model.profile: {"pred": DCTERMS.conformsTo, "object_type": "uri"},
-    MD.Model.version: {"pred": DCAT_CIM.version, "object_type": "literal", "datatype": XSD.string},
+    MD.Model.version: {"pred": DCAT_EXT.version, "object_type": "literal", "datatype": XSD.string},
     MD.Model.DependentOn: {"pred": DCTERMS.requires, "object_type": "uri"}, # Could also be DCTERMS.references. requires is preferred.
     MD.Model.Supersedes: {"pred": DCTERMS.replaces, "object_type": "uri"},
 }

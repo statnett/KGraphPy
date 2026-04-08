@@ -1,8 +1,17 @@
 import pytest
+from unittest.mock import patch, MagicMock, call
 from rdflib import URIRef, Namespace, Graph, Literal, BNode
 from rdflib.namespace import RDF
-from cim_plugin.namespaces import collect_specific_namespaces, update_namespace_in_triples
-
+from cim_plugin.exceptions import NamespaceEmptyError
+from cim_plugin.namespaces import (
+    collect_specific_namespaces, 
+    update_namespace_in_triples, 
+    validate_and_fix_namespaces, 
+    validate_and_fix_namespaces_by_cimtype, 
+    STANDARD_NAMESPACES, 
+    CGMES_NAMESPACES, 
+    PERSISTENT_NAMESPACES
+)
 
 # Unit tests collect_specific_namespaces
 @pytest.mark.parametrize(
@@ -234,8 +243,223 @@ def test_update_namespace_in_triples() -> None:
     g.add((URIRef("a"), URIRef("x"), URIRef("y")))
     assert len(g) == 1
 
-    with pytest.raises(ValueError, match="old_namespace cannot be an empty string"):
+    with pytest.raises(NamespaceEmptyError, match="old_namespace cannot be an empty string"):
         update_namespace_in_triples(g, "", "http://new.com/")
+
+
+# Unit tests validate_and_fix_namespaces
+@patch("cim_plugin.namespaces.update_namespace_in_triples")
+def test_validate_and_fix_namespaces_emptygraph(mock_update: MagicMock) -> None:
+    g = Graph()
+
+    validate_and_fix_namespaces(g, {})
+
+    mock_update.assert_not_called()
+    assert len(g) == 0
+
+
+@pytest.mark.parametrize(
+        "graph_ns, fix_ns",
+        [
+            pytest.param([], {}, id="Empty graph namespaces and no fix namespaces"),
+            pytest.param([("foo", "http://foo.com/")], {}, id="Graph has namespace, fix namespaces empty"),
+            pytest.param([], {"foo": "http://foo.com/"}, id="Graph has no namespaces, fix namespaces has one"),
+            pytest.param([("foo", "http://foo.com/")], {"foo": "http://foo.com/"}, id="Correct namespace, no update"),
+            pytest.param([("foo", "http://foo.com/")], {"bar": "http://bar.com/"}, id="No match, no update"),
+        ]
+)
+@patch("cim_plugin.namespaces.update_namespace_in_triples")
+def test_validate_and_fix_namespaces_nofixes(mock_update: MagicMock, graph_ns: tuple, fix_ns: dict) -> None:
+    g = Graph()
+    for prefix, ns in graph_ns:
+        g.bind(prefix, ns)
+    g.add((URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")))
+    old_ns = list(g.namespace_manager.store.namespaces())
+
+    validate_and_fix_namespaces(g, fix_ns)
+
+    mock_update.assert_not_called()
+    assert len(g) == 1
+    assert (URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")) in g
+    assert list(g.namespace_manager.store.namespaces()) == old_ns
+    
+
+@pytest.mark.parametrize(
+        "graph_ns, fix_ns, update_calls",
+        [
+            pytest.param([("foo", "http://foo.com/")], {"foo": "http://newfoo.com/"}, [("http://foo.com/", "http://newfoo.com/")], id="Correct prefix, updated namespace"),
+            pytest.param([("foo", "http://foo.com/"), ("bar", "www.bar.com/")], 
+                         {"bar": "http://www.newbar.com/", "foo": "http://newfoo.com/"}, 
+                         [("http://foo.com/", "http://newfoo.com/"), ("www.bar.com/", "http://www.newbar.com/")], 
+                         id="Multiple updates of namespaces"),
+            pytest.param([("foo", "http://foo.com/")], {"foo2": "http://foo.com/"}, [], id="One prefix updated"),
+            pytest.param([("foo", "http://foo.com/"), ("bar", "www.bar.com/")], 
+                         {"bar2": "www.bar.com/", "foo2": "http://foo.com/"}, 
+                         [], 
+                         id="Multiple updates of prefix"),
+        ]
+)
+@patch("cim_plugin.namespaces.update_namespace_in_triples")
+def test_validate_and_fix_namespaces_fixes(mock_update: MagicMock, graph_ns: tuple, fix_ns: dict, update_calls: list[tuple[str, str]], caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    g.bind("notfoo", "http://notfoo.com/")
+    for prefix, ns in graph_ns:
+        g.bind(prefix, ns)
+    g.add((URIRef("http://notfoo.com/a"), URIRef("http://notfoo.com/p"), URIRef("http://notfoo.com/o")))
+    old_ns = list(g.namespace_manager.store.namespaces())
+
+    validate_and_fix_namespaces(g, fix_ns)
+
+    assert len(g) == 1
+    assert len(list(g.namespace_manager.store.namespaces())) == len(old_ns)  # No new namespaces should be added, only updated
+
+    # Other namespaces and triples should be unchanged
+    assert (URIRef("http://notfoo.com/a"), URIRef("http://notfoo.com/p"), URIRef("http://notfoo.com/o")) in g
+    assert g.namespace_manager.store.namespace("notfoo") == URIRef("http://notfoo.com/")
+
+    # Changes
+    for prefix, ns in fix_ns.items():
+        assert g.namespace_manager.store.namespace(prefix) == URIRef(ns)
+
+    if update_calls:
+        calls = []
+        for old_ns, new_ns in update_calls:
+            calls.append(call(g, old_ns, new_ns))
+        mock_update.assert_has_calls(calls, any_order=True)
+        assert "Wrong namespace detected for" in caplog.text
+    else:
+        mock_update.assert_not_called()
+        assert "Wrong prefix detected for" in caplog.text
+
+
+def test_validate_and_fix_namespaces_integration(caplog: pytest.LogCaptureFixture) -> None:
+    g = Graph()
+    g.bind("foo", "http://foo.com/")
+    g.bind("notfoo", "http://notfoo.com/")
+    g.bind("bar", "http://bar.com/")
+    g.add((URIRef("http://foo.com/a1"), URIRef("http://foo.com/p1"), URIRef("http://foo.com/o1")))
+    g.add((URIRef("http://notfoo.com/a2"), URIRef("http://notfoo.com/p2"), URIRef("http://notfoo.com/o2")))
+    g.add((URIRef("http://bar.com/a3"), URIRef("http://bar.com/p3"), URIRef("http://bar.com/o3")))
+
+    validate_and_fix_namespaces(g, {"foo": "http://newfoo.com/", "newbar": "http://bar.com/"})
+
+    assert len(g) == 3
+    assert (URIRef("http://newfoo.com/a1"), URIRef("http://newfoo.com/p1"), URIRef("http://newfoo.com/o1")) in g
+    assert (URIRef("http://notfoo.com/a2"), URIRef("http://notfoo.com/p2"), URIRef("http://notfoo.com/o2")) in g
+    assert (URIRef("http://bar.com/a3"), URIRef("http://bar.com/p3"), URIRef("http://bar.com/o3")) in g
+    assert (URIRef("http://foo.com/a1"), URIRef("http://foo.com/p1"), URIRef("http://foo.com/o1")) not in g
+    assert g.namespace_manager.store.namespace("foo") == URIRef("http://newfoo.com/")
+    assert g.namespace_manager.store.namespace("newbar") == URIRef("http://bar.com/")
+    assert g.namespace_manager.store.namespace("notfoo") == URIRef("http://notfoo.com/")
+    assert g.namespace_manager.store.namespace("bar") is None  # Old prefix should be removed
+    assert "Wrong namespace detected for 'foo': 'http://foo.com/'. Namespace corrected to 'http://newfoo.com/'." in caplog.text
+    assert "Wrong prefix detected for 'http://bar.com/': 'bar'. Prefix corrected to 'newbar'." in caplog.text
+
+
+def test_validate_and_fix_namespaces_namespaceempty(caplog: pytest.LogCaptureFixture) -> None:
+    # If the old namespace is empty, no changes occur.
+    # This is to prevent all triples without namespaces from getting the new namespace, because this gives ambiguous data.
+    g = Graph()
+    g.bind("foo", "")
+    g.add((URIRef("a"), URIRef("p"), URIRef("o")))
+
+    validate_and_fix_namespaces(g, {"foo": "http://foo.com/"})
+
+    assert (URIRef("a"), URIRef("p"), URIRef("o")) in g
+    assert g.namespace_manager.store.namespace("foo") == URIRef("")
+    assert "Failed to update namespace for prefix 'foo' due to empty old namespace. Namespace correction skipped." in caplog.text
+
+
+def test_validate_and_fix_namespaces_namespacenone() -> None:
+    # If the old namespace is None, rdflib converts it to 'None'. 
+    # No triples have this namespace, so no triples are changed, but the binding is updated to the new namespace.
+    # This is an edge case that is very rare, but will cause silent errors when it occurs.
+    g = Graph()
+    g.bind("foo", None)
+    g.add((URIRef("a"), URIRef("p"), URIRef("o")))
+    print(g.namespace_manager.store.namespace("foo"))
+    validate_and_fix_namespaces(g, {"foo": "http://foo.com/"})
+
+    assert (URIRef("a"), URIRef("p"), URIRef("o")) in g
+    assert (URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")) not in g
+    assert g.namespace_manager.store.namespace("foo") == URIRef("http://foo.com/")
+
+def test_validate_and_fix_namespaces_newnamespaceempty() -> None:
+    # A namespace can be changed to empty.
+    g = Graph()
+    g.bind("foo", "http://foo.com/")
+    g.add((URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")))
+
+    validate_and_fix_namespaces(g, {"foo": ""})
+
+    assert (URIRef("a"), URIRef("p"), URIRef("o")) in g
+    assert g.namespace_manager.store.namespace("foo") == URIRef("")
+
+
+def test_validate_and_fix_namespaces_defaultnamespace() -> None:
+    # Default namespace is changed to a namespace with prefix.
+    g = Graph()
+    g.bind("", "http://foo.com/")
+    g.add((URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")))
+
+    validate_and_fix_namespaces(g, {"foo": "http://foo.com/"})
+
+    assert (URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")) in g
+    assert g.namespace_manager.store.namespace("foo") == URIRef("http://foo.com/")
+    assert g.namespace_manager.store.namespace("") is None  # Default namespace should be removed
+
+@patch("cim_plugin.namespaces.update_namespace_in_triples", side_effect=[None, ValueError("some other error")])
+def test_validate_and_fix_namespaces_errorsfromcalledfunction(mock_update: MagicMock) -> None:
+    g = Graph()
+    g.bind("foo", "http://foo.com/")
+    g.bind("bar", "http://bar.com/")
+    g.add((URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")))
+    g.add((URIRef("http://bar.com/a"), URIRef("http://bar.com/p"), URIRef("http://bar.com/o")))
+
+    with pytest.raises(ValueError, match="some other error"):
+        validate_and_fix_namespaces(g, {"bar": "http://newbar.com/", "foo": "http://newfoo.com/"})
+    
+    mock_update.assert_has_calls([call(g, "http://foo.com/", "http://newfoo.com/"), call(g, "http://bar.com/", "http://newbar.com/")], any_order=True)
+    # Changes made before error should be present
+    assert g.namespace_manager.store.namespace("bar") == URIRef("http://newbar.com/")
+    assert (URIRef("http://bar.com/a"), URIRef("http://bar.com/p"), URIRef("http://bar.com/o")) in g # Triples are not changed because update_namespace_in_triples is mocked
+    # No changes after valueerror
+    assert (URIRef("http://foo.com/a"), URIRef("http://foo.com/p"), URIRef("http://foo.com/o")) in g
+    assert g.namespace_manager.store.namespace("foo") == URIRef("http://foo.com/")
+
+
+# Unit tests validate_and_fix_namespaces_by_cimtype
+@patch("cim_plugin.namespaces.validate_and_fix_namespaces")
+def test_validate_and_fix_namespaces_by_cimtype_default(mock_validate: MagicMock) -> None:
+    g = Graph()
+    default_namespaces = STANDARD_NAMESPACES|PERSISTENT_NAMESPACES
+    validate_and_fix_namespaces_by_cimtype(g, cgmes=False)
+
+    mock_validate.assert_called_once_with(g, default_namespaces)
+
+    assert default_namespaces["cim"] == Namespace("https://cim.ucaiug.io/ns#")  # Check one sample namespace
+
+
+@patch("cim_plugin.namespaces.validate_and_fix_namespaces")
+def test_validate_and_fix_namespaces_by_cimtype_cgmes(mock_validate: MagicMock) -> None:
+    g = Graph()
+    cgmes_exceptions = CGMES_NAMESPACES|STANDARD_NAMESPACES
+    validate_and_fix_namespaces_by_cimtype(g, cgmes=True)
+
+    mock_validate.assert_called_once_with(g, cgmes_exceptions)
+
+    assert cgmes_exceptions["cim"] == Namespace("http://iec.ch/TC57/CIM100#")  # Check one sample namespace
+
+
+def test_validate_and_fix_namespaces_by_cimtype_dictsnotmodified() -> None:
+    before_standard = STANDARD_NAMESPACES.copy()
+    before_persistent = PERSISTENT_NAMESPACES.copy()
+
+    validate_and_fix_namespaces_by_cimtype(Graph(), cgmes=False)
+
+    assert STANDARD_NAMESPACES == before_standard
+    assert PERSISTENT_NAMESPACES == before_persistent
+
 
 if __name__ == "__main__":
     pytest.main()
