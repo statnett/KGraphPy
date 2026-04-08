@@ -1,11 +1,11 @@
 from unittest import result
 
 import pytest
-from unittest.mock import call, patch, MagicMock
+from unittest.mock import call, patch, MagicMock, PropertyMock
 from rdflib import Namespace, URIRef, Literal, BNode, Graph
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
-from cim_plugin.namespaces import MD, DCAT_EXT
+from cim_plugin.namespaces import MD, DCAT_EXT, DCTERMS
 from cim_plugin.exceptions import LiteralCastingError
 from rdflib.namespace import RDF
 from linkml_runtime import SchemaView
@@ -1462,6 +1462,86 @@ def test_validate_header_trigformat(mock_validate: MagicMock, make_cimgraph: CIM
     pr.validate_header(format="trig")
 
     mock_validate.assert_called_once_with(g.metadata_header, format="trig")
+
+# Unit tests .validate_namespaces
+@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+def test_validate_namespaces_noheader(mock_validate: MagicMock) -> None:
+    g = CIMGraph()
+    pr = CIMProcessor(g)
+
+    pr.validate_namespaces()
+
+    assert pr.graph.metadata_header is None
+    mock_validate.assert_called_once_with(g, cgmes=False)
+
+
+@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+def test_validate_namespaces_noprofile(mock_validate: MagicMock, make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    pr = CIMProcessor(g)
+
+    pr.validate_namespaces()
+
+    assert pr.graph.metadata_header is not None
+    assert pr.graph.metadata_header.profile is None
+    mock_validate.assert_called_once_with(g, cgmes=False)
+
+
+@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+def test_validate_namespaces_exception(mock_validate: MagicMock, make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    assert g.metadata_header
+    with patch("cim_plugin.processor.CIMMetadataHeader.profile", new_callable=PropertyMock, side_effect=TypeError("other exception")):
+        pr = CIMProcessor(g)
+
+        with pytest.raises(TypeError, match="other exception"):
+            pr.validate_namespaces(cimxml_format=True)
+
+    assert pr.graph.metadata_header is not None
+    mock_validate.assert_not_called()
+
+
+@pytest.mark.parametrize(
+        "profile_uri, predicate, cimxml_format, expected_cgmes",
+        [
+            pytest.param("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0", DCTERMS.conformsTo, True, True, id="CGMES outlier, dcterms profile, cimxml format"),
+            pytest.param("https://ap-voc.cim4.eu/GridDisturbance/1.1", DCTERMS.conformsTo, True, True, id="CGMES outlier 2, dcterms profile, cimxml format"),
+            pytest.param("not_cgmes_outlier", DCTERMS.conformsTo, True, False, id="Not cgmes outlier, dcterms profile, cimxml format"),
+            pytest.param("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0", MD.Model.profile, True, True, id="CGMES outlier, fullmodel profile, cimxml format"),
+            pytest.param("not_cgmes_outlier", MD.Model.profile, True, False, id="Not cgmes outlier, fullmodel profile, cimxml format"),
+            pytest.param("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0", DCTERMS.conformsTo, False, False, id="CGMES outlier, dcterms profile, not cimxml format"),
+            pytest.param("not_cgmes_outlier", DCTERMS.conformsTo, False, False, id="Not cgmes outlier, dcterms profile, not cimxml format"),
+
+        ]
+)
+@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+def test_validate_namespaces_various(mock_validate: MagicMock, profile_uri: str, predicate: URIRef, cimxml_format: bool, expected_cgmes: bool, make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    assert g.metadata_header
+    g.metadata_header.add_triple(predicate, URIRef(profile_uri))
+    pr = CIMProcessor(g)
+
+    pr.validate_namespaces(cimxml_format=cimxml_format)
+
+    assert pr.graph.metadata_header is not None
+    assert pr.graph.metadata_header.profile == profile_uri
+    mock_validate.assert_called_once_with(g, cgmes=expected_cgmes)
+
+
+@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+def test_validate_namespaces_multipleprofiles(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
+    g = make_cimgraph
+    assert g.metadata_header
+    g.metadata_header.add_triple(MD.Model.profile, URIRef("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0"))
+    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0")) 
+    pr = CIMProcessor(g)
+
+    pr.validate_namespaces(cimxml_format=True)
+
+    mock_validate.assert_called_once_with(g, cgmes=False)
+    assert "Unable to retrieve profile. Standard namespaces will be used." in caplog.text
+    assert "Multiple profiles found in header:" in caplog.text # The exception message from ValueError
+
 
 # Unit tests ._build_copy_for_serialization
 def test_build_copy_for_serialization_emptygraph() -> None:

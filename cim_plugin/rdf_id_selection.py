@@ -16,15 +16,15 @@ file_path = Path.cwd() /"cim_plugin" / "id_profiles.yaml"
 with open(file_path) as f:
     config = yaml.safe_load(f)
 
-prefixes = config["prefixes"]
-profiles = config["profiles"]
+PREFIXES = config["prefixes"]
+PROFILES = config["profiles"]
 
 def expand(uri: str) -> str:
     """Expand prefix:local into a full URI."""
     if ":" not in uri:
         return uri
     prefix, local = uri.split(":", 1)
-    return prefixes.get(prefix, prefix + ":") + local
+    return PREFIXES.get(prefix, prefix + ":") + local
 
 
 def find_rdf_id_or_about(profile: str|None, obj_type: str|URIRef) -> str:
@@ -32,14 +32,14 @@ def find_rdf_id_or_about(profile: str|None, obj_type: str|URIRef) -> str:
         logger.error("No profile found. Defaults to 'about'.")
         return "about"
     
-    if profile not in profiles:
+    if profile not in PROFILES:
         return "about"
 
     if isinstance(obj_type, URIRef):
         obj_type = str(obj_type)
 
     expanded_object = expand(obj_type)
-    expanded_exceptions = [expand(x) for x in profiles[profile]]
+    expanded_exceptions = [expand(x) for x in PROFILES[profile]]
     
     if expanded_object in expanded_exceptions:
         return "about"

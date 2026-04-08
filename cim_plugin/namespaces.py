@@ -155,7 +155,7 @@ def update_namespace_in_triples(graph: Graph, old_namespace: str, new_namespace:
 
 
 def validate_and_fix_namespaces(graph: Graph, namespaces: dict[str, Any]) -> None:
-    """Ensure that the graph's namespace bindings match the input prefix→namespace mapping.
+    """Ensure that the graph's namespace bindings match the input prefix: namespace mapping.
 
     Rules:
     - If prefix exists with correct namespace or neither exists → do nothing
@@ -174,32 +174,34 @@ def validate_and_fix_namespaces(graph: Graph, namespaces: dict[str, Any]) -> Non
 
     for correct_prefix, correct_ns in namespaces.items():
 
+        correct_ns_str = str(correct_ns)
+
         prefix_exists = correct_prefix in current_ns_for_prefix
-        ns_exists = correct_ns in current_prefix_for_ns
+        ns_exists = correct_ns_str in current_prefix_for_ns
 
         # Case 1: prefix exists with correct namespace → OK
-        if prefix_exists and current_ns_for_prefix[correct_prefix] == correct_ns:
+        if prefix_exists and current_ns_for_prefix[correct_prefix] == correct_ns_str:
             continue
 
         # Case 2: prefix exists but wrong namespace → update namespace
-        if prefix_exists and current_ns_for_prefix[correct_prefix] != correct_ns:
+        if prefix_exists and current_ns_for_prefix[correct_prefix] != correct_ns_str:
             old_ns = current_ns_for_prefix[correct_prefix]
-            logger.error(f"Wrong namespace detected for '{correct_prefix}': '{old_ns}'. Namespace corrected to '{correct_ns}'.")
+            logger.error(f"Wrong namespace detected for '{correct_prefix}': '{old_ns}'. Namespace corrected to '{correct_ns_str}'.")
 
             try:
-                update_namespace_in_triples(graph, old_ns, correct_ns)
+                update_namespace_in_triples(graph, old_ns, correct_ns_str)
             except NamespaceEmptyError as e:
                 logger.error(f"Failed to update namespace for prefix '{correct_prefix}' due to empty old namespace. Namespace correction skipped.")
                 continue
 
-            ns_manager.bind(correct_prefix, correct_ns, replace=True)
+            ns_manager.bind(correct_prefix, correct_ns_str, replace=True)
             continue
 
         # Case 3: namespace exists but wrong prefix → update prefix
-        if ns_exists and current_prefix_for_ns[correct_ns] != correct_prefix:
-            logger.error(f"Wrong prefix detected for '{correct_ns}': '{current_prefix_for_ns[correct_ns]}'. Prefix corrected to '{correct_prefix}'.")
+        if ns_exists and current_prefix_for_ns[correct_ns_str] != correct_prefix:
+            logger.error(f"Wrong prefix detected for '{correct_ns_str}': '{current_prefix_for_ns[correct_ns_str]}'. Prefix corrected to '{correct_prefix}'.")
 
-            ns_manager.bind(correct_prefix, correct_ns, override=True)
+            ns_manager.bind(correct_prefix, correct_ns_str, override=True)
             continue
 
 

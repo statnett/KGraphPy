@@ -4,11 +4,12 @@ from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
 from cim_plugin.header_validation import validate_header
-from cim_plugin.namespaces import update_namespace_in_triples, MD, DCAT_EXT
+from cim_plugin.namespaces import update_namespace_in_triples, MD, DCAT_EXT, validate_and_fix_namespaces_by_cimtype
 from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.to_file_strategies import _select_strategy
 from cim_plugin.header_conversion import convert_triple
+from cim_plugin.rdf_id_selection import PROFILES
 from rdflib import URIRef, Literal, Graph
 from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path
@@ -320,6 +321,31 @@ class CIMProcessor:
             logger.error("No metadata header found. Validation not possible.")
 
 
+    def validate_namespaces(self, cimxml_format: bool = False) -> None:
+        """Check that namespaces conforms to CIM standards and fix if not.
+        
+        Only CIM standard namespaces are checked. The list can be found in the namespaces module.
+        If the cimxml_format is True and the profile is a CGMES type, the CGMES outlier namespaces are checked for 'cim', 'eu' and 'md'.
+        In all other cases, 'cim', 'eu' and 'eumd' follows the standard for Network Code Related Canonical Extensions 2.4.0.
+
+        Parameters:
+            cimxml_format (bool): Whether the format is CIMXML. Default is False.
+        """
+        cgmes_outlier = False
+
+        if cimxml_format:
+            try:
+                profile = self.graph.metadata_header.profile if self.graph.metadata_header else None
+            except ValueError as e:
+                logger.error(f"Unable to retrieve profile. Standard namespaces will be used. Cause: {e}.")
+                profile = None
+
+            if profile in PROFILES:
+                cgmes_outlier = True 
+    
+        validate_and_fix_namespaces_by_cimtype(self.graph, cgmes=cgmes_outlier)
+
+
     # Not tested. Should it be?
     def to_file(self, file_path: str|Path, format: str = "cimxml", **kwargs) -> None:
         """Send graph to file of given format.
@@ -338,18 +364,6 @@ class CIMProcessor:
         strategy = _select_strategy(format, file_path, kwargs)
         strategy.serialize(output_copy)
 
-    # def to_trig(self, file_path: str, enrich_datatypes: bool = False, schema_path: Optional[str|Path]=None) -> None:
-    #     """To be implemented:
-    #     - Merge header
-    #     - Add header triples special for trig? Or do this somewhere else?
-    #     - Enrich datatypes
-    #     """
-
-    # def to_cimxml(self):
-    #     """To be implemented:
-    #     - Ensure metadata_header has triples.
-    #     - Ensure correct namespaces?
-    #     """
 
 # Not in use, but might become usefull later
 def _check_for_namespace_collisions(namespaces1: NamespaceManager, namespaces2: NamespaceManager) -> bool:
