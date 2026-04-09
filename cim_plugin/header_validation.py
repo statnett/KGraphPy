@@ -23,11 +23,10 @@
 #   - Should not have rdf:type rdfg:Graph triple, but should have rdf:type dcat:Dataset or md:FullModel triple (issue #12)
 #   - There should be no json-ld:base triple (issue #11)
 
-from email import header
 import re
 from typing import Tuple, Optional
 
-from rdflib import XSD, BNode, Literal, Node, Graph, URIRef, graph
+from rdflib import XSD, BNode, Literal, Node, Graph, URIRef
 from rdflib.namespace import DCAT, DCTERMS, RDF
 
 from cim_plugin.enriching import cast_datetime_utc
@@ -331,7 +330,7 @@ def validate_header(header: CIMMetadataHeader, format: str="cimxml") -> None:
         return
 
     if header.header_type == MD.FullModel:
-        logger.error(f"Validation for MD.FullModel header is not implemented yet. No validation performed for this header type.")
+        logger.error(f"Validation for MD.FullModel header is not implemented yet. No validation performed.")
         return
     
 

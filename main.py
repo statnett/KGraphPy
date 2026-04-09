@@ -59,7 +59,6 @@ def normalize_strings(g):
     return new
 
 def main():
-    # check_plugin_registered("cimxml", "Serializer")
     # file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
     # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
@@ -74,16 +73,9 @@ def main():
     t1 = t[0]
     t1.extract_header()
     
-    manifest_file = "../Nordic44/instances/Grid/cimxml/manifest.xml"
-    new_header = CIMMetadataHeader.from_manifest(manifest_file, g1.graph.metadata_header.subject)
-    # g1.replace_header(new_header)
+    # manifest_file = "../Nordic44/instances/Grid/cimxml/manifest.xml"
+    # new_header = CIMMetadataHeader.from_manifest(manifest_file, g1.graph.metadata_header.subject)
 
-    # g1.set_schema(linkmlfile)
-    # g1.update_namespace("eu", EU)
-    # g1.update_namespace("cim", CIM)
-
-    # g1.enrich_literal_datatypes(allow_different_namespaces=True)
-    # t1.replace_header(g1.graph.metadata_header)
     # counter = 0
     # for s, p, o in g1.graph:
     #     if isinstance(o, Literal):
@@ -91,47 +83,19 @@ def main():
     #         counter += 1
     #         if counter == 5:
     #             break
-    # for s, p, o in new_header.graph.triples((new_header.subject, URIRef('http://purl.org/dc/terms/issued'), None)):
-    #     if isinstance(o, Literal):
-    #         print(type(o.toPython()))
-    #         print(o.toPython())
-    #         casted = cast_datetime_utc(o)
-    #         print(casted)
-    #         print(type(casted))
-
-    # print("from trig:")
-    # for s, p, o in t1.graph.metadata_header.graph.triples((new_header.subject, URIRef('http://purl.org/dc/terms/issued'), None)):
-    #     if isinstance(o, Literal):
-    #         print(o.toPython())
-    #         print(type(o.toPython()))
-    #         casted = cast_datetime_utc(o)
-    #         print(casted)
-    #         print(type(casted))
-    # print(t1.graph.metadata_header.triples)
 
     # for triple in t1.graph.metadata_header.graph.triples((None, None, DCTERMS.PeriodOfTime)):
     #       print(triple)
 
-    t1.graph.metadata_header.remove_triple(DCTERMS.issued, Literal('2025-02-14', datatype=XSD.date))
-    # t1.graph.metadata_header.remove_triple(DCTERMS.issued, Literal('2025-02-14T00:00:00+00:00', datatype=XSD.dateTime))
-    # for triple in t1.graph.metadata_header.graph.triples((None, DCTERMS.issued, None)):
-    #       print(triple)
+    # g1.replace_header(new_header)
+    # g1.validate_header(format="cimxml")
+    # output_file = Path.cwd().parent / "fromcimxml_grid_eq_corrected_header.xml"
+    # g1.to_file(output_file, format="cimxml", qualifier="underscore")
 
-    # for triple in new_header.graph.triples((new_header.subject, DCAT.startDate, None)):
-    #       print(triple)
-    # cimxml_issues = validate_cimxml_header(new_header.triples)
-    # trig_issues = validate_trig_header(t1.graph.metadata_header.triples)
-    # print("CIMXML header issues:", cimxml_issues)
-    # print("TRIG header issues:", len(trig_issues), trig_issues)
-    g1.replace_header(new_header)
-    g1.validate_header(format="cimxml")
-    output_file = Path.cwd().parent / "fromcimxml_grid_eq_corrected_header.xml"
-    g1.to_file(output_file, format="cimxml", qualifier="underscore")
-    
-    t1.validate_header(format="trig")
-    output_file_trig = Path.cwd().parent / "fromtrig_grid_eq_corrected_header.trig"
-    t1.to_file(output_file_trig, format="trig", enrich_datatypes=False)
-    
+    # t1.graph.metadata_header.remove_triple(DCTERMS.issued, Literal('2025-02-14', datatype=XSD.date))
+    # t1.validate_header(format="trig")
+    # output_file_trig = Path.cwd().parent / "fromtrig_grid_eq_corrected_header.trig"
+    # t1.to_file(output_file_trig, format="trig", enrich_datatypes=False)
 
 if __name__ == "__main__":
     main()

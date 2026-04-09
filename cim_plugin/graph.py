@@ -6,7 +6,7 @@ from cim_plugin.header import CIMMetadataHeader
 class CIMGraph(Graph):
     metadata_header: CIMMetadataHeader | None = None
 
-
+# This is no longer used, but kept for reference and possible future use. 
 class CIMDataset(Dataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import ANY, call, patch, MagicMock
+from unittest.mock import call, patch, MagicMock
 from rdflib import BNode, Graph, Literal, Node, URIRef
 from rdflib.namespace import XSD, DCAT, DCTERMS, RDF
 from cim_plugin.header import CIMMetadataHeader
@@ -1088,7 +1088,7 @@ def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_dateti
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
     mock_check_rdfgraph.assert_not_called()
-    assert "Validation for MD.FullModel header is not implemented yet. No validation performed for this header type." in caplog.text
+    assert "Validation for MD.FullModel header is not implemented yet. No validation performed." in caplog.text
 
 
 @patch("cim_plugin.header_validation._check_trig_rdfg_graph")

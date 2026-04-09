@@ -1,5 +1,6 @@
-import re
+"""Functions for enriching CIM graphs with datatypes."""
 
+import re
 from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
 from rdflib import Literal, URIRef
 from rdflib.namespace import XSD
@@ -267,22 +268,6 @@ def cast_datetime_utc(lit: Literal) -> Literal:
     raise ValueError(f"Datatype cannot be cast to datetime: {value!r}")
 
 
-# def cast_datetime_utc(lit: Literal) -> Literal:
-#     value = lit.toPython()
-
-#     if isinstance(value, date) or isinstance(value, datetime):
-#         dt = datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
-#         return Literal(dt, datatype=XSD.dateTime)
-
-#     if isinstance(value, str):
-#         parsed = datetime.strptime(value.strip(), "%Y-%m-%d").date()
-#         dt = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
-#         return Literal(dt, datatype=XSD.dateTime)
-#         # Will raise ValueError if not in correct format, which should be sent forward.
-        
-#     return lit
-
-
 CASTERS = {
     str(XSD.integer): int,
     str(XSD.float): cast_float,
@@ -320,4 +305,4 @@ def create_typed_literal(value: str, datatype_uri: str, schemaview: SchemaView) 
 
 
 if __name__ == "__main__":
-    print("Functions for enriching cim graphs.")
+    print("Functions for enriching CIM graphs.")

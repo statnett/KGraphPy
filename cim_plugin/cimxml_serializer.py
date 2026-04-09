@@ -1,6 +1,5 @@
 """Serializer for writing graphs to CIMXML files."""
 
-# import uuid
 from rdflib.serializer import Serializer
 from rdflib.graph import Graph
 from rdflib.term import URIRef, Literal, Node, BNode
@@ -12,7 +11,6 @@ from cim_plugin.utilities import group_subjects_by_type, _extract_uuid_from_urn,
 from cim_plugin.namespaces import MD, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
-# from cim_plugin.graph import CIMGraph
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
 
 logger = logging.getLogger('cimxml_logger')
@@ -330,4 +328,4 @@ def _subject_sort_key(uri: Node) -> tuple[int, str]:
 
 
 if __name__ == "__main__":
-    print("Serializer class")
+    print("CIMXML serializer class")

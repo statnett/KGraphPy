@@ -1,9 +1,11 @@
 """Conversion between DCAT Dataset header and 552 MD FullModel header."""
+
 from rdflib import Node, Literal, URIRef
 from rdflib.namespace import DCTERMS, XSD
 from cim_plugin.namespaces import MD, DCAT_EXT
 from typing import Any
 
+# Conversion mapping
 TO_FULLMODEL: dict[URIRef, dict[str, Any]] = {
     DCTERMS.issued: {"pred": MD.Model.created, "object_type": "literal"},
     DCAT_EXT.startDate: {"pred": MD.Model.scenarioTime, "object_type": "literal"},
@@ -89,29 +91,5 @@ def convert_object(o: Node, object_type: str, datatype: URIRef | None = None) ->
     return o
 
 
-"""
-    if p in to_fullmodel:
-        new_pred = to_fullmodel[p]["pred"]
-        object_type = to_fullmodel[p]["object_type"]
-        if object_type == "literal":
-            if isinstance(o, URIRef):
-                o = Literal(o)
-        elif object_type == "uri":
-            if isinstance(o, Literal):
-                o = URIRef(o.value)
-        return (s, new_pred, o)
-    
-    if p in to_dcat:
-        new_pred = to_dcat[p]["pred"]
-        object_type = to_dcat[p]["object_type"]
-        datatype = to_dcat[p].get("datatype")
-        if object_type == "literal":
-            if isinstance(o, URIRef):
-                o = Literal(o, datatype=datatype)
-            elif isinstance(o, Literal):
-                o = Literal(o.value, datatype=datatype)
-        elif object_type == "uri":
-            if isinstance(o, Literal):
-                o = URIRef(o.value)
-        return (s, new_pred, o)
-"""
+if __name__ == "__main__":
+    print("Functions for converting between DCAT Dataset and MD FullModel headers.")

@@ -1,21 +1,18 @@
 """CIMTrigSerializer
 
 Inherits from rflib.plugins.serializers.trig.TrigSerializer.
-orderSubjects() is overridden to do the following:
-- Triples with subject blank nodes that matches the object blank node of a different triple should be serialized together.
-    - Non-matching blank nodes can be serialized at the bottom as is the trig serializer's default behavior.
-- Triples in the metadata header should be serialized together at the beginning, but not in its own named graph. It should be inside the named graph the header belongs too.
+Selected methods are overridden to do the following:
+- Triples with subject blank nodes that matches the object blank node of a different triple are serialized together as a group.
+    - Non-matching blank nodes are serialized right after header, to make them easy to find.
+- Triples in the metadata header are serialized together at the beginning, inside the named graph the header belongs too.
     - This only works if the graph.metadata_header is not None and only if the graph is a CIMGraph. Otherwise, the default behavior of TrigSerializer is used.
-    - This may also require special handling of the namespaces as the metadata header carries its own namespace_manager. These may have to be merged with the graph's namespace_manager.
-        Only namespaces used (in the header or the graph) should be included in the output.
 
 Otherwise, the default behavior of TrigSerializer is used.
 """
 
 from __future__ import annotations
 
-from rdflib import BNode, Graph, Node
-from rdflib.graph import _TripleType
+from rdflib import BNode, Node
 from rdflib.plugins.serializers.trig import TrigSerializer
 from rdflib.plugins.serializers.turtle import SUBJECT
 
@@ -164,3 +161,5 @@ class CIMTrigSerializer(TrigSerializer):
 
         return True
     
+if __name__ == "__main__":
+    print("Trig serializer class")

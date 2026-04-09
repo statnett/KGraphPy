@@ -3,12 +3,11 @@
 import uuid
 import re
 from rdflib import Graph, URIRef, Node, Dataset
-from rdflib.namespace import RDF, DCAT
+from rdflib.namespace import RDF
 from rdflib.exceptions import ParserError
 import logging
 from xml.sax import SAXParseException
 from cim_plugin.exceptions import CIMXMLParseError
-from cim_plugin.namespaces import MD
 from cim_plugin.graph import CIMDataset, CIMGraph
 from cim_plugin.header import create_header_attribute
 from cim_plugin.processor import CIMProcessor
@@ -231,4 +230,4 @@ def extract_subjects_by_object_type(graph: Graph, object_type: list[URIRef]) -> 
 
 
 if __name__ == "__main__":
-    print("utilities for cimxml")
+    print("Utilities for CIM.")
