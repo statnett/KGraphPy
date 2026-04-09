@@ -1,4 +1,5 @@
 import rdflib
+from pathlib import Path
 from rdflib.graph import Graph, Dataset
 from rdflib import URIRef, Literal, XSD, BNode
 from rdflib.compare import to_isomorphic, graph_diff
