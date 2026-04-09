@@ -1,19 +1,11 @@
 import rdflib
-from pathlib import Path
-from rdflib.graph import Graph, Dataset
-from rdflib import URIRef, Literal, XSD, BNode
-from rdflib.compare import to_isomorphic, graph_diff
-from rdflib.namespace import DCTERMS, DCAT
+from rdflib.graph import Graph
+from rdflib import URIRef, Literal, XSD
 import cim_plugin
 import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
-from pathlib import Path
-from cim_plugin.utilities import collect_cimxml_to_dataset, load_cimxml_graph, load_graphs_from_trig, load_graphs_from_cimxml
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.namespaces import EU, CIM
-from cim_plugin.enriching import cast_datetime_utc
-from cim_plugin.header_validation import validate_header #correct_cimxml_header, correct_trig_header
+from cim_plugin.utilities import load_graphs_from_trig, load_graphs_from_cimxml
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
 
