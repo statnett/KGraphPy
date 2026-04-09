@@ -71,6 +71,8 @@ KGraphPy is released under the **Apache License, Version 2.0**.
 
 This allows free use, modification, and redistribution in open-source, research, and commercial contexts, subject to the terms of the license.
 
+The Statnett classification of this library is K0. Open code.
+
 == Accreditation
 
 KGraphPy is built **on top of RDFLib**, and we explicitly acknowledge the RDFLib project and its contributors for providing the foundational RDF graph capabilities that make this library possible.
