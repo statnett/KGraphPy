@@ -1,10 +1,21 @@
 """The graph and dataset classes used to handle the graph triples."""
 
 from rdflib import Graph, Dataset
+from cim_plugin.provenance import Provenance, log_provenance
 from cim_plugin.header import CIMMetadataHeader
 
 class CIMGraph(Graph):
+    _provenance: Provenance|None = None
     metadata_header: CIMMetadataHeader | None = None
+
+    @log_provenance("add_triple", lambda self, triple: f"Added triple {triple}")
+    def add(self, triple):
+        return super().add(triple)
+    
+    @log_provenance("remove_triple", lambda self, triple: f"Removed triple {triple}")
+    def remove(self, triple):
+        return super().remove(triple)
+
 
 # This is no longer used, but kept for reference and possible future use. 
 class CIMDataset(Dataset):

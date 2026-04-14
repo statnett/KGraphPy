@@ -1,5 +1,6 @@
 """The CIMProcessor class, which allows for handling and manipulating CIM graphs in memory."""
 
+from datetime import datetime, timezone
 from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
@@ -10,6 +11,7 @@ from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.to_file_strategies import _select_strategy
 from cim_plugin.header_conversion import convert_triple
 from cim_plugin.rdf_id_selection import PROFILES
+from cim_plugin.provenance import Provenance
 from rdflib import URIRef, Literal, Graph
 from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path
@@ -20,11 +22,25 @@ from typing import Optional
 logger = logging.getLogger('cimxml_logger')
 
 class CIMProcessor:
-    def __init__(self, graph: CIMGraph):
+    def __init__(self, graph: CIMGraph, provenance_description: str|None = None):
         self.graph: CIMGraph = graph
         self.schema: Optional[SchemaView] = None
         self.slot_index: Optional[dict] = None
 
+        if provenance_description is None:
+            self._provenance = None
+        else:
+            if not isinstance(provenance_description, str) or not provenance_description.strip():
+                raise TypeError("Provenance description must be a non-empty string.")
+            self._provenance = Provenance(provenance_description)
+            
+        self.graph._provenance = self._provenance
+
+
+    @property
+    def provenance(self) -> Optional[Provenance]:
+        return self._provenance
+    
     @property
     def identifier(self):
         return self.graph.identifier

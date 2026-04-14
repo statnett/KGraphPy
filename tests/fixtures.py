@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, Mock
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.cimxml_serializer import CIMXMLSerializer
 from cim_plugin.graph import CIMGraph
+from cim_plugin.provenance import Provenance
 import uuid
 import textwrap
 from rdflib.plugin import register
@@ -225,6 +226,19 @@ def mock_extract_uuid(monkeypatch: pytest.MonkeyPatch) -> Mock:
     mock.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678") 
     monkeypatch.setattr("cim_plugin.utilities._extract_uuid_from_urn", mock) 
     return mock
+
+
+class ProvenanceTestClass:
+    def __init__(self, data):
+        self.data = data
+        self._provenance = Provenance("Initial load")
+
+@pytest.fixture
+def provenance_instance() -> Callable[..., ProvenanceTestClass]:
+    def _factory(data) -> ProvenanceTestClass:
+        prov = ProvenanceTestClass(data)    
+        return prov
+    return _factory
 
 
 if __name__ == "__main__":

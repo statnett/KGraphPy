@@ -108,6 +108,8 @@ def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[s
 def load_graphs_from_trig(filepath: str|Path) -> list[CIMProcessor]:
     """Load graphs from trig file into individual CIMProcessor objects.
     
+    A provenance record is automatically created for each graph.
+
     Parameters:
         file_path (str|Path): Path to trig file.
 
@@ -127,7 +129,8 @@ def load_graphs_from_trig(filepath: str|Path) -> list[CIMProcessor]:
             cim.namespace_manager.bind(prefix, uri)
         cim += ctx
 
-        processor = CIMProcessor(cim)
+        provenance_description = f"Graph {cim.identifier} loaded from trig file."
+        processor = CIMProcessor(cim, provenance_description=provenance_description)
         processors.append(processor)
 
     return processors
@@ -137,6 +140,7 @@ def load_graphs_from_cimxml(files: Union[str, Path, Iterable[Union[str, Path]]])
     """Load graphs from one or more CIMXML files into a list of CIMProcessor objects.
 
     The graph identifiers is extracted from the RDF.type triple of each graph, or randomly generated as fallback.
+    A provenance record is automatically created for each graph.
     
     Parameters:
         files (Union[str, Path, Iterable[Union[str, Path]]]): A filepath or a list of filepaths.
@@ -162,7 +166,8 @@ def load_graphs_from_cimxml(files: Union[str, Path, Iterable[Union[str, Path]]])
             cim.namespace_manager.bind(prefix, uri)
         cim += graph
 
-        processor = CIMProcessor(cim)
+        provenance_description = f"Graph {cim.identifier} loaded from CIMXML file."
+        processor = CIMProcessor(cim, provenance_description=provenance_description)
         processors.append(processor)
 
     return processors
