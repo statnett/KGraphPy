@@ -7,6 +7,7 @@ from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD, DCAT_EXT, DCTERMS
 from cim_plugin.exceptions import LiteralCastingError
+from cim_plugin.provenance import Provenance
 from rdflib.namespace import RDF
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition, Prefix
@@ -17,6 +18,68 @@ import logging
 from cim_plugin.processor import CIMProcessor, merge_namespace_managers, replace_namespace, _make_header_graph_for_conversion
 
 logger = logging.getLogger('cimxml_logger')
+
+
+# Unit tests .__init__
+def test_init_withprovenance(make_cimgraph: CIMGraph) -> None:
+    g = make_cimgraph
+    g.add((URIRef("www.example.com/s1"), URIRef("www.example.com/p1"), Literal("o")))
+    pr = CIMProcessor(g, provenance_description="Initial load")
+
+    assert pr.graph is g
+    assert pr.schema is None
+    assert pr.slot_index is None
+    assert (URIRef("www.example.com/s1"), URIRef("www.example.com/p1"), Literal("o")) in pr.graph
+    assert pr.graph.metadata_header
+    assert pr._provenance
+    assert pr._provenance.entries[0]["step_name"] == "load_graph"
+    assert pr._provenance.entries[0]["description"] == "Initial load"
+    assert pr.graph._provenance is pr._provenance  # The provenance instance is referenced by the graph
+    assert pr._provenance._changed == False
+
+
+@pytest.mark.parametrize("provenance_description", [123, ""])
+def test_init_provenanceerror(provenance_description: int|str) -> None:
+    g = CIMGraph()
+
+    with pytest.raises(TypeError) as exc:
+        # Pylance silenced to test wrong input type.
+        CIMProcessor(g, provenance_description=provenance_description)  # type: ignore
+
+    assert "Provenance description must be a non-empty string." in str(exc.value)
+
+
+def test_init_noprovenance() -> None:
+    g = CIMGraph()
+    pr = CIMProcessor(g)
+
+    assert pr.graph is g
+    assert pr.provenance is None
+    assert pr.graph._provenance is None
+
+
+# Unit tests .provenance
+def test_provenance_none(caplog: pytest.LogCaptureFixture) -> None:
+    g = CIMGraph()
+    pr = CIMProcessor(g)
+
+    assert pr.provenance is None
+    assert "No provenance available." in caplog.text
+    
+
+def test_provenance_immutability() -> None:
+    g = CIMGraph()
+    pr = CIMProcessor(g, provenance_description="Initial load")
+    assert pr._provenance is not None
+    prov = pr.provenance
+    assert prov == pr._provenance.entries
+    with pytest.raises(AttributeError):
+        # Pylance silenced to test an invalid action
+        prov._add_entry("test_step", "Test step description", "2024-01-01T00:00:00Z")   # type: ignore
+    assert prov is not None
+    assert len(prov) == 1
+    
+
 
 # Unit tests .identifier
 def test_identifier_immutability() -> None:
@@ -729,7 +792,7 @@ def test_update_namespace_various(prefix: str, new_namespace: str|URIRef) -> Non
     g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
     g.metadata_header = header
     
-    pr = CIMProcessor(g)
+    pr = CIMProcessor(g, provenance_description="Initial entry")
     pr.update_namespace(prefix=prefix, namespace=new_namespace)
 
     new_namespace = str(new_namespace).strip()
@@ -738,6 +801,11 @@ def test_update_namespace_various(prefix: str, new_namespace: str|URIRef) -> Non
     assert pr.graph.metadata_header.graph.namespace_manager.store.namespace(prefix) == URIRef(new_namespace)
     assert (URIRef(f"{new_namespace}s1"), URIRef(f"{new_namespace}p1"), URIRef(f"{new_namespace}o1")) in pr.graph
     assert (URIRef(f"{new_namespace}h1"), URIRef(f"{new_namespace}ph"), URIRef(f"{new_namespace}oh")) in pr.graph.metadata_header.graph
+    # Provenance check
+    assert pr.provenance
+    assert pr.provenance[-3]["step_name"] == "remove_triple"
+    assert pr.provenance[-2]["step_name"] == "add_triple"
+    assert pr.provenance[-1]["description"] == f"Updated namespace for '{prefix}' to '{new_namespace}'."
 
 
 @pytest.mark.parametrize(
@@ -760,7 +828,7 @@ def test_update_namespace_nochanges(mock_update: MagicMock, prefix: str, new_nam
     g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
     g.metadata_header = header
     
-    pr = CIMProcessor(g)
+    pr = CIMProcessor(g, provenance_description="Initial entry")
     pr.update_namespace(prefix=prefix, namespace=new_namespace)
 
     assert pr.graph.metadata_header
@@ -774,7 +842,10 @@ def test_update_namespace_nochanges(mock_update: MagicMock, prefix: str, new_nam
     if prefix != "ex":
         assert data_ns.namespace(prefix) == None
         assert header_ns.namespace(prefix) == None
-
+    
+    assert pr.provenance
+    assert len(pr.provenance) == 1  # No new provenance entries, as no changes were made
+    
 
 @pytest.mark.parametrize(
     "prefix, new_namespace, which_changed",
@@ -792,11 +863,12 @@ def test_update_namespace_onlyonechanged(prefix: str, new_namespace: str|URIRef,
     g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
     g.metadata_header = header
     
-    pr = CIMProcessor(g)
+    pr = CIMProcessor(g, provenance_description="Initial entry")
     pr.update_namespace(prefix=prefix, namespace=new_namespace)
 
     new_namespace = str(new_namespace).strip()
     assert pr.graph.metadata_header
+    assert pr.provenance
 
     data_ns = pr.graph.namespace_manager.store
     header_ns = pr.graph.metadata_header.graph.namespace_manager.store
@@ -806,12 +878,17 @@ def test_update_namespace_onlyonechanged(prefix: str, new_namespace: str|URIRef,
         assert (URIRef(f"{new_namespace}s1"), URIRef(f"{new_namespace}p1"), URIRef(f"{new_namespace}o1")) in pr.graph
         assert header_ns.namespace("foo") == URIRef("https://bar.com/")
         assert (URIRef("https://bar.com/h1"), URIRef("https://bar.com/ph"), URIRef("https://bar.com/oh")) in pr.graph.metadata_header.graph
+        assert pr.provenance[-1]["description"] == f"Updated namespace for '{prefix}' to '{new_namespace}'."
+        assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in pr.provenance[-2]["description"]
+        assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in pr.provenance[-3]["description"]
     elif which_changed == "header":
+        assert pr.graph.metadata_header.subject == URIRef(f"https://bar.com/h1")    # Subject does not change. Should it?
+        # assert pr.graph.metadata_header.subject == URIRef(f"{new_namespace}h1")
         assert pr.graph.metadata_header.graph.namespace_manager.store.namespace(prefix) == URIRef(new_namespace)
         assert (URIRef(f"{new_namespace}h1"), URIRef(f"{new_namespace}ph"), URIRef(f"{new_namespace}oh")) in pr.graph.metadata_header.graph
         assert data_ns.namespace("ex") == URIRef("https://example.com/")
         assert (URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")) in pr.graph
-
+        assert len(pr.provenance) == 1  # No new provenance entries when only the header is changed.
 
 def test_update_namespace_graphfixed() -> None:
     header = CIMMetadataHeader.empty(URIRef("https://example.com/h1"))
@@ -832,68 +909,38 @@ def test_update_namespace_graphfixed() -> None:
     assert (URIRef("https://example.com/h1"), URIRef("https://example.com/ph"), URIRef("https://example.com/oh")) in pr.graph.metadata_header.graph
 
 
+@pytest.mark.parametrize("new_namespace", [" ", None])
 @patch("cim_plugin.processor.update_namespace_in_triples")
-def test_update_namespace_emptystringnamespace(mock_update) -> None:
+def test_update_namespace_invalidnamespace(mock_update: MagicMock, new_namespace: str|None) -> None:
     header = CIMMetadataHeader.empty(URIRef("https://bar.com/h1"))
     g = CIMGraph()
     g.bind("ex", "https://example.com/")
     g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
     g.metadata_header = header
     
-    pr = CIMProcessor(g)
-    
-    with pytest.raises(ValueError) as exc:
-        pr.update_namespace(prefix="ex", namespace=" ")
-    
-    assert "Namespace cannot be empty." in str(exc.value)
-    mock_update.assert_not_called()
-
-
-@patch("cim_plugin.processor.update_namespace_in_triples")
-def test_update_namespace_namespacenone(mock_update) -> None:
-    header = CIMMetadataHeader.empty(URIRef("https://bar.com/h1"))
-    g = CIMGraph()
-    g.bind("ex", "https://example.com/")
-    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
-    g.metadata_header = header
-    
-    pr = CIMProcessor(g)
+    pr = CIMProcessor(g, provenance_description="Initial entry")
     
     with pytest.raises(ValueError) as exc:
         # Pylance silenced to allow wrong input type
-        pr.update_namespace(prefix="ex", namespace=None)    # type: ignore
+        pr.update_namespace(prefix="ex", namespace=new_namespace) # type: ignore
     
     assert "Namespace cannot be empty." in str(exc.value)
     mock_update.assert_not_called()
+    assert pr.provenance
+    assert len(pr.provenance) == 1  # No new provenance entries, as no changes were made
 
 
+@pytest.mark.parametrize("header", [None, CIMMetadataHeader.empty(URIRef("h1"))])
 @patch("cim_plugin.processor.update_namespace_in_triples")
-def test_update_namespace_noheader(mock_update: MagicMock) -> None:
+def test_update_namespace_noheader(mock_update: MagicMock, header: CIMMetadataHeader|None) -> None:
     g = CIMGraph()
     g.bind("ex", "https://example.com/")
     g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
-    g.metadata_header = None
+    g.metadata_header = header
     
     pr = CIMProcessor(g)
     pr.update_namespace(prefix="ex", namespace="www.new.com/")
 
-    assert pr.graph.metadata_header is None
-    assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
-    assert mock_update.call_count == 1
-
-
-@patch("cim_plugin.processor.update_namespace_in_triples")
-def test_update_namespace_emptyheader(mock_update: MagicMock) -> None:
-    header = CIMMetadataHeader.empty(URIRef("h1"))
-    g = CIMGraph()
-    g.bind("ex", "https://example.com/")
-    g.add((URIRef("https://example.com/s1"), URIRef("https://example.com/p1"), URIRef("https://example.com/o1")))
-    g.add((URIRef("https://example.com/s2"), URIRef("https://example.com/p2"), URIRef("https://example.com/o2")))
-    g.metadata_header = header
-    
-    pr = CIMProcessor(g)    
-    pr.update_namespace(prefix="ex", namespace="www.new.com/")
-    
     assert pr.graph.metadata_header is header
     assert pr.graph.namespace_manager.store.namespace("ex") == URIRef("www.new.com/")
     assert mock_update.call_count == 1
@@ -907,7 +954,7 @@ def test_update_namespace_multipletriples() -> None:
     g.add((URIRef("https://example.com/s2"), URIRef("https://example.com/p2"), URIRef("https://example.com/o2")))
     g.metadata_header = header
     
-    pr = CIMProcessor(g)    
+    pr = CIMProcessor(g, provenance_description="Initial entry")    
     pr.update_namespace(prefix="ex", namespace="www.new.com/")
     
     assert pr.graph.metadata_header is header
@@ -915,6 +962,8 @@ def test_update_namespace_multipletriples() -> None:
     assert len(pr.graph) == 2
     assert (URIRef("www.new.com/s1"), URIRef("www.new.com/p1"), URIRef("www.new.com/o1")) in pr.graph
     assert (URIRef("www.new.com/s2"), URIRef("www.new.com/p2"), URIRef("www.new.com/o2")) in pr.graph
+    assert pr.provenance
+    assert len(pr.provenance) == 6 # Initial + update_namespace + 2 remove + 2 add
 
 # Unit tests .enrich_literal_datatypes
 

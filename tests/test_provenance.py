@@ -66,14 +66,29 @@ def test_provenance_exportunsupportedformat() -> None:
         prov.export("provenance.txt", format="txt")
     assert "Unsupported format for provenance export: txt" in str(exc.value)
 
+def test_mark_changed() -> None:
+    prov = Provenance("Initial load")
+    assert prov._changed == False
+    prov.mark_changed()
+    assert prov._changed == True
+    
+def test_consume_change_flag() -> None:
+    prov = Provenance("Initial load")
+    assert not prov.consume_change_flag()  # Initially should be False
+    prov.mark_changed()
+    assert prov.consume_change_flag()  # After marking changed, should be True
+    assert not prov.consume_change_flag()  # After consuming, should be False again
+    assert not prov.consume_change_flag()  # Still False after second consume
+
 # Unit tests log_provenance
 def test_log_provenance_addsentry(provenance_instance: Callable[..., ProvenanceTestClass]) -> None:  
     prov = provenance_instance(5)
 
-    # *args and **kwards should be given in the decorator if not all inputs are used
+    # *args and **kwargs should be given in the decorator if not all inputs are used
     @log_provenance("test_step", lambda x, *args, **kwargs: f"Test function executed with argument: {x}")
     def test_function(x, prov):
         prov.data *= x
+        prov._provenance.mark_changed()
         return prov
     
     result = test_function(5, prov)
@@ -95,6 +110,7 @@ def test_log_provenance_notallargs(provenance_instance: Callable[..., Provenance
     @log_provenance("test_step", lambda: "static description")
     def test_function(x):
         prov.data *= x
+        prov._provenance.mark_changed()
         return prov
 
     with pytest.raises(TypeError) as exc:
@@ -109,12 +125,35 @@ def test_log_provenance_simpledescription(provenance_instance: Callable[..., Pro
     @log_provenance("test_step", "static description")
     def test_function(x):
         prov.data *= x
+        prov._provenance.mark_changed()
         return prov
 
     result = test_function(5)
 
     entry = result._provenance.entries[-1]
     assert entry["description"] == "static description"
+
+@pytest.mark.parametrize("mark", [True, False])
+def test_log_provenance_markchangedcalls(provenance_instance: Callable[..., ProvenanceTestClass], mark: bool) -> None:
+    prov = provenance_instance(5)
+
+    @log_provenance("test_step", "static description")
+    def test_function(x, mark_change: bool):
+        prov.data *= x
+        if mark_change:
+            prov._provenance.mark_changed()
+        return prov
+
+    result = test_function(5, mark)
+
+    assert result._provenance   # Provenance has been initialized.
+    if mark:
+        assert len(result._provenance.entries) == 2
+        assert result._provenance.entries[1]["step_name"] == "test_step"
+        assert result._provenance.entries[1]["description"] == "static description"
+    else:
+        assert len(result._provenance.entries) == 1 # No new entry is added because mark_changed was not called.
+    
 
 def test_log_provenance_descriptionkwargs(provenance_instance: Callable[..., ProvenanceTestClass]) -> None:
     prov = provenance_instance(5)
@@ -125,6 +164,7 @@ def test_log_provenance_descriptionkwargs(provenance_instance: Callable[..., Pro
     @log_provenance("step", desc_fn)
     def test_function(x, *, scale):
         prov.data *= scale
+        prov._provenance.mark_changed()
         return prov
 
     result = test_function(5, scale=3)
@@ -139,6 +179,7 @@ def test_log_provenance_nodescription(provenance_instance: Callable[..., Provena
     @log_provenance("test_step")
     def test_function(x):
         prov.data *= 2
+        prov._provenance.mark_changed()
         return prov
     
     result = test_function(5)
@@ -178,6 +219,7 @@ def test_log_provenance_multiplecalls(provenance_instance: Callable[..., Provena
     @log_provenance("step", lambda x: f"Called test_function: {x}")
     def test_function(x):
         prov.data += x
+        prov._provenance.mark_changed()
         return prov
 
     test_function(1)
@@ -197,6 +239,7 @@ def test_log_provenance_classmethod(provenance_instance: Callable[..., Provenanc
         @log_provenance("step")
         def run(self, amount):
             self.prov.data += amount
+            self.prov._provenance.mark_changed()
             return self.prov
 
     d = Dummy()

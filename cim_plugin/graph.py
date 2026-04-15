@@ -9,12 +9,16 @@ class CIMGraph(Graph):
     metadata_header: CIMMetadataHeader | None = None
 
     @log_provenance("add_triple", lambda self, triple: f"Added triple {triple}")
-    def add(self, triple):
-        return super().add(triple)
+    def add(self, triple) -> "CIMGraph":
+        super().add(triple)
+        self._provenance.mark_changed() if self._provenance else None
+        return self
     
     @log_provenance("remove_triple", lambda self, triple: f"Removed triple {triple}")
-    def remove(self, triple):
-        return super().remove(triple)
+    def remove(self, triple) -> "CIMGraph":
+        super().remove(triple)
+        self._provenance.mark_changed() if self._provenance else None
+        return self
 
 
 # This is no longer used, but kept for reference and possible future use. 

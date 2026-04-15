@@ -689,7 +689,7 @@ def test_load_graphs_from_trig_onegraph(mock_dataset_cls: MagicMock) -> None:
     assert pr.graph.identifier == URIRef("graph1")
     assert (URIRef("s1"), URIRef("p1"), Literal("o")) in pr.graph
     assert pr.provenance
-    assert "Graph graph1 loaded from trig file." in pr.provenance.entries[0]["description"]
+    assert "Graph graph1 loaded from trig file." in pr.provenance[0]["description"]
 
 
 @pytest.mark.parametrize(
@@ -744,12 +744,12 @@ def test_load_graphs_from_trig_multiplegraphs(mock_dataset_cls: MagicMock) -> No
     assert tr1 in p1.graph 
     assert tr2 not in p1.graph
     assert p1.provenance
-    assert "Graph graph1 loaded from trig file." in p1.provenance.entries[0]["description"]
+    assert "Graph graph1 loaded from trig file." in p1.provenance[0]["description"]
     p2 = next(p for p in processors if p.graph.identifier == URIRef("graph2")) 
     assert tr2 in p2.graph
     assert tr1 not in p2.graph
     assert p2.provenance
-    assert "Graph graph2 loaded from trig file." in p2.provenance.entries[0]["description"]
+    assert "Graph graph2 loaded from trig file." in p2.provenance[0]["description"]
 
 @patch("cim_plugin.utilities.Dataset")
 def test_load_graphs_from_trig_namespaces(mock_dataset_cls: MagicMock) -> None:
@@ -795,7 +795,7 @@ def test_load_graphs_from_trig_defaultgraph(mock_dataset_cls: MagicMock) -> None
     p2 = next(p for p in processors if p.graph.identifier == URIRef("urn:x-rdflib:default")) 
     assert (URIRef("s2"), URIRef("p1"), Literal("o")) in p2.graph
     assert p2.provenance    # The default graph also gets a provenance record.
-    assert "Graph urn:x-rdflib:default loaded from trig file." in p2.provenance.entries[0]["description"]
+    assert "Graph urn:x-rdflib:default loaded from trig file." in p2.provenance[0]["description"]
 
 
 @patch("cim_plugin.utilities.Dataset")
@@ -831,7 +831,7 @@ def test_load_graphs_from_cimxml_emptygraph(mock_load: MagicMock, mock_create: M
     assert pr.graph.metadata_header is None # Header is not bound to the graph, though it is temporarily made to extract/create the identifier
     assert len(pr.graph) == 0
     assert pr.provenance
-    assert "loaded from CIMXML file." in pr.provenance.entries[0]["description"]
+    assert "loaded from CIMXML file." in pr.provenance[0]["description"]
 
 
 @patch("cim_plugin.utilities.create_header_attribute")
@@ -851,7 +851,7 @@ def test_load_graphs_from_cimxml_parsingerror(mock_load: MagicMock, mock_create:
     assert "dummy1.xml" in caplog.text
     assert "Error parsing" in caplog.text
     assert ds[0].provenance
-    assert "loaded from CIMXML file." in ds[0].provenance.entries[0]["description"]
+    assert "loaded from CIMXML file." in ds[0].provenance[0]["description"]
 
 
 @patch("cim_plugin.utilities.create_header_attribute")
@@ -898,9 +898,9 @@ def test_load_graphs_from_cimxml_multiplefiles(mock_load: MagicMock, mock_create
     assert pr1.identifier == URIRef("h1")
     assert pr2.identifier == URIRef("h2")
     assert pr1.provenance
-    assert "Graph h1 loaded from CIMXML file." in pr1.provenance.entries[0]["description"]
+    assert "Graph h1 loaded from CIMXML file." in pr1.provenance[0]["description"]
     assert pr2.provenance
-    assert "Graph h2 loaded from CIMXML file." in pr2.provenance.entries[0]["description"]
+    assert "Graph h2 loaded from CIMXML file." in pr2.provenance[0]["description"]
 
 @patch("cim_plugin.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_integrated(mock_load: MagicMock) -> None:

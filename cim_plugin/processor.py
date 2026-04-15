@@ -11,13 +11,14 @@ from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.to_file_strategies import _select_strategy
 from cim_plugin.header_conversion import convert_triple
 from cim_plugin.rdf_id_selection import PROFILES
-from cim_plugin.provenance import Provenance
-from rdflib import URIRef, Literal, Graph
+from cim_plugin.provenance import Provenance, log_provenance
+from rdflib import URIRef, Literal, Graph, IdentifiedNode
 from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path
 from copy import deepcopy
 import logging
 from typing import Optional
+
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -38,11 +39,21 @@ class CIMProcessor:
 
 
     @property
-    def provenance(self) -> Optional[Provenance]:
-        return self._provenance
+    def provenance(self) -> Optional[tuple[dict[str, str], ...]]:
+        """Show the provenance entries for the graph."""
+        if not self._provenance:
+            logger.error("No provenance available.")
+            return None
+        
+        return self._provenance.entries
     
+    def mark_graph_changed(self) -> None:
+        """Mark the graph as changed, which will trigger provenance logging."""
+        if self._provenance:
+            self._provenance.mark_changed()
+
     @property
-    def identifier(self):
+    def identifier(self) -> IdentifiedNode:
         return self.graph.identifier
     
     def set_schema(self, filepath: str|Path) -> None:
@@ -217,6 +228,7 @@ class CIMProcessor:
             return not_identical
 
 
+    @log_provenance("update_namespace", lambda self, prefix, namespace: f"Updated namespace for '{prefix}' to '{namespace.strip()}'.")
     def update_namespace(self, prefix: str, namespace: str) -> None:
         """Update namespace in graph and header.
         
@@ -242,12 +254,13 @@ class CIMProcessor:
             if header_old_namespace and str(header_old_namespace) != stripped_namespace:
                 header.bind(prefix, stripped_namespace, override=True, replace=True)
                 update_namespace_in_triples(header, header_old_namespace, stripped_namespace)
+                # self.mark_graph_changed() # Header changes are not logged in provenance. May reconsider this later.
                 
         old_namespace = self.graph.namespace_manager.store.namespace(prefix)
         if old_namespace and str(old_namespace) != stripped_namespace:
             self.graph.bind(prefix, stripped_namespace, override=True, replace=True)
             update_namespace_in_triples(self.graph, old_namespace, stripped_namespace)
-
+            self.mark_graph_changed()
         
 
     def enrich_literal_datatypes(self, allow_different_namespaces: bool = False) -> None:
