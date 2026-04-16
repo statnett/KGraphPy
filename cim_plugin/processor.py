@@ -39,14 +39,14 @@ class CIMProcessor:
 
 
     @property
-    def provenance(self) -> Optional[tuple[dict[str, Any], ...]]:
-        """Show the provenance entries for the graph."""
+    def provenance(self) -> Provenance|None:
+        """Accessor for the provenance of the graph."""
         if not self._provenance:
             logger.error("No provenance available.")
             return None
         
-        return self._provenance.entries
-    
+        return self._provenance
+        
     def mark_graph_changed(self) -> None:
         """Mark the graph as changed, which will trigger provenance logging."""
         if self._provenance:
