@@ -9,6 +9,7 @@ from typing import Callable, Optional, TypeVar, ParamSpec, List, Dict, Any
 
 @dataclass(frozen=True)
 class ProvenanceEntry:
+    """Handler for a single provenance entry."""
     step_name: str
     timestamp: str
     description: str
@@ -16,6 +17,7 @@ class ProvenanceEntry:
 
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert the ProvenanceEntry to a dictionary, including nested sub-steps if they exist."""
         output: Dict[str, Any] = {
             "step_name": self.step_name,
             "timestamp": self.timestamp,
@@ -27,6 +29,7 @@ class ProvenanceEntry:
 
 
 class Provenance:
+    """Handler for all the provenance logs of a graph."""
     def __init__(self, first_description: str):
         """Initialize the Provenance instance with a first entry.
         

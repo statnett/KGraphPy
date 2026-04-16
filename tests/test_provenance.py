@@ -1,11 +1,126 @@
 import pytest
 import json
 from datetime import datetime, timezone
+from dataclasses import FrozenInstanceError
 from typing import Callable, Generator
 from pathlib import Path
-from cim_plugin.provenance import Provenance, log_provenance
+from cim_plugin.provenance import ProvenanceEntry, Provenance, log_provenance
 from tests.fixtures import provenance_instance, ProvenanceTestClass
 
+# Unit tests ProvenanceEntry
+def test_provenanceentry_frozen() -> None:
+    entry = ProvenanceEntry(
+        step_name="test_step",
+        timestamp="anytime",
+        description="Test step description"
+    )
+    with pytest.raises(FrozenInstanceError):
+        # Pylance silenced to test wrong entry
+        entry.step_name = "modified"  # type: ignore
+
+def test_provenanceentry_substepsnotfrozen() -> None:
+    subentry = ProvenanceEntry(
+        step_name="sub_step",
+        timestamp="anytime",
+        description="Sub step description"
+    )
+    entry = ProvenanceEntry(
+        step_name="test_step",
+        timestamp="anytime",
+        description="Test step description"
+    )
+    entry.sub_steps.append(subentry)  # Modifying the sub_steps list is allowed, even though the ProvenanceEntry is frozen.
+    assert len(entry.sub_steps) == 1
+
+def test_to_dict_simple() -> None:
+    entry = ProvenanceEntry(
+        step_name="test_step",
+        timestamp="anytime",
+        description="Test step description"
+    )
+    entry_dict = entry.to_dict()
+    assert entry_dict["step_name"] == "test_step"
+    assert entry_dict["timestamp"] == "anytime"
+    assert entry_dict["description"] == "Test step description"
+    assert "sub_steps" not in entry_dict  # sub_steps should not be included if it's empty.
+
+def test_to_dict_nested() -> None:
+    subentry1 = ProvenanceEntry(
+        step_name="sub_step1",
+        timestamp="first time",
+        description="Sub step1 description"
+    )
+    subentry2 = ProvenanceEntry(
+        step_name="sub_step2",
+        timestamp="second time",
+        description="Sub step2 description"
+    )
+    entry = ProvenanceEntry(
+        step_name="test_step",
+        timestamp="anytime",
+        description="Test step description",
+        sub_steps=[subentry1, subentry2]
+    )
+    entry_dict = entry.to_dict()
+    assert entry_dict["step_name"] == "test_step"
+    assert entry_dict["timestamp"] == "anytime"
+    assert entry_dict["description"] == "Test step description"
+    assert "sub_steps" in entry_dict  # sub_steps should be included if it's not empty.
+    assert len(entry_dict["sub_steps"]) == 2
+    assert entry_dict["sub_steps"][0]["step_name"] == "sub_step1"
+    assert entry_dict["sub_steps"][0]["timestamp"] == "first time"
+    assert entry_dict["sub_steps"][0]["description"] == "Sub step1 description"
+    assert entry_dict["sub_steps"][1]["step_name"] == "sub_step2"
+    assert entry_dict["sub_steps"][1]["timestamp"] == "second time"
+    assert entry_dict["sub_steps"][1]["description"] == "Sub step2 description"
+
+
+def test_to_dict_deepnested() -> None:
+    subsubentry = ProvenanceEntry(
+        step_name="sub_sub_step",
+        timestamp="first sub time",
+        description="Sub sub step description"
+    )
+    subentry = ProvenanceEntry(
+        step_name="sub_step",
+        timestamp="second sub time",
+        description="Sub step description",
+        sub_steps=[subsubentry]
+    )
+    entry = ProvenanceEntry(
+        step_name="test_step",
+        timestamp="anytime",
+        description="Test step description",
+        sub_steps=[subentry]
+    )
+    entry_dict = entry.to_dict()
+    assert entry_dict["step_name"] == "test_step"
+    assert entry_dict["timestamp"] == "anytime"
+    assert entry_dict["description"] == "Test step description"
+    assert "sub_steps" in entry_dict  # sub_steps should be included if it's not empty.
+    substepslevel1 = entry_dict["sub_steps"]
+    assert len(substepslevel1) == 1
+    assert substepslevel1[0]["step_name"] == "sub_step"
+    assert substepslevel1[0]["timestamp"] == "second sub time"
+    assert substepslevel1[0]["description"] == "Sub step description"
+    assert "sub_steps" in substepslevel1[0]
+    substepslevel2 = substepslevel1[0]["sub_steps"]
+    assert len(substepslevel2) == 1
+    assert substepslevel2[0]["step_name"] == "sub_sub_step"
+    assert substepslevel2[0]["timestamp"] == "first sub time"
+    assert substepslevel2[0]["description"] == "Sub sub step description"
+
+
+def test_to_dict_newstructure() -> None:
+    entry = ProvenanceEntry(
+        step_name="test_step",
+        timestamp="anytime",
+        description="Test step description"
+    )
+    entry_dict = entry.to_dict()
+    entry_dict["step_name"] = "modified"
+    assert entry.step_name == "test_step"
+    
 # Unit tests Provenance
 def test_provenance_initialization() -> None:
     prov = Provenance("Initial load")
