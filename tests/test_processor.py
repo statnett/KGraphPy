@@ -12,7 +12,7 @@ from rdflib.namespace import RDF
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition, TypeDefinition, Prefix
 from tests.fixtures import make_schemaview, make_slot_index, make_cimgraph
-from typing import Callable
+from typing import Callable, Any
 import logging
 
 from cim_plugin.processor import CIMProcessor, merge_namespace_managers, replace_namespace, _make_header_graph_for_conversion
@@ -35,7 +35,7 @@ def test_init_withprovenance(make_cimgraph: CIMGraph) -> None:
     assert pr._provenance.entries[0]["step_name"] == "load_graph"
     assert pr._provenance.entries[0]["description"] == "Initial load"
     assert pr.graph._provenance is pr._provenance  # The provenance instance is referenced by the graph
-    assert pr._provenance._changed == False
+    assert pr._provenance._stack == []  
 
 
 @pytest.mark.parametrize("provenance_description", [123, ""])
@@ -803,10 +803,11 @@ def test_update_namespace_various(prefix: str, new_namespace: str|URIRef) -> Non
     assert (URIRef(f"{new_namespace}h1"), URIRef(f"{new_namespace}ph"), URIRef(f"{new_namespace}oh")) in pr.graph.metadata_header.graph
     # Provenance check
     assert pr.provenance
-    assert pr.provenance[-3]["step_name"] == "remove_triple"
-    assert pr.provenance[-2]["step_name"] == "add_triple"
     assert pr.provenance[-1]["description"] == f"Updated namespace for '{prefix}' to '{new_namespace}'."
-
+    substeps = pr.provenance[-1]["sub_steps"]
+    assert len(substeps) == 2
+    assert substeps[0]["step_name"] == "remove_triple"
+    assert substeps[1]["step_name"] == "add_triple"
 
 @pytest.mark.parametrize(
     "prefix, new_namespace",
@@ -879,8 +880,9 @@ def test_update_namespace_onlyonechanged(prefix: str, new_namespace: str|URIRef,
         assert header_ns.namespace("foo") == URIRef("https://bar.com/")
         assert (URIRef("https://bar.com/h1"), URIRef("https://bar.com/ph"), URIRef("https://bar.com/oh")) in pr.graph.metadata_header.graph
         assert pr.provenance[-1]["description"] == f"Updated namespace for '{prefix}' to '{new_namespace}'."
-        assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in pr.provenance[-2]["description"]
-        assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in pr.provenance[-3]["description"]
+        substeps = pr.provenance[-1]["sub_steps"]
+        assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in substeps[0]["description"]
+        assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in substeps[1]["description"]
     elif which_changed == "header":
         assert pr.graph.metadata_header.subject == URIRef(f"https://bar.com/h1")    # Subject does not change. Should it?
         # assert pr.graph.metadata_header.subject == URIRef(f"{new_namespace}h1")
@@ -963,7 +965,18 @@ def test_update_namespace_multipletriples() -> None:
     assert (URIRef("www.new.com/s1"), URIRef("www.new.com/p1"), URIRef("www.new.com/o1")) in pr.graph
     assert (URIRef("www.new.com/s2"), URIRef("www.new.com/p2"), URIRef("www.new.com/o2")) in pr.graph
     assert pr.provenance
-    assert len(pr.provenance) == 6 # Initial + update_namespace + 2 remove + 2 add
+    assert len(pr.provenance) == 2
+    substeps = pr.provenance[-1]["sub_steps"]
+    assert len(substeps) == 4
+    assert substeps[0]["step_name"] == "remove_triple"
+    assert substeps[1]["step_name"] == "remove_triple"
+    assert substeps[2]["step_name"] == "add_triple"
+    assert substeps[3]["step_name"] == "add_triple"
+    # Which triple is removed or added first is arbitrary, so the descriptions are checked without assuming the order. 
+    assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in {substeps[0]["description"], substeps[1]["description"]}
+    assert "Removed triple (rdflib.term.URIRef('https://example.com/s2'), rdflib.term.URIRef('https://example.com/p2'), rdflib.term.URIRef('https://example.com/o2'))" in {substeps[0]["description"], substeps[1]["description"]}
+    assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in {substeps[2]["description"], substeps[3]["description"]}
+    assert "Added triple (rdflib.term.URIRef('www.new.com/s2'), rdflib.term.URIRef('www.new.com/p2'), rdflib.term.URIRef('www.new.com/o2'))" in {substeps[2]["description"], substeps[3]["description"]}
 
 # Unit tests .enrich_literal_datatypes
 
@@ -981,7 +994,7 @@ def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, m
 
     slot_index = make_slot_index(slot_dict) if slot_dict else None
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = schemaview
     inst.slot_index = slot_index
 
@@ -992,6 +1005,8 @@ def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, m
     mock_resolve.assert_not_called()
     mock_create.assert_not_called()
     mock_replace.assert_not_called()
+    assert inst.provenance
+    assert len(inst.provenance) == 1
 
 
 @patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
@@ -1002,7 +1017,7 @@ def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_res
     s, p, o = URIRef("s"), URIRef("p"), Literal("x")
     g.add((s, p, o))
     
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = make_schemaview()
     inst.slot_index = make_slot_index([{"p": None}])
     
@@ -1012,6 +1027,8 @@ def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_res
     mock_create.assert_not_called()
     assert list(inst.graph) == [(s, p, o)]
     assert "No datatype found for range: None, for p" in caplog.text
+    assert inst.provenance
+    assert len(inst.provenance) == 1 
 
 
 @pytest.mark.parametrize("object, resolved", [
@@ -1030,19 +1047,28 @@ def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_re
     s, p, o = URIRef("s"), URIRef("p"), object
     g.add((s, p, o))
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = make_schemaview()
     inst.slot_index = make_slot_index([{"p": "string"}])
-
+    
     inst.enrich_literal_datatypes()
+    
+    assert inst.provenance
+
     if resolved:
         mock_resolve.assert_called_once()
         mock_create.assert_called_once()
         assert len(list(inst.graph)) == 1   # Size of graph is not affected
+        assert len(inst.provenance) == 2
+        substeps = inst.provenance[-1]["sub_steps"]
+        assert len(substeps) == 2
+        assert substeps[0]["step_name"] == "remove_triple"
+        assert substeps[1]["step_name"] == "add_triple"
     else:
         mock_resolve.assert_not_called()
         mock_create.assert_not_called()
         assert len(list(inst.graph)) == 1   # Size of graph is not affected
+        assert len(inst.provenance) == 1 
 
 @patch("cim_plugin.processor.resolve_datatype_from_slot")
 @patch("cim_plugin.processor.create_typed_literal")
@@ -1054,7 +1080,7 @@ def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock
     g.add((s, p, o))
     g.add((s2, p2, o2))
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = make_schemaview()
     inst.slot_index = make_slot_index([{"p": "string"}])
 
@@ -1064,6 +1090,8 @@ def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock
     assert "first_unknown" in caplog.text
     mock_resolve.assert_not_called()
     mock_create.assert_not_called()
+    assert inst.provenance
+    assert len(inst.provenance) == 1
 
 @patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)
 @patch("cim_plugin.processor.create_typed_literal")
@@ -1073,7 +1101,7 @@ def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, moc
     s, p, o = URIRef("s"), URIRef("p"), Literal("hello")
     g.add((s, p, o))
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = make_schemaview()
     inst.slot_index = make_slot_index([{"p": "string"}])
 
@@ -1083,6 +1111,8 @@ def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, moc
     mock_resolve.assert_called_once_with(inst.schema, inst.slot_index["p"])
     mock_create.assert_not_called()
     assert "No datatype found for range: string, for p" in caplog.text
+    assert inst.provenance
+    assert len(inst.provenance) == 1
 
 
 @patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
@@ -1096,7 +1126,7 @@ def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, m
     new_lit = Literal("hello", datatype=URIRef("xsd:string"))
     mock_create.return_value = new_lit
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = make_schemaview()
     inst.slot_index = make_slot_index([{"p": "string"}])
 
@@ -1109,6 +1139,12 @@ def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, m
     mock_resolve.assert_called_once()
     mock_create.assert_called_once_with("hello", URIRef("xsd:string"), inst.schema)
     assert "Enriching done. Added datatypes to 1 triples." in caplog.text
+    assert inst.provenance
+    assert len(inst.provenance) == 2
+    substeps = inst.provenance[-1]["sub_steps"]
+    assert len(substeps) == 2
+    assert substeps[0]["step_name"] == "remove_triple"
+    assert substeps[1]["step_name"] == "add_triple"
 
 
 @patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:int"))
@@ -1120,7 +1156,7 @@ def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_reso
     g.add((s, p, o))
     g.add((s2, p2, o2))
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = make_schemaview()
     inst.slot_index = make_slot_index([{"p": "string"}])
 
@@ -1135,6 +1171,8 @@ def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_reso
     assert any("Error casting" in rec.message for rec in caplog.records)
     assert "Error casting also_not_int for s2, p: bad cast\n" in caplog.text
     assert "Error casting not_an_int for s, p: bad cast\n"  in caplog.text
+    assert inst.provenance
+    assert len(inst.provenance) == 1
 
 
 @pytest.mark.parametrize("allow, returned", 
@@ -1195,7 +1233,7 @@ def test_enrich_literal_datatypes_integrated(make_schemaview: Callable[..., Sche
     g.add((URIRef("s"), URIRef("http://www.example.com/c2"), Literal("1")))
     g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
 
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = sv
     inst.slot_index = {"http://www.example.com/c1": SlotDefinition(name="c1", range="string"), "http://www.example.com/c2": SlotDefinition(name="c2", range="Custom")}
     
@@ -1207,7 +1245,15 @@ def test_enrich_literal_datatypes_integrated(make_schemaview: Callable[..., Sche
     assert (URIRef("s"), URIRef("http://www.example.com/c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
     assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(result)
     assert "Enriching done. Added datatypes to 2 triples." in caplog.text
-
+    assert inst.provenance
+    print(inst.provenance)
+    assert len(inst.provenance) == 2 
+    substeps = inst.provenance[-1]["sub_steps"]
+    assert len(substeps) == 4
+    assert substeps[0]["step_name"] == "remove_triple"
+    assert substeps[1]["step_name"] == "add_triple"
+    assert substeps[2]["step_name"] == "remove_triple"
+    assert substeps[3]["step_name"] == "add_triple"
 
 def test_enrich_literal_datatypes_integrateddifferentnamespaces(make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("INFO")
@@ -1265,7 +1311,6 @@ def test_enrich_literal_datatypes_integrateddifferentnamespacesoverlap(make_sche
     inst.enrich_literal_datatypes(allow_different_namespaces=True)
     
     result = inst.graph
-    print(list(result))
 
     assert (URIRef("s"), URIRef("www.example.org/c1"), Literal("hello", datatype=URIRef('http://www.w3.org/2001/XMLSchema#string'))) in list(result)
     assert (URIRef("s"), URIRef("www.example.org/c1"), Literal("hei", lang="no")) in list(result)
@@ -1273,7 +1318,6 @@ def test_enrich_literal_datatypes_integrateddifferentnamespacesoverlap(make_sche
     assert (URIRef("s"), URIRef("www.example.org/bar/c2"), Literal(1, datatype=URIRef('http://www.w3.org/2001/XMLSchema#integer'))) in list(result)
     assert "Enriching done. Added datatypes to 2 triples." in caplog.text
     
-
 
 def test_enrich_literal_datatypes_noupdates(make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("INFO")
@@ -1284,7 +1328,7 @@ def test_enrich_literal_datatypes_noupdates(make_slot_index: Callable[..., dict]
     sv = make_schemaview(classes=classes, types=types, prefixes=prefixes)
     g = CIMGraph()
     g.add((URIRef("s"), URIRef("d"), URIRef("not-a-literal")))
-    inst = CIMProcessor(g)
+    inst = CIMProcessor(g, provenance_description="Initial entry")
     inst.schema = sv
     inst.slot_index = make_slot_index([{"c1": "string"}, {"c2": "Custom"}])
     
@@ -1292,7 +1336,8 @@ def test_enrich_literal_datatypes_noupdates(make_slot_index: Callable[..., dict]
 
     assert (URIRef("s"), URIRef("d"), URIRef("not-a-literal")) in list(inst.graph)
     assert "Enriching done. Added datatypes to 0 triples." in caplog.text
-
+    assert inst.provenance
+    assert len(inst.provenance) == 1
 
 # Unit tests merge_namespace_managers
 def test_merge_namespace_managers_nodiffs() -> None:

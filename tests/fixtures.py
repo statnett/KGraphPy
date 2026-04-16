@@ -1,5 +1,5 @@
 import pytest
-from typing import Callable, Generator
+from typing import Callable, Generator, Any
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
 from rdflib import Graph, URIRef, Namespace, BNode, Literal
@@ -229,13 +229,13 @@ def mock_extract_uuid(monkeypatch: pytest.MonkeyPatch) -> Mock:
 
 
 class ProvenanceTestClass:
-    def __init__(self, data):
-        self.data = data
-        self._provenance = Provenance("Initial load")
+    def __init__(self, data: Any):
+        self.data: Any = data
+        self._provenance: Provenance = Provenance("Initial load")
 
 @pytest.fixture
 def provenance_instance() -> Callable[..., ProvenanceTestClass]:
-    def _factory(data) -> ProvenanceTestClass:
+    def _factory(data: Any) -> ProvenanceTestClass:
         prov = ProvenanceTestClass(data)    
         return prov
     return _factory

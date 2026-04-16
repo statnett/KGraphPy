@@ -1,10 +1,10 @@
 """Provenance class for handling information about the source and history of graphs in the CIM plugin."""
 
 from datetime import datetime, timezone
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Callable, Optional, TypeVar, ParamSpec
+from typing import Callable, Optional, TypeVar, ParamSpec, List, Dict, Any
 
 
 @dataclass(frozen=True)
@@ -12,6 +12,19 @@ class ProvenanceEntry:
     step_name: str
     timestamp: str
     description: str
+    sub_steps: List["ProvenanceEntry"] = field(default_factory=list)
+
+
+    def to_dict(self) -> Dict[str, Any]:
+        output: Dict[str, Any] = {
+            "step_name": self.step_name,
+            "timestamp": self.timestamp,
+            "description": self.description,
+        }
+        if self.sub_steps:
+            output["sub_steps"] = [sub.to_dict() for sub in self.sub_steps]
+        return output
+
 
 class Provenance:
     def __init__(self, first_description: str):
@@ -20,20 +33,21 @@ class Provenance:
         Parameters:
             first_description (str): A string describing the first step or operation being logged.
         """
-        self._entries: list[ProvenanceEntry] = []
-        self._changed: bool = False
-        self._add_entry(
+        self._entries: List[ProvenanceEntry] = []
+        self._stack: List[Dict[str, Any]] = []  # For collecting subentries during function execution
+        self._entries.append(ProvenanceEntry(
             step_name="load_graph",
             description=first_description,
             timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        ))
 
     @property
-    def entries(self) -> tuple[dict[str, str], ...]:
-        """Return a tuple of provenance entries as dictionaries. The returned entries cannot be modified."""
-        return tuple([asdict(entry) for entry in self._entries])
+    def entries(self) -> tuple[dict[str, Any], ...]:
+        """Return a tuple of provenance entries as dictionaries."""
+        return tuple(entry.to_dict() for entry in self._entries)
+    
         
-    def _add_entry(self, step_name: str, description: str, timestamp: str) -> None:
+    def _add_entry(self, step_name: str, description: str, timestamp: str, sub_steps: List[ProvenanceEntry]|None = None) -> None:
         """Add a provenance entry.
         
         Parameters:
@@ -45,8 +59,12 @@ class Provenance:
             step_name=step_name,
             timestamp=timestamp,
             description=description,
+            sub_steps=sub_steps or []
         )
-        self._entries.append(entry)
+        if self._stack:
+            self._stack[-1]["entries"].append(entry)
+        else:
+            self._entries.append(entry)
 
     def export(self, file_path: str|Path, format: str = "json") -> None:
         """Export the provenance information to a file.
@@ -57,24 +75,22 @@ class Provenance:
         """
         if format == "json":
             with open(file_path, "w") as f:
-                json.dump([entry.__dict__ for entry in self._entries], f, indent=4)
+                json.dump([entry.to_dict() for entry in self._entries], f, indent=4)
         # elif format == "": # Other formats can be implemented here
         else:
             raise ValueError(f"Unsupported format for provenance export: {format}")
 
     def mark_changed(self) -> None:
         """Mark that the graph has been changed and that a new provenance entry should be logged."""
-        self._changed = True
-
-    def consume_change_flag(self) -> bool:
-        """Check if provenance should be written (if changes have been made.)
-
-        Returns:
-            bool: True if changes have been made since the last check, False otherwise.
-        """
-        changed = self._changed
-        self._changed = False
-        return changed
+        if self._stack:
+            self._stack[-1]["changed"] = True
+        else:
+            self._entries.append(
+                ProvenanceEntry(
+                    step_name="illegal_entry", 
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    description="Change marked outside of a provenance logged context."
+                ))
 
 
 P = ParamSpec("P")
@@ -83,8 +99,8 @@ T = TypeVar("T")
 def log_provenance(step_name: str, custom_description: Optional[str|Callable[..., str]] = None) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to log provenance information for a graph.
 
-    When applied to a function or method, this decorator will automatically log a provenance entry after the function is executed, if the returned object has a _provenance attribute. 
-    The _provenance is tied to each separate graph, so if the function modifies a graph, the provenance will be updated for that graph.
+    When applied to a function or method, this decorator will automatically log a provenance entry after the function is executed, if the first argument has a _provenance attribute. 
+    Will also record provenance for any called functions/methods if it also has the decorator applied, and nest those entries as sub-steps under the main entry for the outer function.
 
     Parameters:
         step_name (str): A string representing the name of the step or operation being logged.
@@ -93,33 +109,48 @@ def log_provenance(step_name: str, custom_description: Optional[str|Callable[...
                           If not provided, a default description will be generated based on the step name and function arguments.
 
     Returns:
-        Callable[[Callable[P, T]], Callable[P, T]]: A decorator function that can be applied to log what it does to the graph in its provenance record.    
+        Callable[[Callable[P, T]], Callable[P, T]]: A decorator that can be applied to a function/method to log what it does to the graph in its provenance record.    
     """
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            result = func(*args, **kwargs)
+            if not args:
+                return func(*args, **kwargs)  # If there are no arguments, we cannot check for provenance, so just execute the function.
             
-            prov = getattr(result, "_provenance", None)
-            if prov is None and args:   # Fallback for methods and functions that returns None, but modifies the graph in-place.
-                prov = getattr(args[0], "_provenance", None)
+            self_obj = args[0]  # Assuming the first argument is 'self' for methods, or the graph for functions.
+            prov = getattr(self_obj, "_provenance", None)  # Try to get provenance from the first argument
 
-            if prov and prov.consume_change_flag():  # Only log if the function/method indicates that a change has been made.
-                if isinstance(custom_description, str):
-                    description = custom_description
-                elif callable(custom_description):
-                    description = custom_description(*args, **kwargs)
-                else:
-                    description = f"{step_name} executed with args: {args}, kwargs: {kwargs}"
+            if prov is None:
+                return func(*args, **kwargs)  # If no provenance is found, just execute the function without logging
+            
+            prov._stack.append({"entries": [], "changed": False})  # Start a new stack level to collect subentries
 
-   
-                prov._add_entry(
-                    step_name=step_name,
-                    description=description,
-                    timestamp=datetime.now(timezone.utc).isoformat()
-                )
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                frame = prov._stack.pop()  # Get the current stack level's subentries
+
+            if not frame["changed"]:
+                return result  # If no changes were made, do not log an entry
+                    
+            
+            if isinstance(custom_description, str):
+                description = custom_description
+            elif callable(custom_description):
+                description = custom_description(*args, **kwargs)
+            else:
+                description = f"{step_name} executed with args: {args}, kwargs: {kwargs}"
+
+            prov._add_entry(
+                step_name=step_name,
+                description=description,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                sub_steps=frame["entries"]
+            )
+
             return result
         return wrapper
     return decorator
+
 
 if __name__ == "__main__":
     print("Provenance class")

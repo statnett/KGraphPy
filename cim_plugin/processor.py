@@ -17,7 +17,7 @@ from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path
 from copy import deepcopy
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 
 logger = logging.getLogger('cimxml_logger')
@@ -39,7 +39,7 @@ class CIMProcessor:
 
 
     @property
-    def provenance(self) -> Optional[tuple[dict[str, str], ...]]:
+    def provenance(self) -> Optional[tuple[dict[str, Any], ...]]:
         """Show the provenance entries for the graph."""
         if not self._provenance:
             logger.error("No provenance available.")
@@ -263,6 +263,7 @@ class CIMProcessor:
             self.mark_graph_changed()
         
 
+    @log_provenance("enrich_literal_datatypes", "Enriched literal objects with datatypes.")
     def enrich_literal_datatypes(self, allow_different_namespaces: bool = False) -> None:
         """Enrich the Literals of with datatypes collected from linkML SchemaView.
         
@@ -273,8 +274,6 @@ class CIMProcessor:
         Parameters:
             allow_different_namespaces (bool): Allows differing namespaces if True.
         """
-        logger.info("Enriching literal datatypes")
-
         if not self.schema or not self.slot_index:
             logger.error("Missing schemaview or slot_index. Enriching not possible.")
             return
@@ -310,6 +309,8 @@ class CIMProcessor:
             self.graph.remove((s, p, o))
             self.graph.add((s, p, new_literal))
             updated_count += 1  # For clarity. May be removed later.
+
+            self.mark_graph_changed()
 
         if casting_errors:
             logger.error("\n".join(casting_errors))
