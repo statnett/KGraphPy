@@ -1,6 +1,5 @@
 """The CIMProcessor class, which allows for handling and manipulating CIM graphs in memory."""
 
-from datetime import datetime, timezone
 from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
 from cim_plugin.graph import CIMGraph
 from cim_plugin.header import create_header_attribute, CIMMetadataHeader
@@ -17,7 +16,7 @@ from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path
 from copy import deepcopy
 import logging
-from typing import Optional, Any
+from typing import Optional
 
 
 logger = logging.getLogger('cimxml_logger')
@@ -54,9 +53,11 @@ class CIMProcessor:
 
     @property
     def identifier(self) -> IdentifiedNode:
+        """Accessor to the graph identifier."""
         return self.graph.identifier
     
     def set_schema(self, filepath: str|Path) -> None:
+        """Set the LinkML schema for datatype enrichment, and create a slot index."""
         self.schema = SchemaView(filepath)
         self.slot_index = _build_slot_index(self.schema)
         
@@ -351,6 +352,7 @@ class CIMProcessor:
             logger.error("No metadata header found. Validation not possible.")
 
 
+    @log_provenance("validate_namespaces", "Validated and fixed namespaces according to CIM standards.")
     def validate_namespaces(self, cimxml_format: bool = False) -> None:
         """Check that namespaces conforms to CIM standards and fix if not.
         
@@ -374,9 +376,10 @@ class CIMProcessor:
                 cgmes_outlier = True 
     
         validate_and_fix_namespaces_by_cimtype(self.graph, cgmes=cgmes_outlier)
+        self.mark_graph_changed()
 
 
-    # Not tested. Should it be?
+    @log_provenance("export", lambda self, file_path, format, **kwargs: f"Exported graph to {file_path} in {format} format.")
     def to_file(self, file_path: str|Path, format: str = "cimxml", **kwargs) -> None:
         """Send graph to file of given format.
         
@@ -393,6 +396,7 @@ class CIMProcessor:
         output_copy = self._build_copy_for_serialization()
         strategy = _select_strategy(format, file_path, kwargs)
         strategy.serialize(output_copy)
+        self.mark_graph_changed()
 
 
 # Not in use, but might become usefull later

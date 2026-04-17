@@ -5,7 +5,7 @@ from unittest.mock import call, patch, MagicMock, PropertyMock
 from rdflib import Namespace, URIRef, Literal, BNode, Graph
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
-from cim_plugin.namespaces import MD, DCAT_EXT, DCTERMS
+from cim_plugin.namespaces import MD, DCAT_EXT, DCTERMS, CIM, CGMES_CIM
 from cim_plugin.exceptions import LiteralCastingError
 from cim_plugin.provenance import Provenance
 from dataclasses import FrozenInstanceError
@@ -808,9 +808,10 @@ def test_update_namespace_various(prefix: str, new_namespace: str|URIRef) -> Non
     entries = pr.provenance.entries
     assert entries[-1]["description"] == f"Updated namespace for '{prefix}' to '{new_namespace}'."
     substeps = entries[-1]["sub_steps"]
-    assert len(substeps) == 2
-    assert substeps[0]["step_name"] == "remove_triple"
-    assert substeps[1]["step_name"] == "add_triple"
+    assert len(substeps) == 3
+    assert substeps[0]["step_name"] == "bind_namespace"
+    assert substeps[1]["step_name"] == "remove_triple"
+    assert substeps[2]["step_name"] == "add_triple"
 
 @pytest.mark.parametrize(
     "prefix, new_namespace",
@@ -885,8 +886,9 @@ def test_update_namespace_onlyonechanged(prefix: str, new_namespace: str|URIRef,
         entries = pr.provenance.entries
         assert entries[-1]["description"] == f"Updated namespace for '{prefix}' to '{new_namespace}'."
         substeps = entries[-1]["sub_steps"]
-        assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in substeps[0]["description"]
-        assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in substeps[1]["description"]
+        assert f"Bound namespace {new_namespace} to prefix {prefix}." in substeps[0]["description"]
+        assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in substeps[1]["description"]
+        assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in substeps[2]["description"]
     elif which_changed == "header":
         assert pr.graph.metadata_header.subject == URIRef(f"https://bar.com/h1")    # Subject does not change. Should it?
         # assert pr.graph.metadata_header.subject == URIRef(f"{new_namespace}h1")
@@ -969,18 +971,21 @@ def test_update_namespace_multipletriples() -> None:
     assert (URIRef("www.new.com/s1"), URIRef("www.new.com/p1"), URIRef("www.new.com/o1")) in pr.graph
     assert (URIRef("www.new.com/s2"), URIRef("www.new.com/p2"), URIRef("www.new.com/o2")) in pr.graph
     assert pr.provenance
+    print(pr.provenance.entries)
     assert len(pr.provenance.entries) == 2
     substeps = pr.provenance.entries[-1]["sub_steps"]
-    assert len(substeps) == 4
-    assert substeps[0]["step_name"] == "remove_triple"
+    assert len(substeps) == 5
+    assert substeps[0]["step_name"] == "bind_namespace"
     assert substeps[1]["step_name"] == "remove_triple"
-    assert substeps[2]["step_name"] == "add_triple"
+    assert substeps[2]["step_name"] == "remove_triple"
     assert substeps[3]["step_name"] == "add_triple"
+    assert substeps[4]["step_name"] == "add_triple"
+    assert "Bound namespace www.new.com/ to prefix ex." in substeps[0]["description"]
     # Which triple is removed or added first is arbitrary, so the descriptions are checked without assuming the order. 
-    assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))" in {substeps[0]["description"], substeps[1]["description"]}
-    assert "Removed triple (rdflib.term.URIRef('https://example.com/s2'), rdflib.term.URIRef('https://example.com/p2'), rdflib.term.URIRef('https://example.com/o2'))" in {substeps[0]["description"], substeps[1]["description"]}
-    assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))" in {substeps[2]["description"], substeps[3]["description"]}
-    assert "Added triple (rdflib.term.URIRef('www.new.com/s2'), rdflib.term.URIRef('www.new.com/p2'), rdflib.term.URIRef('www.new.com/o2'))" in {substeps[2]["description"], substeps[3]["description"]}
+    assert "Removed triple (rdflib.term.URIRef('https://example.com/s1'), rdflib.term.URIRef('https://example.com/p1'), rdflib.term.URIRef('https://example.com/o1'))." in {substeps[1]["description"], substeps[2]["description"]}
+    assert "Removed triple (rdflib.term.URIRef('https://example.com/s2'), rdflib.term.URIRef('https://example.com/p2'), rdflib.term.URIRef('https://example.com/o2'))." in {substeps[1]["description"], substeps[2]["description"]}
+    assert "Added triple (rdflib.term.URIRef('www.new.com/s1'), rdflib.term.URIRef('www.new.com/p1'), rdflib.term.URIRef('www.new.com/o1'))." in {substeps[3]["description"], substeps[4]["description"]}
+    assert "Added triple (rdflib.term.URIRef('www.new.com/s2'), rdflib.term.URIRef('www.new.com/p2'), rdflib.term.URIRef('www.new.com/o2'))." in {substeps[3]["description"], substeps[4]["description"]}
 
 # Unit tests .enrich_literal_datatypes
 
@@ -1590,13 +1595,15 @@ def test_validate_namespaces_exception(mock_validate: MagicMock, make_cimgraph: 
     g = make_cimgraph
     assert g.metadata_header
     with patch("cim_plugin.processor.CIMMetadataHeader.profile", new_callable=PropertyMock, side_effect=TypeError("other exception")):
-        pr = CIMProcessor(g)
+        pr = CIMProcessor(g, provenance_description="Initial entry")
 
         with pytest.raises(TypeError, match="other exception"):
             pr.validate_namespaces(cimxml_format=True)
 
     assert pr.graph.metadata_header is not None
     mock_validate.assert_not_called()
+    assert pr.provenance
+    assert len(pr.provenance.entries) == 1  # No change, no provenance entry added
 
 
 @pytest.mark.parametrize(
@@ -1617,14 +1624,19 @@ def test_validate_namespaces_various(mock_validate: MagicMock, profile_uri: str,
     g = make_cimgraph
     assert g.metadata_header
     g.metadata_header.add_triple(predicate, URIRef(profile_uri))
-    pr = CIMProcessor(g)
+    pr = CIMProcessor(g, provenance_description="Initial entry")
 
     pr.validate_namespaces(cimxml_format=cimxml_format)
 
     assert pr.graph.metadata_header is not None
     assert pr.graph.metadata_header.profile == profile_uri
     mock_validate.assert_called_once_with(g, cgmes=expected_cgmes)
-
+    assert pr.provenance and pr._provenance
+    entries = pr.provenance.entries
+    assert len(entries) == 2
+    assert entries[-1]["step_name"] == "validate_namespaces"
+    assert entries[-1]["description"] == "Validated and fixed namespaces according to CIM standards."
+    assert pr._provenance._entries[-1].sub_steps == []   # No substeps added because validate_and_fix_namespaces_by_cimtype is mocked
 
 @patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
 def test_validate_namespaces_multipleprofiles(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
@@ -1640,6 +1652,32 @@ def test_validate_namespaces_multipleprofiles(mock_validate: MagicMock, make_cim
     assert "Unable to retrieve profile. Standard namespaces will be used." in caplog.text
     assert "Multiple profiles found in header:" in caplog.text # The exception message from ValueError
 
+
+def test_validate_namespaces_integrated() -> None:
+    g = CIMGraph()
+    g.bind("cim", CIM)
+    g.add((URIRef("s1"), CIM.fakeType, Literal("o")))
+    g.metadata_header = CIMMetadataHeader.empty(subject=URIRef("h1"))
+    g.metadata_header.add_triple(RDF.type, DCAT_EXT.Dataset)
+    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0"))
+    pr = CIMProcessor(g, provenance_description="Initial entry")
+    pr.validate_namespaces(cimxml_format=True)
+
+    # Correct changes
+    assert pr.graph.metadata_header is not None
+    assert pr.graph.namespace_manager.store.namespace("cim") == URIRef(CGMES_CIM)
+    assert (URIRef("s1"), CGMES_CIM.fakeType, Literal("o")) in pr.graph
+    #Provenance record
+    assert pr.provenance and pr._provenance
+    entries = pr.provenance.entries
+    assert len(entries) == 2
+    assert entries[-1]["step_name"] == "validate_namespaces"
+    assert entries[-1]["description"] == "Validated and fixed namespaces according to CIM standards."
+    substeps = pr.provenance.entries[-1]["sub_steps"]
+    assert len(substeps) == 2
+    assert substeps[0]["step_name"] == "remove_triple"
+    assert substeps[1]["step_name"] == "add_triple"
+                                                
 
 # Unit tests ._build_copy_for_serialization
 def test_build_copy_for_serialization_emptygraph() -> None:
@@ -1708,6 +1746,28 @@ def test_build_copy_for_serialization_mutability(make_schemaview: Callable[..., 
     result.schema.add_slot(SlotDefinition("new_slot", "string"))
     assert pr.schema and pr.schema.schema and isinstance(pr.schema.schema.slots, dict)
     assert pr.schema.schema.slots["new_slot"] == SlotDefinition("new_slot", "string")
+
+# Unit tests .to_file
+@patch.object(CIMProcessor, "_build_copy_for_serialization")
+@patch("cim_plugin.processor._select_strategy")
+def test_to_file(mock_select: MagicMock, mock_build: MagicMock) -> None:
+    pr = CIMProcessor(CIMGraph(identifier=URIRef("original")), provenance_description="Initial entry")
+    copy = CIMProcessor(CIMGraph(identifier=URIRef("copy")))
+    mock_build.return_value = copy
+    mock_strategy = MagicMock()
+    mock_select.return_value = mock_strategy
+    
+    pr.to_file("fake_path", format="fake_format", fake_kwarg="value")
+
+    mock_build.assert_called_once()
+    mock_select.assert_called_once_with("fake_format", "fake_path", {"fake_kwarg": "value"})
+    mock_strategy.serialize.assert_called_once_with(copy)
+    assert copy is not pr
+    assert pr.provenance
+    assert len(pr.provenance.entries) == 2
+    assert pr.provenance.entries[-1]["step_name"] == "export"
+    assert pr.provenance.entries[-1]["description"] == "Exported graph to fake_path in fake_format format."
+
     
 # Unit tests _make_header_graph_for_conversion
 def test_make_header_graph_for_conversion_unknowntype() -> None:

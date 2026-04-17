@@ -688,8 +688,9 @@ def test_load_graphs_from_trig_onegraph(mock_dataset_cls: MagicMock) -> None:
     assert isinstance(pr, CIMProcessor)
     assert pr.graph.identifier == URIRef("graph1")
     assert (URIRef("s1"), URIRef("p1"), Literal("o")) in pr.graph
-    assert pr.provenance
+    assert pr.provenance and pr._provenance
     assert "Graph graph1 loaded from trig file." in pr.provenance.entries[0]["description"]
+    assert pr._provenance._entries[0].sub_steps == []  # The provenance is initiated after the graph is loaded and header created, so should not have any sub-steps yet.
 
 
 @pytest.mark.parametrize(
@@ -830,8 +831,9 @@ def test_load_graphs_from_cimxml_emptygraph(mock_load: MagicMock, mock_create: M
     assert isinstance(pr.graph, CIMGraph)
     assert pr.graph.metadata_header is None # Header is not bound to the graph, though it is temporarily made to extract/create the identifier
     assert len(pr.graph) == 0
-    assert pr.provenance
+    assert pr.provenance and pr._provenance
     assert "loaded from CIMXML file." in pr.provenance.entries[0]["description"]
+    assert pr._provenance._entries[0].sub_steps == []  # The provenance is initiated after the graph is loaded and header created, so should not have any sub-steps yet.
 
 
 @patch("cim_plugin.utilities.create_header_attribute")
@@ -852,7 +854,7 @@ def test_load_graphs_from_cimxml_parsingerror(mock_load: MagicMock, mock_create:
     assert "Error parsing" in caplog.text
     assert ds[0].provenance
     assert "loaded from CIMXML file." in ds[0].provenance.entries[0]["description"]
-
+    
 
 @patch("cim_plugin.utilities.create_header_attribute")
 @patch("cim_plugin.utilities.load_cimxml_graph")
@@ -901,6 +903,7 @@ def test_load_graphs_from_cimxml_multiplefiles(mock_load: MagicMock, mock_create
     assert "Graph h1 loaded from CIMXML file." in pr1.provenance.entries[0]["description"]
     assert pr2.provenance
     assert "Graph h2 loaded from CIMXML file." in pr2.provenance.entries[0]["description"]
+
 
 @patch("cim_plugin.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_integrated(mock_load: MagicMock) -> None:
