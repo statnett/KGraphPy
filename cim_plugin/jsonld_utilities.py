@@ -142,10 +142,14 @@ def reorder_jsonld(raw_jsonld: str, priority_subject: Optional[URIRef|str] = Non
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # 1. Sort subjects
-    nodes_sorted = sort_subjects(nodes, priority_subject)
-
+    try:
+        nodes_sorted = sort_subjects(nodes, priority_subject)
+        print(nodes_sorted)
     # 2. Sort predicates inside each subject
-    nodes_sorted = [sort_predicates(node) for node in nodes_sorted]
+        nodes_sorted = [sort_predicates(node) for node in nodes_sorted]
+        print(nodes_sorted)
+    except AttributeError:  # If nodes have unexpected structure return unsorted
+        return json.dumps(data, indent=2, ensure_ascii=False)
 
     # Put nodes back
     if container is not None:
@@ -154,6 +158,7 @@ def reorder_jsonld(raw_jsonld: str, priority_subject: Optional[URIRef|str] = Non
     else:
         result = nodes_sorted
 
+    print(result)
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 

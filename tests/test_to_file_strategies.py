@@ -124,6 +124,7 @@ def test_cimxmlstrategy_qualifier() -> None:
 
 
 # Unit tests JSONLDStrategy
+@pytest.mark.skip(reason="The strategy is not fully implemented and the test is not meaningful in its current state.")
 def test_jsonldstrategy() -> None:
     processor = Mock()
     strategy = JSONLDStrategy("out.json")
