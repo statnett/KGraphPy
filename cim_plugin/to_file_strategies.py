@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from cim_plugin.jsonld_utilities import reorder_jsonld, extract_datatype_map, enrich_graph_datatypes, load_json_from_url, DEFAULT_CONTEXT_LINK
 from typing import TYPE_CHECKING, Optional, Any
 
 if TYPE_CHECKING:
@@ -62,13 +63,34 @@ class JSONLDStrategy(SerializationStrategy):
     Not implemented.
     """
 
-    def __init__(self, file_path: str|Path) -> None:
+    def __init__(self, file_path: str|Path, context: Optional[dict|str] = None) -> None:
         self.file_path = file_path
+        self.context = context or DEFAULT_CONTEXT_LINK
 
-    def serialize(self, processor: "CIMProcessor"):
-        """Serialize cim graph to JSON-LD file. Not implemented."""
-        raise NotImplementedError("JSON-LD format output is not implemented.")
+    def serialize(self, processor: "CIMProcessor") -> None:
+        """Serialize cim graph to JSON-LD file."""
+        if processor.graph.metadata_header:
+            processor.merge_header()
 
+        self.enrich_datatypes(processor)
+
+        header_subject = processor.graph.metadata_header.subject if processor.graph.metadata_header else None
+        
+        raw_jsonld = processor.graph.serialize(format="json-ld", context=self.context, auto_compact=True)
+        reordered_jsonld = reorder_jsonld(raw_jsonld, priority_subject=header_subject)
+
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            f.write(reordered_jsonld)
+
+    def enrich_datatypes(self, processor: "CIMProcessor") -> None:
+        """Enrich datatypes in the graph based on the context."""
+        if isinstance(self.context, str):
+            context_data = load_json_from_url(self.context)
+        else:
+            context_data = self.context
+
+        datatype_map = extract_datatype_map(context_data)
+        enrich_graph_datatypes(processor.graph, datatype_map)
 
 def _select_strategy(format: str, file_path: str|Path, options: dict[str, Any]) -> SerializationStrategy:
     """Select serialization strategy based on given file format.
@@ -97,8 +119,8 @@ def _select_strategy(format: str, file_path: str|Path, options: dict[str, Any]) 
         return CIMXMLStrategy(file_path, **options)
 
     elif format == "jsonld":
-        # allowed = {"context"}  # future options
-        # self._validate_options(options, allowed)
+        allowed = {"context"}  # future options
+        _validate_options(options, allowed)
         return JSONLDStrategy(file_path, **options)
 
     else:
