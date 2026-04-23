@@ -5,7 +5,13 @@ from rdflib import URIRef
 from typing import Any
 from tests.fixtures import make_fake_response
 
-from cim_plugin.jsonld_utilities import reorder_jsonld, sort_subjects, sort_predicates, load_json_from_url
+from cim_plugin.jsonld_utilities import (
+    reorder_jsonld, 
+    sort_subjects, 
+    sort_predicates, 
+    load_json_from_url,
+    extract_datatype_map
+)
 
 # Unit tests load_json_from_url
 
@@ -47,6 +53,134 @@ def test_load_json_from_url_emptybody(mock_urlopen: MagicMock) -> None:
 
     with pytest.raises(json.JSONDecodeError):
         load_json_from_url("http://example.com")
+
+
+# Unit tests extract_datatype_map
+@pytest.mark.parametrize("context", [None, {}, {"@context": {}}, {"@context": None}])
+def test_extract_datatype_map_emptycontext(context) -> None:
+    expected_map = {}
+    dt_map = extract_datatype_map(context)
+    assert dt_map == expected_map
+
+def test_extract_datatype_map_basic() -> None:
+    context = {
+        "@context": {
+            "ex": "http://example.com/",
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+
+            "ex:id": {"@type": "@id"},
+            "ex:name": {"@type": "xsd:string"},
+            "age": {"@type": "xsd:integer"},
+            "foo:birthDate": {"@type": "xsd:date"},
+            "ex:invalid": {"@type": "unknownType"},
+            "ex:noprefixType": {"@type": "foo:string"},
+            "ex:noneType": {"@type": None},
+            123: {"@type": "xsd:string"},
+            "ex:noType": {"notype": "xsd:string"},  # No @type key, should be ignored.
+        }
+    }
+
+    expected_map = {
+        "http://example.com/id": "@id",
+        "http://example.com/name": "http://www.w3.org/2001/XMLSchema#string",
+        "http://example.com/invalid": "unknownType",    # No : in type is treated as a full uri.
+        "http://example.com/noprefixType": "foo:string",  # Prefix in type not registered, treated as full uri.
+        "http://example.com/noneType": None,   # None type preserved as None.
+        "age": "http://www.w3.org/2001/XMLSchema#integer",    # No prefix, treated as full uri.
+        "foo:birthDate": "http://www.w3.org/2001/XMLSchema#date", # Prefix not registered, treated as full uri.
+        "123": "http://www.w3.org/2001/XMLSchema#string",  # Non-string term, converted to string and treated as full uri.
+        # "http://example.com/noType": None,  # Ommitted because no @type.
+    }
+
+    dt_map = extract_datatype_map(context)
+    assert dt_map == expected_map
+
+
+def test_extract_datatype_map_witoutcontext() -> None:
+    context = {
+            "ex": "http://example.com/",
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+            "ex:prop": {"@type": "xsd:string"},
+            "ex:age": {"@type": "xsd:integer", "extra": "value"},
+        }
+
+    expected_map = {
+        "http://example.com/prop": "http://www.w3.org/2001/XMLSchema#string",
+        "http://example.com/age": "http://www.w3.org/2001/XMLSchema#integer"    # Extra values are not included in map
+    }
+
+    dt_map = extract_datatype_map(context)
+    assert dt_map == expected_map
+
+def test_extract_datatype_map_nested() -> None:
+    context = {
+            "ex": "http://example.com/",
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+            "ex:prop": {"@type": {"type": "xsd:string", "@lang": "en"}},
+            "ex:age": {"type": {"@type": "xsd:integer", "@lang": "en"}},
+            "ex:context": {"@context": {"xsd": "http://different/type/schema#"}, "@type": "xsd:string"}
+        }
+
+    expected_map = {
+        "http://example.com/prop": {"@lang": "en", "type": "xsd:string"},  # The entire dict is preserved as the type, even if it is not the expected format.
+        "http://example.com/context": "http://www.w3.org/2001/XMLSchema#string",    # The nested context and namespace is ignored
+        # "http://example.com/age": "http://www.w3.org/2001/XMLSchema#integer"  # No @type in top level dict, therefore not included in map.
+    }
+
+    dt_map = extract_datatype_map(context)
+    assert dt_map == expected_map
+
+@pytest.mark.parametrize(
+    "namespace, term, expected_term",
+    [
+        pytest.param(123, "ex:prop", "ex:prop", id="Int namespace"),    # Namespace not expanded, term is treated as full uri
+        pytest.param("", "ex:prop", "prop", id="Empty string namespace"),
+        pytest.param("http://example.com/", "ex:and:prop", "http://example.com/and:prop", id="Term with colon"),
+    ]
+)
+def test_extract_datatype_map_unusualprefixes(namespace: Any, term: str, expected_term: str) -> None:
+    context = {
+        "@context": {
+            "ex": namespace,
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+            f"{term}": {"@type": "xsd:string"}
+        }
+    }
+
+
+    dt_map = extract_datatype_map(context)
+    assert dt_map == {expected_term: "http://www.w3.org/2001/XMLSchema#string"}
+
+
+@pytest.mark.parametrize(
+    "type, expected_type, exception",
+    [
+        pytest.param({"@type": 123}, None, TypeError, id="Int type"),
+        pytest.param({"@type": ""}, "", None, id="Empty string type"),
+        pytest.param({"@type": "an:int"}, "an:int", None, id="Unknown type prefix"),
+        pytest.param({"@type": "xsd:extra:colon"}, "http://www.w3.org/2001/XMLSchema#extra:colon", None, id="Type with colon"),
+        pytest.param(["@type", "xsd:string"], None, None, id="List instead of dict"),
+        pytest.param(42, None, None, id="Type is not a dict")
+    ]
+)
+def test_extract_datatype_map_unusualtypes(type: Any, expected_type: str, exception: Any) -> None:
+    context = {
+        "@context": {
+            "ex": "http://example.com/",
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+            "ex:someType": type
+        }
+    }
+
+    if exception:
+        with pytest.raises(TypeError):
+            extract_datatype_map(context)  # If the type is not a string, it should raise an error when trying to process it as a type.
+    else:
+        dt_map = extract_datatype_map(context)
+        if expected_type is None:
+            assert dt_map == {}
+        else:
+            assert dt_map == {"http://example.com/someType": expected_type}
 
 
 # Unit tests sort_subjects

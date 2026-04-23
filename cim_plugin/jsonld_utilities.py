@@ -29,27 +29,46 @@ def load_json_from_url(url: str) -> dict:
         return json.loads(data)
 
 
-def extract_datatype_map(context: dict) -> dict[str, str]:
+def extract_datatype_map(context: dict[str, Any]|None) -> dict[str, str]:
+    """Extract a mapping of predicate URIs to datatype URIs from a JSON-LD context.
+
+    Only entries with an "@type" definition are included.
+
+    Parameters:
+        context (dict[str, Any]|None): The JSON-LD context. If None, an empty map is returned.
+
+    Returns:
+        dict[str, str]: A mapping where keys are predicate URIs and values are datatype URIs. 
+    """
     dt_map = {}
 
-    context = context.get("@context", context)  # Handle case where context is wrapped in @context
+    context = context.get("@context", context) if context else None  # Handle case where context is wrapped in @context
+
+    if not context:
+        return dt_map
+    
     prefixes = {k: v for k, v in context.items() if isinstance(v, str)}
     
     for term, definition in context.items():
+        if not isinstance(term, str):
+            term = str(term)
+
         if isinstance(definition, dict) and "@type" in definition:
-            # Expand prefix:local into full URI
+            # Expand prefix:local into full URI or use term as full uri
             if ":" in term:
                 prefix, local = term.split(":", 1)
                 if prefix in prefixes:
                     predicate_uri = prefixes[prefix] + local
                 else:
-                    continue
+                    predicate_uri = term
             else:
-                continue
+                predicate_uri = term
 
             # Expand datatype prefix
             dtype = definition["@type"]
-            if ":" in dtype:
+            if dtype is None:
+                dtype_uri = None
+            elif ":" in dtype:
                 dprefix, dlocal = dtype.split(":", 1)
                 if dprefix in prefixes:
                     dtype_uri = prefixes[dprefix] + dlocal
