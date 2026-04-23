@@ -241,5 +241,14 @@ def provenance_instance() -> Callable[..., ProvenanceTestClass]:
     return _factory
 
 
+def make_fake_response(data: bytes, charset: str | None):
+    """Helper to build a fake urlopen() response."""
+    fake = MagicMock()
+    fake.read.return_value = data
+    fake.headers.get_content_charset.return_value = charset
+    fake.__enter__.return_value = fake  # For use in 'with' statement
+
+    return fake
+
 if __name__ == "__main__":
     print("Fixtures for tests")

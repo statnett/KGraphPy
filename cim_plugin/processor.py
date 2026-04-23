@@ -36,6 +36,14 @@ class CIMProcessor:
             
         self.graph._provenance = self._provenance
 
+    @property
+    def header(self) -> CIMMetadataHeader|None:
+        """Accessor for the header of the graph."""
+        if not self.graph.metadata_header:
+            logger.error("No metadata header available.")
+            return None
+        
+        return self.graph.metadata_header
 
     @property
     def provenance(self) -> Provenance|None:

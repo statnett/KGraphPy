@@ -7,7 +7,16 @@ from typing import Optional, Any
 
 DEFAULT_CONTEXT_LINK = "https://raw.githack.com/Sveino/Inst4CIM-KG/develop/rdf-improved/cim-context-new.jsonld"
 
-def load_json_from_url(url):
+
+def load_json_from_url(url: str) -> dict:
+    """Load JSON data from a URL, handling character encoding.
+    
+    Parameters:
+        url (str): The URL to load JSON data from.
+
+    Returns:
+        dict: The loaded JSON data as a dictionary.
+    """
     # Pretend to be a browser — some corporate proxies require this
     req = Request(
         url,
@@ -20,7 +29,7 @@ def load_json_from_url(url):
         return json.loads(data)
 
 
-def extract_datatype_map(context):
+def extract_datatype_map(context: dict) -> dict[str, str]:
     dt_map = {}
 
     context = context.get("@context", context)  # Handle case where context is wrapped in @context
@@ -54,7 +63,7 @@ def extract_datatype_map(context):
     return dt_map
 
 
-def enrich_graph_datatypes(graph, dt_map):
+def enrich_graph_datatypes(graph, dt_map: dict[str, str]) -> None:
     triples_to_add = []
     triples_to_remove = []
     
@@ -127,9 +136,20 @@ def sort_predicates(node: dict[str, Any]) -> dict[str, Any]:
     return {k: node[k] for k in sorted_keys}    # Sort the dictionary according to the list
 
 def reorder_jsonld(raw_jsonld: str, priority_subject: Optional[URIRef|str] = None) -> str:
+    """Reorder JSON-LD string with sorted subjects and predicates.
+    
+    A priority_subject can be specified to ensure that the node with this @id is listed first in the output. 
+    The rest of the nodes are sorted alphanumerically by their @id and then by their predicates.
+
+    Parameters:
+        raw_jsonld (str): The input JSON-LD string to reorder.
+        priority_subject (URIRef|str, optional): If provided, the node with this @id will be placed first in the output.
+
+    Returns:
+        str: The reordered JSON-LD string.
+    """
     data = json.loads(raw_jsonld)
 
-    # Determine where nodes live
     if isinstance(data, dict) and "@graph" in data:
         nodes = data["@graph"]
         container = data
@@ -141,27 +161,21 @@ def reorder_jsonld(raw_jsonld: str, priority_subject: Optional[URIRef|str] = Non
     else:
         return json.dumps(data, indent=2, ensure_ascii=False)
 
-    # 1. Sort subjects
     try:
         nodes_sorted = sort_subjects(nodes, priority_subject)
-        print(nodes_sorted)
-    # 2. Sort predicates inside each subject
         nodes_sorted = [sort_predicates(node) for node in nodes_sorted]
-        print(nodes_sorted)
     except AttributeError:  # If nodes have unexpected structure return unsorted
         return json.dumps(data, indent=2, ensure_ascii=False)
 
-    # Put nodes back
     if container is not None:
         container[key] = nodes_sorted
         result = container
     else:
         result = nodes_sorted
 
-    print(result)
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
 if __name__ == "__main__":
-    print("JSON-LD sorting utility.")
+    print("JSON-LD utilities.")
     

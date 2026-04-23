@@ -81,7 +81,7 @@ def test_trigstrategy_enrichesdatatypes(schema: str|None, caplog: pytest.LogCapt
 @pytest.mark.parametrize("header", ["fake_header", None])
 def test_trigstrategy_mergeheader(header: str|None) -> None:
     processor = Mock()
-    processor.graph = Mock(metadata_header=header)
+    processor.header = header
     processor.schema = None
 
     strategy = TrigStrategy("out.trig")
@@ -98,13 +98,13 @@ def test_trigstrategy_mergeheader(header: str|None) -> None:
 @pytest.mark.parametrize("header", ["fake_header", None])
 def test_cimxmlstrategy_header(header: str|None, caplog: pytest.LogCaptureFixture) -> None:
     processor = Mock()
-    processor.graph = Mock(metadata_header=header)
+    processor.header = header
     
     strategy = CIMXMLStrategy("out.xml")
     strategy.serialize(processor)
 
     processor.merge_header.assert_not_called()
-
+    
     if header:
         assert "Serializing without an extracted header may create a corrupt CIMXML file." not in caplog.text
     else:

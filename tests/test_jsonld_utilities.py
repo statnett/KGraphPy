@@ -3,7 +3,51 @@ from unittest.mock import patch, MagicMock
 import json
 from rdflib import URIRef
 from typing import Any
-from cim_plugin.jsonld_utilities import reorder_jsonld, sort_subjects, sort_predicates
+from tests.fixtures import make_fake_response
+
+from cim_plugin.jsonld_utilities import reorder_jsonld, sort_subjects, sort_predicates, load_json_from_url
+
+# Unit tests load_json_from_url
+
+@pytest.mark.parametrize(
+    "payload, charset, expected",
+    [
+        pytest.param({"hello": "world"}, "utf-8", {"hello": "world"}, id="utf8-normal-json",),
+        pytest.param({"msg": "æøå"}, "iso-8859-1", {"msg": "æøå"}, id="latin1-charset",),
+        pytest.param({"fallback": True}, None, {"fallback": True}, id="no-charset-fallback-to-utf8",),
+    ]
+)
+@patch("cim_plugin.jsonld_utilities.urlopen")
+def test_load_json_from_url_success(mock_urlopen: MagicMock, payload: dict, charset: str | None, expected: dict) -> None:
+    encoded = json.dumps(payload).encode(charset or "utf-8")
+    fake_response = make_fake_response(encoded, charset)
+    mock_urlopen.return_value = fake_response
+
+    result = load_json_from_url("http://example.com/data.json")
+
+    assert result == expected
+    mock_urlopen.assert_called_once()
+    fake_response.read.assert_called_once()
+    # Checking that headers and url are correctly passed to urlopen
+    req_arg = mock_urlopen.call_args[0][0]
+    assert req_arg.full_url == "http://example.com/data.json"
+    assert req_arg.headers["User-agent"] == "Mozilla/5.0"
+
+def test_load_json_from_url_invalid_json() -> None:
+    fake_response = make_fake_response(b"not valid json", "utf-8")
+
+    with patch("cim_plugin.jsonld_utilities.urlopen", return_value=fake_response):
+        with pytest.raises(json.JSONDecodeError):
+            load_json_from_url("http://example.com/bad.json")
+
+@ patch("cim_plugin.jsonld_utilities.urlopen")
+def test_load_json_from_url_emptybody(mock_urlopen: MagicMock) -> None:
+    fake_response = make_fake_response(b"", "utf-8")
+    mock_urlopen.return_value = fake_response
+
+    with pytest.raises(json.JSONDecodeError):
+        load_json_from_url("http://example.com")
+
 
 # Unit tests sort_subjects
 @pytest.mark.parametrize(
@@ -146,7 +190,12 @@ def test_reorder_jsonld_basic() -> None:
         pytest.param('{"@graph": [{"@id": "x", "address": {"street": "any", "country": "Norway"}}]}', 
                      {"@graph": [{"@id": "x", "address": {"street": "any", "country": "Norway"}}]}, 
                      id="Nested dicts. The nested dict values are not sorted (no recursive sorting)."),
-        
+        pytest.param("""{"@context": {"link": "http://example.com/context", "@vocab": "http://example.com/vocab#"}, 
+                     "random": [{"@id": "b", "name": "B"}, {"@id": "a", "name": "A"}]}""",
+                    {"@context": {"link": "http://example.com/context", "@vocab": "http://example.com/vocab#"},
+                     "random": [{"@id": "b", "name": "B"}, {"@id": "a", "name": "A"}]},
+                    id="@context, but no @graph, should not sort"
+        ),
         # NB! The tests below does not actually test predicate sorting (because dicts are unordered). But the sort_predicates tests does.
         pytest.param("""{"@graph": [{"year": "b", "name": "B"}, {"year": "a", "name": "A"}]}""",
                     {"@graph": [{"name": "B", "year": "b"}, {"name": "A", "year": "a"}]},

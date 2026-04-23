@@ -32,7 +32,7 @@ class TrigStrategy(SerializationStrategy):
         if self.schema_path:
             processor.set_schema(self.schema_path)
 
-        if processor.graph.metadata_header:
+        if processor.header:
             processor.merge_header()
 
         if self.enrich_datatypes:
@@ -53,7 +53,7 @@ class CIMXMLStrategy(SerializationStrategy):
 
     def serialize(self, processor: "CIMProcessor"):
         """Serialize cim graph to CIMXML file."""
-        if not processor.graph.metadata_header:
+        if not processor.header:
             logger.error("Serializing without an extracted header may create a corrupt CIMXML file.")
 
         processor.graph.serialize(self.file_path, format="cimxml", qualifier=self.qualifier)
@@ -69,12 +69,12 @@ class JSONLDStrategy(SerializationStrategy):
 
     def serialize(self, processor: "CIMProcessor") -> None:
         """Serialize cim graph to JSON-LD file."""
-        if processor.graph.metadata_header:
+        if processor.header:
             processor.merge_header()
 
         self.enrich_datatypes(processor)
 
-        header_subject = processor.graph.metadata_header.subject if processor.graph.metadata_header else None
+        header_subject = processor.header.subject if processor.header else None
         
         raw_jsonld = processor.graph.serialize(format="json-ld", context=self.context, auto_compact=True)
         reordered_jsonld = reorder_jsonld(raw_jsonld, priority_subject=header_subject)
