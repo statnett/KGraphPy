@@ -1,7 +1,7 @@
 """Sorting JSON-LD for serialization."""
 
 import json
-from rdflib import URIRef, Literal, Namespace
+from rdflib import URIRef, Literal, Graph
 from urllib.request import urlopen, Request
 from typing import Optional, Any
 
@@ -82,7 +82,13 @@ def extract_datatype_map(context: dict[str, Any]|None) -> dict[str, str]:
     return dt_map
 
 
-def enrich_graph_datatypes(graph, dt_map: dict[str, str]) -> None:
+def enrich_graph_datatypes(graph: Graph, dt_map: dict[str, Any]) -> None:
+    """Enrich an RDFLib graph by adding missing datatypes to literals based on a provided mapping.
+    
+    Parameters:
+        graph (Graph): The RDFLib graph to enrich.
+        dt_map (dict[str, Any]): A mapping of predicate URIs to expected datatype URIs.
+    """
     triples_to_add = []
     triples_to_remove = []
     
@@ -90,7 +96,7 @@ def enrich_graph_datatypes(graph, dt_map: dict[str, str]) -> None:
         p_str = str(p)
         
         if p_str in dt_map and isinstance(o, Literal):
-            expected_dt = URIRef(dt_map[p_str])
+            expected_dt = URIRef(dt_map[p_str]) if dt_map[p_str] else None
 
             # Case 1: literal has no datatype
             if o.datatype is None:
@@ -99,7 +105,6 @@ def enrich_graph_datatypes(graph, dt_map: dict[str, str]) -> None:
 
             # Case 2: literal has wrong datatype
             elif o.datatype != expected_dt:
-                print(o, o.datatype, "should be", expected_dt)
                 triples_to_remove.append((s, p, o))
                 triples_to_add.append((s, p, Literal(o.value, datatype=expected_dt)))
 

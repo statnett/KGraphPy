@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import json
-from rdflib import URIRef
+from rdflib import URIRef, Graph, Literal
+from rdflib import XSD
 from typing import Any
 from tests.fixtures import make_fake_response
 
@@ -10,7 +11,8 @@ from cim_plugin.jsonld_utilities import (
     sort_subjects, 
     sort_predicates, 
     load_json_from_url,
-    extract_datatype_map
+    extract_datatype_map,
+    enrich_graph_datatypes
 )
 
 # Unit tests load_json_from_url
@@ -182,6 +184,133 @@ def test_extract_datatype_map_unusualtypes(type: Any, expected_type: str, except
         else:
             assert dt_map == {"http://example.com/someType": expected_type}
 
+
+# Unit tests enrich_graph_datatypes
+def test_enrich_graph_datatypes_empty() -> None:
+    g = Graph()
+    dt_map = {}
+
+    enrich_graph_datatypes(g, dt_map)
+    assert len(g) == 0
+
+@pytest.mark.parametrize(
+        "map, expected_change",
+        [
+            pytest.param({}, None, id="Empty map"),
+            pytest.param({"ex": "http://example.com/"}, None, id="Map with no types"),
+            pytest.param({"http://example.com/hasName": XSD.string}, Literal("Alice", datatype=XSD.string), id="Map gives new type"),
+            pytest.param({"http://example.com/hasAge": XSD.integer}, Literal(30, datatype=XSD.integer), id="Map changes type"),
+            pytest.param({"http://example.com/hasAge": None}, Literal("30", datatype=None), id="Map removes type"),
+            pytest.param({"wrongnamespace/hasAge": XSD.integer}, None, id="Map with wrong namespace"),
+            pytest.param({"http://example.com/hasName": "not-a-uri"}, Literal("Alice", datatype="not-a-uri"), id="Invalid datatype"),
+        ]
+)
+def test_enrich_graph_datatypes_basic(map: dict[str, str], expected_change: Any) -> None:
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    g.add((URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), URIRef("http://example.com/Alice")))
+    g.add((URIRef("http://example.com/age"), URIRef("http://example.com/hasAge"), Literal(30.0, datatype=XSD.float)))
+    g.add((URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), Literal("Alice")))
+    before = set(g)
+
+    enrich_graph_datatypes(g, map)
+
+    assert (URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), URIRef("http://example.com/Alice")) in g  # Non-literal object should not be changed.
+
+    if expected_change is None:
+        for triple in before:
+            assert triple in g
+    else:
+        changed_triples = g.triples((None, None, expected_change))
+        for s, p, o in changed_triples:
+            assert isinstance(o, Literal)
+            assert o == expected_change
+            assert o.datatype == expected_change.datatype
+            assert (s, p, o) not in before  # The triple with the enriched datatype should be new.
+            for sub, pred, obj in before:
+                if sub == s and pred == p and isinstance(obj, Literal):
+                    assert (sub, pred, obj) not in g  # The original triple with the old datatype should be removed.
+            
+def test_enrich_graph_datatypes_multiplechanges() -> None:
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    g.add((URIRef("http://example.com/address"), URIRef("http://example.com/street"), URIRef("http://example.com/main")))
+    g.add((URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), Literal("Alice")))
+    g.add((URIRef("http://example.com/age"), URIRef("http://example.com/hasAge"), Literal(30.0, datatype=XSD.float)))
+    g.add((URIRef("http://example.com/duration"), URIRef("http://example.com/hasAge"), Literal(30.0, datatype=XSD.integer))) # Stays the same
+    g.add((URIRef("http://example.com/country"), URIRef("http://example.com/hasAge"), Literal("30.0")))  # Multiple literals for same predicate, all should be updated.
+    dt_map = {
+        "http://example.com/hasName": XSD.string,
+        "http://example.com/hasAge": XSD.integer
+    }
+
+    enrich_graph_datatypes(g, dt_map)
+
+    assert len(g) == 5
+    assert (URIRef("http://example.com/address"), URIRef("http://example.com/street"), URIRef("http://example.com/main")) in g
+
+    for s, p, o in g:
+        if str(p) == "http://example.com/hasName":
+            assert o == Literal("Alice", datatype=XSD.string)
+        elif str(p) == "http://example.com/hasAge":
+            assert o == Literal(30.0, datatype=XSD.integer)
+        else:
+            assert isinstance(o, URIRef)  # Non-literal object should not be changed.        
+
+@pytest.mark.parametrize(
+        "literal, datatype",
+        [
+            pytest.param(Literal("Alice", lang="fr"), XSD.string, id="Literal with language tag, enriched to string"),
+            pytest.param(Literal("Alice", datatype=None), None, id="Literal with datatype None, enriched to None")
+        ]
+)
+def test_enrich_graph_datatypes_langtag(literal: Literal, datatype: URIRef|None) -> None:
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    g.add((URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), Literal("Alice", lang="en")))
+    g.add((URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), literal))
+    dt_map = {
+        "http://example.com/hasName": datatype
+    }
+
+    enrich_graph_datatypes(g, dt_map)
+
+    assert len(g) == 1  # The triples become duplicates. One is removed by rdflib.
+    for s, p, o in g:
+        assert str(p) == "http://example.com/hasName"
+        assert o == Literal("Alice", datatype=datatype)  # The language tag is removed when the type is enriched.
+
+
+def test_enrich_graph_datatypes_idempotency() -> None:
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    g.add((URIRef("http://example.com/name"), URIRef("http://example.com/hasName"), Literal("Alice", datatype=None)))
+    dt_map = {
+        "http://example.com/hasName": XSD.string
+    }
+    before = set(g)
+    enrich_graph_datatypes(g, dt_map)
+    between = set(g)
+    enrich_graph_datatypes(g, dt_map)
+    after = set(g)
+
+    assert before != between  # The first enrichment should change the graph.
+    assert between == after  # Enriching an already enriched graph should not change it.
+
+
+def test_enrich_graph_datatypes_typecoercion() -> None:
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    g.add((URIRef("http://example.com/age"), URIRef("http://example.com/hasAge"), Literal(30.0, datatype=XSD.float)))
+    g.add((URIRef("http://example.com/duration"), URIRef("http://example.com/hasAge"), Literal("not-a-number", datatype=None)))
+    dt_map = {
+        "http://example.com/hasAge": XSD.integer
+    }
+
+    enrich_graph_datatypes(g, dt_map)
+
+    assert (URIRef("http://example.com/age"), URIRef("http://example.com/hasAge"), Literal(30.0, datatype=XSD.integer)) in g
+    assert (URIRef("http://example.com/duration"), URIRef("http://example.com/hasAge"), Literal("not-a-number", datatype=XSD.integer)) in g
 
 # Unit tests sort_subjects
 @pytest.mark.parametrize(
