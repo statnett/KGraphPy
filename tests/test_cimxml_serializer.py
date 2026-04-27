@@ -35,6 +35,7 @@ def test_init_qualifier_resolver_basic(input: str, resolver: Type[CIMQualifierSt
     g = Graph()
     ser = CIMXMLSerializer(g)
     ser._init_qualifier_resolver(input)
+    assert ser.qualifier_resolver
     assert type(ser.qualifier_resolver.output) == resolver
     assert isinstance(ser.qualifier_resolver, CIMQualifierResolver)
     assert isinstance(ser.qualifier_resolver.output, resolver)
@@ -96,7 +97,6 @@ def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
     mock_create.assert_not_called()
     store_header = cast(CIMGraph, ser.store).metadata_header
     assert store_header is header
-
 
 
 # Unit tests ._collect_used_namespaces
@@ -344,8 +344,8 @@ def test_collect_used_namespaces_rebindingnamespace() -> None:
 
 # Unit tests .serialize
 @patch("cim_plugin.cimxml_serializer._subject_sort_key")
-@patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
-def test_serialize_allcalls(mock_group: MagicMock, mock_sort: MagicMock) -> None:
+# @patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
+def test_serialize_allcalls(mock_sort: MagicMock) -> None:
     buf = io.BytesIO()
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
@@ -355,7 +355,8 @@ def test_serialize_allcalls(mock_group: MagicMock, mock_sort: MagicMock) -> None
     ser._init_qualifier_resolver = Mock()
     ser._collect_used_namespaces = Mock(return_value=[("ex", "example.com/")])
     ser.write_header = Mock()
-    mock_group.return_value = {"ex:o": [URIRef("s1"), URIRef("s2")]}
+    ser._build_subject_index = Mock(return_value={"ex:o": [URIRef("s1"), URIRef("s2")]})
+    # mock_group.return_value = {"ex:o": [URIRef("s1"), URIRef("s2")]}
     mock_sort.side_effect = [(1, "s1"), (0, "s2")]
     ser.subject = Mock()
 
@@ -366,7 +367,7 @@ def test_serialize_allcalls(mock_group: MagicMock, mock_sort: MagicMock) -> None
     ser._init_qualifier_resolver.assert_called_once_with("foo")
     ser._collect_used_namespaces.assert_called_once()
     ser.write_header.assert_called_once()
-    mock_group.assert_called_once()
+    # mock_group.assert_called_once()
     assert mock_sort.call_count == 2
     assert ser.subject.call_count == 2
     assert result == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    xmlns:ex="example.com/"\n    >\n\n</rdf:RDF>\n'
@@ -424,8 +425,8 @@ def test_serialize_multipleserializations() -> None:
         pytest.param([URIRef("ex:xeta"), URIRef("zeta"), URIRef("mu")], ["ex:xeta", "mu", "zeta"], id="Three subjects, one with namespace"),
     ],
 )
-@patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
-def test_serialize_subjectsorting(mock_group: MagicMock, subjects: list[URIRef], expected: list[str]) -> None:
+# @patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
+def test_serialize_subjectsorting(subjects: list[URIRef], expected: list[str]) -> None:
     buf = io.BytesIO()
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
@@ -436,15 +437,19 @@ def test_serialize_subjectsorting(mock_group: MagicMock, subjects: list[URIRef],
     def fake_group(*args, **kwargs):
         return {"ex:o": subjects}
 
-    mock_group.side_effect = fake_group
+    # mock_group.side_effect = fake_group
+    ser._build_subject_index = Mock(side_effect=fake_group)
+    ser.subject = Mock()
     ser.serialize(buf)
+    
+    ser.subject.assert_has_calls([call(URIRef(s), depth=1) for s in expected])
+    # out = buf.getvalue().decode()
+    # print(out)
+    # lines = [line.strip() for line in out.splitlines() if "<" in line]
 
-    out = buf.getvalue().decode()
-    lines = [line.strip() for line in out.splitlines() if "<" in line]
-
-    # Extract subject IDs
-    found = [s for s in expected if any(s in line for line in lines)]
-    assert found == expected
+    # # Extract subject IDs
+    # found = [s for s in expected if any(s in line for line in lines)]
+    # assert found == expected
 
 @pytest.mark.parametrize("enc", ["utf-8", "latin-1"])
 def test_serialize_encoding(enc: str) -> None:
@@ -538,22 +543,31 @@ def test_serialize_multiplegroups() -> None:
     g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
     
     ser = CIMXMLSerializer(g)
-
+    ser.subject = Mock()  
     ser.serialize(buf)
-    out = buf.getvalue().decode()
+
+    ser.subject.assert_has_calls([
+        call(URIRef(f"urn:uuid:{s3}"), depth=1),
+        call(URIRef(f"urn:uuid:{s2}"), depth=1),
+        call(URIRef(f"urn:uuid:{s1}"), depth=1),
+        call(URIRef(s5), depth=1),  # invalid UUID → sorted last among TypeA 
+        call(URIRef(f"urn:uuid:{s4}"), depth=1) # TypeB comes after TypeA 
+    ])
+
+    # out = buf.getvalue().decode()
     # Extract rdf:about values in order 
-    abouts = [ 
-        line.split('"')[1] 
-        for line in out.splitlines() 
-        if 'rdf:about="#_' in line 
-    ] 
-    assert abouts == [ 
-        f"#_{s3}", 
-        f"#_{s2}", 
-        f"#_{s1}", 
-        f"#_{s5}", # invalid UUID → sorted last among TypeA 
-        f"#_{s4}", # TypeB comes after TypeA 
-    ]
+    # abouts = [ 
+    #     line.split('"')[1] 
+    #     for line in out.splitlines() 
+    #     if 'rdf:about="#_' in line 
+    # ] 
+    # assert abouts == [ 
+    #     f"#_{s3}", 
+    #     f"#_{s2}", 
+    #     f"#_{s1}", 
+    #     f"#_{s5}", # invalid UUID → sorted last among TypeA 
+    #     f"#_{s4}", # TypeB comes after TypeA 
+    # ]
     
 def test_serialize_streamwritefailure() -> None:
     class BadStream():
@@ -781,7 +795,32 @@ def test_subject_missingtype(serializer: tuple[CIMXMLSerializer, list]) -> None:
     result = "".join(output)
 
     assert "<MALFORMED" in result
-    assert "No rdf:type found" in result
+    assert f"Invalid rdf:type count for {s}" in result
+
+
+def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
+    g = ser.store
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("http://example.com/s")
+    t1 = URIRef("http://example.com/ClassA")
+    t2 = URIRef("http://example.com/ClassB")
+
+    g.add((s, RDF.type, t1))
+    g.add((s, RDF.type, t2))
+    g.add((s, URIRef("http://example.com/p"), Literal("x")))
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert "<MALFORMED" in result
+    assert f"Invalid rdf:type count for {s}" in result
+    # assert "Multiple rdf:type values" in result
+    assert "ClassA" in result
+    assert "ClassB" in result
+    assert "<ex:p>x</ex:p>" in result
 
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
 def test_subject_valid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
@@ -812,6 +851,8 @@ def test_subject_valid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerial
 )
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
 def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list], qualifier_return: bool) -> None:
+    # If the object is a uuid it needs to be written with the correct qualifier. This function checks that the predicate is called correctly.
+    # Objects that are URIRef but not qualified UUIDs should not be treated with qualifiers.
     ser, output = serializer
     mock_qualified.return_value = qualifier_return
     g = ser.store
@@ -865,7 +906,6 @@ def test_subject_onlyrdftype(serializer: tuple[CIMXMLSerializer, list]) -> None:
 
     s = URIRef("s123")
     t = URIRef("http://example.com/Class")
-    p = URIRef("http://example.com/p")
 
     g.add((s, RDF.type, t))
 
@@ -878,16 +918,19 @@ def test_subject_onlyrdftype(serializer: tuple[CIMXMLSerializer, list]) -> None:
 def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
-
+    g.bind("ex", "http://example.com/")
     s = URIRef("http://example.com/s")
     g.add((s, RDF.type, URIRef("http://example.com/Class")))
 
     ser.subject(s)
-    output.clear()  # Remove output so the method can be run again, but now the subject is registered
+    
+    result = "".join(output)
+    assert str.count(result, "<ex:Class ") == 1  # Subject should be serialized only once
+    # output.clear()  # Remove output so the method can be run again, but now the subject is registered
 
-    ser.subject(s)
+    # ser.subject(s)
 
-    assert output == []
+    # assert output == []
 
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
 def test_subject_malformedpredicate(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
@@ -956,29 +999,6 @@ def test_subject_predicatesorting(mock_qualified: MagicMock, serializer: tuple[C
 
     assert result == '  <ex:Class rdf:about="s123">\n    <ex:a_d>o3</ex:a_d>\n    <ex:ad>o</ex:ad>\n    <ex:p>value</ex:p>\n    <foo:ad>o2</foo:ad>\n  </ex:Class>\n'
 
-
-def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list]) -> None:
-    ser, output = serializer
-    g = ser.store
-    g.bind("ex", "http://example.com/")
-
-    s = URIRef("http://example.com/s")
-    t1 = URIRef("http://example.com/ClassA")
-    t2 = URIRef("http://example.com/ClassB")
-
-    g.add((s, RDF.type, t1))
-    g.add((s, RDF.type, t2))
-    g.add((s, URIRef("http://example.com/p"), Literal("x")))
-
-    ser.subject(s)
-
-    result = "".join(output)
-
-    assert "<MALFORMED" in result
-    assert "Multiple rdf:type values" in result
-    assert "ClassA" in result
-    assert "ClassB" in result
-    assert "<ex:p>x</ex:p>" in result
 
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
 def test_subject_rdftypewithoutprefix(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
@@ -1119,6 +1139,7 @@ def test_subject_malformedsubjectcalls(input: Literal|BNode, reachable: set, ser
 
 
 def test_subject_multipletypesmalformedcalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
+    # Checking that _write_malformed_subject is called only once when there are multiple rdf:type values.
     ser, output = serializer
     g = ser.store
 

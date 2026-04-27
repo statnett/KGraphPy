@@ -27,24 +27,33 @@ def expand(uri: str) -> str:
     return PREFIXES.get(prefix, prefix + ":") + local
 
 
-def find_rdf_id_or_about(profile: str|None, obj_type: str|URIRef) -> str:
-    if not profile:
+def find_rdf_id_or_about(profiles: list[str]|None, obj_type: str|URIRef) -> str:
+    if not profiles:
         logger.error("No profile found. Defaults to 'about'.")
         return "about"
     
-    if profile not in PROFILES:
-        return "about"
-
     if isinstance(obj_type, URIRef):
         obj_type = str(obj_type)
 
     expanded_object = expand(obj_type)
-    expanded_exceptions = [expand(x) for x in PROFILES[profile]]
     
-    if expanded_object in expanded_exceptions:
-        return "about"
+    keywords: set[str] = set()
+    for profile in profiles:
+        if profile not in PROFILES:
+            keywords.add("about")
+            continue
+        
+        expanded_exceptions = [expand(x) for x in PROFILES[profile]]
+    
+        if expanded_object in expanded_exceptions:
+            keywords.add("about")
+            continue
 
-    return "ID"
+        keywords.add("ID")
+
+    if "ID" in keywords:
+        return "ID"
+    return "about"
 
 
 if __name__ == "__main__":

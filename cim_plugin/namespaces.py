@@ -3,7 +3,7 @@
 from rdflib import Namespace, Node, URIRef, Graph
 from rdflib.namespace import NamespaceManager, DefinedNamespace, DCAT, DCTERMS, PROV, RDF
 from cim_plugin.exceptions import NamespaceEmptyError
-from typing import Any
+from typing import Any, Iterable
 import logging
 
 logger = logging.getLogger('cimxml_logger')
@@ -89,11 +89,11 @@ CGMES_NAMESPACES: dict[str, type|Namespace] = {
 
 
 # Functions
-def collect_specific_namespaces(triples: list[tuple[Node, Node, Node]], namespace_manager: NamespaceManager) -> dict[str, URIRef]:
+def collect_specific_namespaces(triples: Iterable[tuple[Node, Node, Node]], namespace_manager: NamespaceManager) -> dict[str, URIRef]:
     """Collect namespaces used in a list of triples.
 
     Parameters:
-        triples (list[tuple[Node, Node, Node]]): The list of triples. Can be extracted from a Graph object.
+        triples (Iterable[tuple[Node, Node, Node]]): The list of triples. Can be extracted from a Graph object.
         namespace_manager [NamespaceManager]: The namespace object to collect the namespaces from.
 
     Returns:

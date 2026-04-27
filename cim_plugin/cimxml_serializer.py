@@ -12,6 +12,7 @@ from cim_plugin.namespaces import MD, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
+from typing import Callable
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -25,13 +26,25 @@ QUALIFIER_MAP = {"underscore": UnderscoreQualifier, "urn": URNQualifier, "namesp
 class CIMXMLSerializer(Serializer):
     """CIMXML RDF graph serializer."""
 
-    def __init__(self, store: Graph, **kwargs):
-        super(CIMXMLSerializer, self).__init__(store)
+    # def __init__(self, store: Graph, **kwargs):
+    #     super(CIMXMLSerializer, self).__init__(store)
 
-        self.__serialized: Dict[Node, int] = {}
-        self._stream = None
+    #     self.__serialized: Dict[Node, int] = {}
+    #     self._stream = None
+
+    def __init__(self, store: Graph, **kwargs):
+        super().__init__(store)
+        self.write: Optional[Callable[[str], None]] = 
+        self.qualifier_resolver: Optional[CIMQualifierResolver] = None
 
     def _init_qualifier_resolver(self, qualifier_name: str|None) -> None:
+        """Initialize the qualifier resolver based on the provided qualifier name.
+        
+        Accepted names are "underscore", "urn", and "namespace". If None, defaults to "underscore".
+
+        Parameters:
+            qualifier_name (str|None): The name of the qualifier to use.
+        """
         name = (qualifier_name or "underscore").lower()
         qualifier_cls = QUALIFIER_MAP.get(name)
         if qualifier_cls is None:
@@ -39,6 +52,7 @@ class CIMXMLSerializer(Serializer):
         self.qualifier_resolver = CIMQualifierResolver(qualifier_cls())
 
     def _ensure_header(self) -> CIMMetadataHeader:
+        """Ensure that the graph has a metadata header and return it."""
         header = getattr(self.store, "metadata_header", None)
         if header is None:
             header = create_header_attribute(self.store)
@@ -60,25 +74,41 @@ class CIMXMLSerializer(Serializer):
         # --- Header namespaces ---
         header = getattr(self.store, "metadata_header", None)
         if header is not None:
-            header_triples = list(header.graph.triples((None, None, None)))
+            # header_triples = list(header.graph.triples((None, None, None)))
             header_ns = collect_specific_namespaces(
-                header_triples,
+                header.graph.triples((None, None, None)),
                 header.graph.namespace_manager
             )
             namespaces.update(header_ns)
-            # print("Header: ", namespaces)
 
         # --- Data namespaces ---
-        data_triples = list(self.store.triples((None, None, None)))
+        # data_triples = list(self.store.triples((None, None, None)))
         data_ns = collect_specific_namespaces(
-            data_triples,
+            self.store.triples((None, None, None)),
             self.store.namespace_manager
         )
         namespaces.update(data_ns)
-        # print("With data: ", namespaces)
 
-        # Stable output
         return sorted(namespaces.items())
+
+    def _build_subject_index(self, skip_subjects: set[URIRef]) -> dict[URIRef, list[URIRef]]:
+        """ Not tested yet.
+        Build rdf:type → [subjects] mapping.
+        Only stores one triple per subject.
+        """
+        subjects_by_type: dict[URIRef, list[URIRef]] = {}
+
+        for s, p, o in self.store.triples((None, RDF.type, None)):
+            if s in skip_subjects:
+                continue
+            if not isinstance(s, URIRef):
+                continue
+            if not isinstance(o, URIRef):
+                continue
+
+            subjects_by_type.setdefault(o, []).append(s)
+
+        return subjects_by_type
 
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
@@ -90,35 +120,43 @@ class CIMXMLSerializer(Serializer):
             encoding (str): The encoding used for the stream.
             qualifier (str): From **kwargs. Specifies the qualifier for uuids.
         """
-        self.__stream = stream
+        encoding = encoding or self.encoding
+        self.write = write = lambda txt: stream.write(txt.encode(encoding, "replace"))
+
+        # self.__stream = stream
         header = self._ensure_header()
         
         qualifier_name = kwargs.pop("qualifier", None)
         self._init_qualifier_resolver(qualifier_name)
-        encoding = encoding or self.encoding
-        self.write = write = lambda uni: stream.write(uni.encode(encoding, "replace"))
+        # encoding = encoding or self.encoding
+        # self.write = write = lambda uni: stream.write(uni.encode(encoding, "replace"))
 
-        write('<?xml version="1.0" encoding="%s"?>\n' % self.encoding)
+        write(f'<?xml version="1.0" encoding="{self.encoding}"?>\n')
 
         # Write xmlns:prefix="namespace" for all namespaces used
         # Namespaces not used will not be written
         write("<rdf:RDF\n")
 
-        bindings = self._collect_used_namespaces()
+        # bindings = self._collect_used_namespaces()
         
-        for prefix, namespace in bindings:
+        for prefix, namespace in self._collect_used_namespaces():
             if prefix:
-                write('    xmlns:%s="%s"\n' % (prefix, namespace))
+                write(f'    xmlns:{prefix}="{namespace}"\n')
             else:
-                write('    xmlns="%s"\n' % namespace)
+                write(f'    xmlns="{namespace}"\n')
         write("    >\n")
 
         self.write_header(header, depth=1)
         write("\n")
 
         # Sort by class and write triples by subject
-        groups = group_subjects_by_type(self.store, skip_subjects=[header.subject])
-        sorted_types = sorted(groups.keys())
+        # groups = group_subjects_by_type(self.store, skip_subjects=[header.subject])        
+        skip_subjects = {header.subject}
+        groups = self._build_subject_index(skip_subjects)
+
+        nm = self.store.namespace_manager
+        # sorted_types = sorted(groups.keys())
+        sorted_types = sorted(groups.keys(), key=lambda t: nm.normalizeUri(str(t)))
 
         for t in sorted_types:
             for s in sorted(groups[t], key=_subject_sort_key):
@@ -154,7 +192,6 @@ class CIMXMLSerializer(Serializer):
 
         try:
             uri = quoteattr(self.qualifier_resolver.convert_to_special_qualifier(subject))
-
             subject_type_qname = nm.normalizeUri(str(subject_type))
 
             body_triples = [(p, o) for (_, p, o) in header.triples if not (p == RDF.type and o == subject_type)]
@@ -184,10 +221,10 @@ class CIMXMLSerializer(Serializer):
             subject (Node): The subject to be written.
             depth (int): Indentation size.
         """
-        if subject in self.__serialized:
-            return
+        # if subject in self.__serialized:
+            # return
         
-        self.__serialized[subject] = 1
+        # self.__serialized[subject] = 1
 
         nm = self.store.namespace_manager
         write = self.write
@@ -205,21 +242,17 @@ class CIMXMLSerializer(Serializer):
         
         types = list(self.store.objects(subject, RDF.type))
 
-        if len(types) == 0:
-            self._write_malformed_subject(subject, f"No rdf:type found for {subject}", depth)
+        if len(types) != 1:
+            self._write_malformed_subject(subject, f"Invalid rdf:type count for {subject}", depth)
             return
-        
-        if len(types) > 1: 
-            self._write_malformed_subject(subject, f"Multiple rdf:type values found for {subject}: {types}", depth ) 
-            return
-        
+                
         subject_type = types[0] # In the triple this is the object, it specifies the rdf:type for the subject
         if not isinstance(subject_type, URIRef):
             self._write_malformed_subject(subject, f"The rdf:type object is not a uri: {subject_type}", depth)
             return
-
+        
         # Shape and write the subject line
-        rdf_keyword = find_rdf_id_or_about(header.profile, str(subject_type))
+        rdf_keyword = find_rdf_id_or_about(header.profiles, str(subject_type))
 
         if rdf_keyword == "ID":
             raw_uri = self.qualifier_resolver.convert_to_special_qualifier(subject)
@@ -235,13 +268,13 @@ class CIMXMLSerializer(Serializer):
         preds = [(p, o) for p, o in self.store.predicate_objects(subject) if p != RDF.type]
         preds.sort(key=lambda po: nm.normalizeUri(str(po[0])))
 
-        if (subject, None, None) in self.store:
-            for predicate, obj in preds:
-                use_qualifier = is_uuid_qualified(self.qualifier_resolver, obj)
-                self.predicate(predicate, obj, depth + 1, use_qualifier=use_qualifier)
+        # if (subject, None, None) in self.store:
+        for predicate, obj in preds:
+            use_qualifier = is_uuid_qualified(self.qualifier_resolver, obj)
+            self.predicate(predicate, obj, depth + 1, use_qualifier=use_qualifier)
         
         write(f"{indent}</{subject_type_qname}>\n")
-                
+  
 
     def predicate(self, predicate: Node, obj: Node, depth: int = 1, use_qualifier: bool = True) -> None:
         """Write predicate and object in CIMXML format.
