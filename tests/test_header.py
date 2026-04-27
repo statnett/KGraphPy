@@ -838,17 +838,19 @@ def test_collect_profile_success(triples: list[tuple], expected: str) -> None:
     for predicate, obj in triples:
         header.add_triple(predicate, obj)
     
-    result = header.collect_profile()
-    assert result == expected
-
+    result = header.collect_profiles()
+    if expected:
+        assert result == [expected]
+    else:
+        assert result is None
 
 def test_collect_profile_customprofile() -> None:
     header = CIMMetadataHeader.empty(URIRef("s1"), profile_predicates={URIRef("custom")})
     header.add_triple(RDF.type, MD.FullModel)
     header.add_triple(URIRef("custom"), Literal("model"))
     
-    result = header.collect_profile()
-    assert result == "model"
+    result = header.collect_profiles()
+    assert result == ["model"]
 
 
 def test_collect_profile_multipleprofiles() -> None:
@@ -857,10 +859,11 @@ def test_collect_profile_multipleprofiles() -> None:
     header.add_triple(DCTERMS.conformsTo, Literal("model1"))
     header.add_triple(DCTERMS.conformsTo, Literal("model2"))
     
-    with pytest.raises(ValueError) as exc:
-        header.collect_profile()
+    result = header.collect_profiles()
 
-    assert "Multiple profiles found in header: ['model1', 'model2']" in str(exc.value)
+    assert result is not None
+    assert 'model1' in result
+    assert 'model2' in result
 
 
 # Unit tests .set_subject

@@ -1586,7 +1586,7 @@ def test_validate_namespaces_noprofile(mock_validate: MagicMock, make_cimgraph: 
     pr.validate_namespaces()
 
     assert pr.graph.metadata_header is not None
-    assert pr.graph.metadata_header.profile is None
+    assert pr.graph.metadata_header.profiles is None
     mock_validate.assert_called_once_with(g, cgmes=False)
 
 
@@ -1594,7 +1594,7 @@ def test_validate_namespaces_noprofile(mock_validate: MagicMock, make_cimgraph: 
 def test_validate_namespaces_exception(mock_validate: MagicMock, make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
     assert g.metadata_header
-    with patch("cim_plugin.processor.CIMMetadataHeader.profile", new_callable=PropertyMock, side_effect=TypeError("other exception")):
+    with patch("cim_plugin.processor.CIMMetadataHeader.profiles", new_callable=PropertyMock, side_effect=TypeError("other exception")):
         pr = CIMProcessor(g, provenance_description="Initial entry")
 
         with pytest.raises(TypeError, match="other exception"):
@@ -1629,7 +1629,7 @@ def test_validate_namespaces_various(mock_validate: MagicMock, profile_uri: str,
     pr.validate_namespaces(cimxml_format=cimxml_format)
 
     assert pr.graph.metadata_header is not None
-    assert pr.graph.metadata_header.profile == profile_uri
+    assert pr.graph.metadata_header.profiles == [profile_uri]
     mock_validate.assert_called_once_with(g, cgmes=expected_cgmes)
     assert pr.provenance and pr._provenance
     entries = pr.provenance.entries
@@ -1638,19 +1638,28 @@ def test_validate_namespaces_various(mock_validate: MagicMock, profile_uri: str,
     assert entries[-1]["description"] == "Validated and fixed namespaces according to CIM standards."
     assert pr._provenance._entries[-1].sub_steps == []   # No substeps added because validate_and_fix_namespaces_by_cimtype is mocked
 
+@pytest.mark.parametrize(
+        "profiles, cgmes_outlier",
+        [
+            pytest.param(["http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0", "http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0"], True, id="Multiple CGMES outlier profiles"),
+            pytest.param(["http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0", "not_cgmes_outlier"], True, id="Mixed profiles"),
+            pytest.param(["not_cgmes_outlier1", "not_cgmes_outlier2"], False, id="Multiple non-outlier profiles"),
+        ]
+)
 @patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
-def test_validate_namespaces_multipleprofiles(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
+def test_validate_namespaces_multipleprofiles(mock_validate: MagicMock, make_cimgraph: CIMGraph, profiles: list[str], cgmes_outlier: bool) -> None:
     g = make_cimgraph
     assert g.metadata_header
-    g.metadata_header.add_triple(MD.Model.profile, URIRef("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0"))
-    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://iec.ch/TC57/ns/CIM/CoreEquipment/4.0")) 
+    for profile in profiles:
+        g.metadata_header.add_triple(MD.Model.profile, URIRef(profile))
     pr = CIMProcessor(g)
 
     pr.validate_namespaces(cimxml_format=True)
 
-    mock_validate.assert_called_once_with(g, cgmes=False)
-    assert "Unable to retrieve profile. Standard namespaces will be used." in caplog.text
-    assert "Multiple profiles found in header:" in caplog.text # The exception message from ValueError
+    mock_validate.assert_called_once_with(g, cgmes=cgmes_outlier)
+    assert pr.header
+    assert pr.header.profiles is not None
+    assert set(pr.header.profiles) == set(profiles)
 
 
 def test_validate_namespaces_integrated() -> None:

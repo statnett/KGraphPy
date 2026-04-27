@@ -375,12 +375,12 @@ class CIMProcessor:
 
         if cimxml_format:
             try:
-                profile = self.graph.metadata_header.profile if self.graph.metadata_header else None
+                profiles = self.graph.metadata_header.profiles if self.graph.metadata_header else None
             except ValueError as e:
                 logger.error(f"Unable to retrieve profile. Standard namespaces will be used. Cause: {e}.")
-                profile = None
+                profiles = None
 
-            if profile in PROFILES:
+            if profiles and any(item in PROFILES for item in profiles):
                 cgmes_outlier = True 
     
         validate_and_fix_namespaces_by_cimtype(self.graph, cgmes=cgmes_outlier)

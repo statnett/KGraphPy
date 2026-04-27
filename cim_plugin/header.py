@@ -286,15 +286,15 @@ class CIMMetadataHeader:
             raise ValueError("Multiple header types found in header.")
 
     @property
-    def profile(self) -> Optional[str]:
-        """The profile of the header, if found."""
-        return self.collect_profile()
+    def profiles(self) -> Optional[list[str]]:
+        """The profiles of the header, if found."""
+        return self.collect_profiles()
 
-    def collect_profile(self) -> Optional[str]:
-        """Collect the profile of a graph from the triple with predicate in self.profile_predicates.
+    def collect_profiles(self) -> Optional[list[str]]:
+        """Collect the profiles of a graph from the triples with predicate in self.profile_predicates.
 
         Returns:
-            str: The profile or None if no profile is found.
+            list: The profiles or None if no profiles are found.
         """
 
         profiles: list = []
@@ -305,10 +305,11 @@ class CIMMetadataHeader:
                 elif isinstance(o, URIRef):
                     profiles.append(str(o))
 
-        if len(profiles) > 1:
-            raise ValueError(f"Multiple profiles found in header: {profiles}")
+        # if len(profiles) > 1:
+        #     raise ValueError(f"Multiple profiles found in header: {profiles}")
         
-        return profiles[0] if profiles else None
+        return profiles if profiles else None
+        # return profiles[0] if profiles else None
 
 
     def set_subject(self, new_subject: URIRef) -> None:
