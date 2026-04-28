@@ -8,3 +8,13 @@ dependencies = [
     "linkml>=1.9.6",
     "rdflib[graphdb]>=7.5.0",
 ]
+
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+markers = [
+    "stress: long-running stress tests"
+]
+addopts = "-m 'not stress' -rP"

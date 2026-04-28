@@ -12,7 +12,7 @@ from cim_plugin.namespaces import MD, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
-from typing import Callable
+from typing import Callable, cast
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -26,16 +26,13 @@ QUALIFIER_MAP = {"underscore": UnderscoreQualifier, "urn": URNQualifier, "namesp
 class CIMXMLSerializer(Serializer):
     """CIMXML RDF graph serializer."""
 
-    # def __init__(self, store: Graph, **kwargs):
-    #     super(CIMXMLSerializer, self).__init__(store)
-
-    #     self.__serialized: Dict[Node, int] = {}
-    #     self._stream = None
+    write: Callable[[str], int] | None = None
+    qualifier_resolver: CIMQualifierResolver | None = None
 
     def __init__(self, store: Graph, **kwargs):
         super().__init__(store)
-        self.write: Optional[Callable[[str], None]] = 
-        self.qualifier_resolver: Optional[CIMQualifierResolver] = None
+        # self.write: Optional[Callable[[str], int]] = None
+        # self.qualifier_resolver: Optional[CIMQualifierResolver] = None
 
     def _init_qualifier_resolver(self, qualifier_name: str|None) -> None:
         """Initialize the qualifier resolver based on the provided qualifier name.
@@ -74,7 +71,6 @@ class CIMXMLSerializer(Serializer):
         # --- Header namespaces ---
         header = getattr(self.store, "metadata_header", None)
         if header is not None:
-            # header_triples = list(header.graph.triples((None, None, None)))
             header_ns = collect_specific_namespaces(
                 header.graph.triples((None, None, None)),
                 header.graph.namespace_manager
@@ -82,7 +78,6 @@ class CIMXMLSerializer(Serializer):
             namespaces.update(header_ns)
 
         # --- Data namespaces ---
-        # data_triples = list(self.store.triples((None, None, None)))
         data_ns = collect_specific_namespaces(
             self.store.triples((None, None, None)),
             self.store.namespace_manager
@@ -122,22 +117,17 @@ class CIMXMLSerializer(Serializer):
         """
         encoding = encoding or self.encoding
         self.write = write = lambda txt: stream.write(txt.encode(encoding, "replace"))
-
-        # self.__stream = stream
+        
         header = self._ensure_header()
         
         qualifier_name = kwargs.pop("qualifier", None)
         self._init_qualifier_resolver(qualifier_name)
-        # encoding = encoding or self.encoding
-        # self.write = write = lambda uni: stream.write(uni.encode(encoding, "replace"))
-
+        
         write(f'<?xml version="1.0" encoding="{self.encoding}"?>\n')
 
         # Write xmlns:prefix="namespace" for all namespaces used
         # Namespaces not used will not be written
         write("<rdf:RDF\n")
-
-        # bindings = self._collect_used_namespaces()
         
         for prefix, namespace in self._collect_used_namespaces():
             if prefix:
@@ -150,12 +140,10 @@ class CIMXMLSerializer(Serializer):
         write("\n")
 
         # Sort by class and write triples by subject
-        # groups = group_subjects_by_type(self.store, skip_subjects=[header.subject])        
         skip_subjects = {header.subject}
         groups = self._build_subject_index(skip_subjects)
 
         nm = self.store.namespace_manager
-        # sorted_types = sorted(groups.keys())
         sorted_types = sorted(groups.keys(), key=lambda t: nm.normalizeUri(str(t)))
 
         for t in sorted_types:
@@ -175,7 +163,7 @@ class CIMXMLSerializer(Serializer):
             depth (int): The size of indentation.
         """
 
-        write = self.write
+        write = cast(Callable[[str], int], self.write)
         nm = self.store.namespace_manager
         indent = "  " * depth
 
@@ -187,6 +175,7 @@ class CIMXMLSerializer(Serializer):
             subject_type = URIRef("MALFORMED")
 
         # --- Temporarily override qualifier strategy ---
+        assert self.qualifier_resolver is not None  # For type checker
         original_strategy = self.qualifier_resolver.output
         self.qualifier_resolver.output = URNQualifier()
 
@@ -221,15 +210,11 @@ class CIMXMLSerializer(Serializer):
             subject (Node): The subject to be written.
             depth (int): Indentation size.
         """
-        # if subject in self.__serialized:
-            # return
-        
-        # self.__serialized[subject] = 1
-
         nm = self.store.namespace_manager
-        write = self.write
+        write = cast(Callable[[str], int], self.write)
         indent = "  " * depth
-        header = self.store.metadata_header # pyright: ignore[reportAttributeAccessIssue]
+        
+        header = self._ensure_header()
         
         # Dealing with malformed subjects
         if not isinstance(subject, URIRef):
@@ -254,6 +239,7 @@ class CIMXMLSerializer(Serializer):
         # Shape and write the subject line
         rdf_keyword = find_rdf_id_or_about(header.profiles, str(subject_type))
 
+        assert self.qualifier_resolver is not None  # For type checker
         if rdf_keyword == "ID":
             raw_uri = self.qualifier_resolver.convert_to_special_qualifier(subject)
         else:
@@ -284,7 +270,7 @@ class CIMXMLSerializer(Serializer):
             obj (Node): The object to be written.
             depth (int): Indentation size.
         """
-        write = self.write
+        write = cast(Callable[[str], int], self.write)
         indent = "  " * depth
 
         # Shape the predicate name to right format and deal with malformed predicates
@@ -301,6 +287,7 @@ class CIMXMLSerializer(Serializer):
 
         elif isinstance(obj, URIRef):
             if use_qualifier:
+                assert self.qualifier_resolver is not None  # For type checker
                 relativized_obj = quoteattr(self.qualifier_resolver.convert_to_default_qualifier(obj))
             else:
                 relativized_obj = quoteattr(str(obj))
@@ -324,7 +311,7 @@ class CIMXMLSerializer(Serializer):
             message (str): The message to write in the triple and send to log.
             depth (int): Size of indentation.
         """
-        write = self.write
+        write = cast(Callable[[str], int], self.write)
         indent = "  " * depth
 
         logger.error(message)

@@ -157,8 +157,7 @@ def test_collect_used_namespaces_urnsignored(make_cimgraph: CIMGraph) -> None:
 def test_collect_used_namespaces_headertriples(make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
 
-    # Add header triples
-    assert g.metadata_header    # Without this pylance reacts to add_triple
+    assert g.metadata_header
     g.metadata_header.graph.bind("foo", "http://foo.org/ns#")
     g.metadata_header.add_triple(
         URIRef("http://foo.org/ns#headerPredicate"),
@@ -175,7 +174,6 @@ def test_collect_used_namespaces_headertriples(make_cimgraph: CIMGraph) -> None:
 def test_collect_used_namespaces_sortedandunique(make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
 
-    # Add multiple triples using same namespace
     g.add((URIRef("http://example.com/A"), URIRef("http://example.com/p"), URIRef("http://example.com/o")))
     g.add((URIRef("http://example.com/B"), URIRef("http://example.com/p2"), URIRef("http://example.com/o2")))
 
@@ -218,7 +216,6 @@ def test_collect_used_namespaces_literals(make_cimgraph: CIMGraph) -> None:
 def test_collect_used_namespaces_nousednamespaces():
     g = CIMGraph()
 
-    # Add triples with URIs that look like namespaces
     g.add((
         URIRef("http://example.com/A"),
         URIRef("http://example.com/p"),
@@ -229,7 +226,7 @@ def test_collect_used_namespaces_nousednamespaces():
     ser = CIMXMLSerializer(g)
     ns_list = dict(ser._collect_used_namespaces())
 
-    assert ns_list == {}
+    assert ns_list == {}    # The namespace was not bound to the namespace manager
 
 
 def test_collect_used_namespaces_overlappingnamespaces() -> None:
@@ -270,9 +267,8 @@ def test_collect_used_namespaces_overlappingnamespacesshortnotused() -> None:
 
 
 def test_collect_used_namespaces_collisions() -> None:
-    # This test just shows that g.bind decides which prefix is kept with namespace collisions.
-    # Should possibly be removed.
-
+    # This test documents that g.bind decides which prefix is kept with namespace collisions.
+    
     g = CIMGraph()
 
     # Three prefixes bound to the same namespace URI in different ways
@@ -298,7 +294,7 @@ def test_collect_used_namespaces_collisions() -> None:
 
 
 def test_collect_used_namespaces_collisionsfromdifferentsources() -> None:
-    # This test shows what this function does with namespace collisions.
+    # Documents namespace collisions where one namespace comes from the graph and another from the metadata header.
     g = CIMGraph()
     g.bind("ex", Namespace("http://example.com/"))
 
@@ -344,7 +340,6 @@ def test_collect_used_namespaces_rebindingnamespace() -> None:
 
 # Unit tests .serialize
 @patch("cim_plugin.cimxml_serializer._subject_sort_key")
-# @patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
 def test_serialize_allcalls(mock_sort: MagicMock) -> None:
     buf = io.BytesIO()
     g = CIMGraph()
@@ -356,7 +351,6 @@ def test_serialize_allcalls(mock_sort: MagicMock) -> None:
     ser._collect_used_namespaces = Mock(return_value=[("ex", "example.com/")])
     ser.write_header = Mock()
     ser._build_subject_index = Mock(return_value={"ex:o": [URIRef("s1"), URIRef("s2")]})
-    # mock_group.return_value = {"ex:o": [URIRef("s1"), URIRef("s2")]}
     mock_sort.side_effect = [(1, "s1"), (0, "s2")]
     ser.subject = Mock()
 
@@ -367,7 +361,6 @@ def test_serialize_allcalls(mock_sort: MagicMock) -> None:
     ser._init_qualifier_resolver.assert_called_once_with("foo")
     ser._collect_used_namespaces.assert_called_once()
     ser.write_header.assert_called_once()
-    # mock_group.assert_called_once()
     assert mock_sort.call_count == 2
     assert ser.subject.call_count == 2
     assert result == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    xmlns:ex="example.com/"\n    >\n\n</rdf:RDF>\n'
@@ -425,7 +418,6 @@ def test_serialize_multipleserializations() -> None:
         pytest.param([URIRef("ex:xeta"), URIRef("zeta"), URIRef("mu")], ["ex:xeta", "mu", "zeta"], id="Three subjects, one with namespace"),
     ],
 )
-# @patch("cim_plugin.cimxml_serializer.group_subjects_by_type")
 def test_serialize_subjectsorting(subjects: list[URIRef], expected: list[str]) -> None:
     buf = io.BytesIO()
     g = CIMGraph()
@@ -437,19 +429,11 @@ def test_serialize_subjectsorting(subjects: list[URIRef], expected: list[str]) -
     def fake_group(*args, **kwargs):
         return {"ex:o": subjects}
 
-    # mock_group.side_effect = fake_group
     ser._build_subject_index = Mock(side_effect=fake_group)
     ser.subject = Mock()
     ser.serialize(buf)
     
     ser.subject.assert_has_calls([call(URIRef(s), depth=1) for s in expected])
-    # out = buf.getvalue().decode()
-    # print(out)
-    # lines = [line.strip() for line in out.splitlines() if "<" in line]
-
-    # # Extract subject IDs
-    # found = [s for s in expected if any(s in line for line in lines)]
-    # assert found == expected
 
 @pytest.mark.parametrize("enc", ["utf-8", "latin-1"])
 def test_serialize_encoding(enc: str) -> None:
@@ -554,20 +538,6 @@ def test_serialize_multiplegroups() -> None:
         call(URIRef(f"urn:uuid:{s4}"), depth=1) # TypeB comes after TypeA 
     ])
 
-    # out = buf.getvalue().decode()
-    # Extract rdf:about values in order 
-    # abouts = [ 
-    #     line.split('"')[1] 
-    #     for line in out.splitlines() 
-    #     if 'rdf:about="#_' in line 
-    # ] 
-    # assert abouts == [ 
-    #     f"#_{s3}", 
-    #     f"#_{s2}", 
-    #     f"#_{s1}", 
-    #     f"#_{s5}", # invalid UUID → sorted last among TypeA 
-    #     f"#_{s4}", # TypeB comes after TypeA 
-    # ]
     
 def test_serialize_streamwritefailure() -> None:
     class BadStream():
@@ -759,14 +729,14 @@ def test_write_header_nomaintype(capture_writer: tuple[list, Callable], caplog: 
 
 
 def test_write_header_noqualifierresolver(capture_writer: tuple[list, Callable]) -> None:
-    # Documents what happends if the qualifier_resolver has not been set
+    # Documents what happens if the qualifier_resolver has not been set
     output, writer = capture_writer
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty(subject=URIRef("s1"))
     ser = CIMXMLSerializer(g)
     ser.write = writer
     
-    with pytest.raises(AttributeError):
+    with pytest.raises(AssertionError):
         ser.write_header(g.metadata_header)
 
 # Unit tests .subject
@@ -817,7 +787,6 @@ def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list]) -> Non
 
     assert "<MALFORMED" in result
     assert f"Invalid rdf:type count for {s}" in result
-    # assert "Multiple rdf:type values" in result
     assert "ClassA" in result
     assert "ClassB" in result
     assert "<ex:p>x</ex:p>" in result
@@ -851,8 +820,7 @@ def test_subject_valid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerial
 )
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
 def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list], qualifier_return: bool) -> None:
-    # If the object is a uuid it needs to be written with the correct qualifier. This function checks that the predicate is called correctly.
-    # Objects that are URIRef but not qualified UUIDs should not be treated with qualifiers.
+    # If the object is a uuid it needs to be written with the correct qualifier. This test checks that the predicate is called correctly.
     ser, output = serializer
     mock_qualified.return_value = qualifier_return
     g = ser.store
@@ -877,8 +845,9 @@ def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLS
 def test_subject_rdfid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     mock_qualified.return_value = False
-    g = ser.store    
-    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://cim-profile.ucaiug.io/grid/Dynamics/2.0")) # pyright: ignore[reportAttributeAccessIssue]
+    g = cast(CIMGraph, ser.store)
+    assert g.metadata_header is not None
+    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://cim-profile.ucaiug.io/grid/Dynamics/2.0"))
     
     g.bind("ex", "http://example.com/")
 
@@ -926,11 +895,7 @@ def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) ->
     
     result = "".join(output)
     assert str.count(result, "<ex:Class ") == 1  # Subject should be serialized only once
-    # output.clear()  # Remove output so the method can be run again, but now the subject is registered
-
-    # ser.subject(s)
-
-    # assert output == []
+    
 
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
 def test_subject_malformedpredicate(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
@@ -1029,7 +994,7 @@ def test_subject_rdftypenoturi(serializer: tuple[CIMXMLSerializer, list]) -> Non
     g.bind("ex", "http://example.com/")
 
     s = URIRef("s123")
-    t = Literal("Not-a-uri")   # Not a uri
+    t = Literal("Not-a-uri")
     p = URIRef("http://example.com/p")
 
     g.add((s, RDF.type, t))
@@ -1073,7 +1038,7 @@ def test_subject_circulartriples(mock_qualifier: MagicMock, serializer: tuple[CI
     g.bind("ex", "http://example.com/")
 
     s = URIRef("s123")
-    t = URIRef("http://example.com/Class")   # Name starts with number
+    t = URIRef("http://example.com/Class")
     p = URIRef("http://example.com/p")
 
     g.add((s, RDF.type, t))
@@ -1082,7 +1047,6 @@ def test_subject_circulartriples(mock_qualifier: MagicMock, serializer: tuple[CI
     ser.subject(s)
 
     result = "".join(output)
-    # .normalizeURI does not write out the whole name.
     assert result == '  <ex:Class rdf:about="s123">\n    <ex:p rdf:resource="s123"/>\n  </ex:Class>\n'
     
 
@@ -1126,7 +1090,7 @@ def test_subject_malformedsubjectcalls(input: Literal|BNode, reachable: set, ser
     ser._write_malformed_subject = Mock()
     header_mock = Mock()
     header_mock.reachable_nodes = reachable
-    ser.store.metadata_header = header_mock # pyright: ignore[reportAttributeAccessIssue]
+    cast(CIMGraph, ser.store).metadata_header = header_mock
     
     subject = input
 
@@ -1332,7 +1296,7 @@ def test_predicate_predicatetypes(predicate: Node, expected: str, log_error: boo
 
 
 def test_predicate_noobject(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
-    # This test documents what happends if object does not exist or is not a URIRef or Literal.
+    # Documents what happens if object does not exist or is not a URIRef or Literal.
     output, writer = capture_writer
     g = Graph()
     pred = URIRef("http://unknown/p")
@@ -1409,8 +1373,8 @@ def test_predicate_resolver_integration(capture_writer: tuple[list, Callable], i
 def test_subject_resolver_integration(capture_writer: tuple[list, Callable], input_uri: str, output_strategy: CIMQualifierStrategy, expected_about: str) -> None:
     output, writer = capture_writer
 
-    g = Graph()
-    g.metadata_header = CIMMetadataHeader.empty()   # pyright: ignore[reportAttributeAccessIssue]
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty()
     g.bind("ex", "http://example.com/")
 
     s = URIRef(input_uri)
@@ -1456,8 +1420,8 @@ def test_subject_and_predicate_resolver_integration_with_default_qualifier(
 ):
     output, writer = capture_writer
 
-    g = Graph()
-    g.metadata_header = CIMMetadataHeader.empty()   # pyright: ignore[reportAttributeAccessIssue]
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty()
     g.bind("ex", "http://example.com/")
 
     s = URIRef(subject_uri)
