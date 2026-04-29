@@ -1,9 +1,12 @@
+from multiprocessing import context
+
 import pytest
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock, patch
 from typing import Any, Callable
 from tests.fixtures import make_schemaview, make_cimgraph
 from cim_plugin.graph import CIMGraph
 from cim_plugin.processor import CIMProcessor
+from cim_plugin.jsonld_utilities import DEFAULT_CONTEXT_LINK
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF, DCAT
 from linkml_runtime import SchemaView
@@ -124,13 +127,85 @@ def test_cimxmlstrategy_qualifier() -> None:
 
 
 # Unit tests JSONLDStrategy
-@pytest.mark.skip(reason="The strategy is not fully implemented and the test is not meaningful in its current state.")
-def test_jsonldstrategy() -> None:
+@pytest.mark.parametrize("input_context", [None, "context.json"])
+@patch("cim_plugin.to_file_strategies.open")
+@patch("cim_plugin.to_file_strategies.reorder_jsonld")
+def test_jsonldstrategy_context(mock_reorder: MagicMock, mock_open: MagicMock, input_context: str|None) -> None:
     processor = Mock()
-    strategy = JSONLDStrategy("out.json")
+    processor.header = Mock()
+    header_subject = "h1"
+    processor.header.subject = header_subject
+    processor.graph.serialize = Mock(return_value="serialized graph")
+    
+    strategy = JSONLDStrategy("out.json", context=input_context)
+    strategy.enrich_datatypes = Mock()
+    
+    strategy.serialize(processor)
 
-    with pytest.raises(NotImplementedError):
-        strategy.serialize(processor)
+    context = input_context or DEFAULT_CONTEXT_LINK
+
+    assert strategy.context == context
+    processor.merge_header.assert_called_once()
+    strategy.enrich_datatypes.assert_called_once_with(processor)
+    processor.graph.serialize.assert_called_once_with(format="json-ld", context=context, auto_compact=True)
+    mock_reorder.assert_called_once_with("serialized graph", priority_subject=header_subject)
+    mock_open.assert_called_once_with("out.json", "w", encoding="utf-8")
+    handle = mock_open.return_value.__enter__.return_value
+    handle.write.assert_called_once_with(mock_reorder.return_value)
+
+
+@patch("cim_plugin.to_file_strategies.open")
+@patch("cim_plugin.to_file_strategies.reorder_jsonld")
+def test_jsonldstrategy_noheader(mock_reorder: MagicMock, mock_open: MagicMock) -> None:
+    processor = Mock()
+    processor.header = None
+    processor.graph.serialize = Mock(return_value="serialized graph")
+    
+    strategy = JSONLDStrategy("out.json")
+    strategy.enrich_datatypes = Mock()
+    
+    strategy.serialize(processor)
+
+    processor.merge_header.assert_not_called()
+    strategy.enrich_datatypes.assert_called_once_with(processor)
+    processor.graph.serialize.assert_called_once_with(format="json-ld", context=DEFAULT_CONTEXT_LINK, auto_compact=True)
+    mock_reorder.assert_called_once_with("serialized graph", priority_subject=None)
+    mock_open.assert_called_once_with("out.json", "w", encoding="utf-8")
+    handle = mock_open.return_value.__enter__.return_value
+    handle.write.assert_called_once_with(mock_reorder.return_value)
+
+@pytest.mark.parametrize(
+    "context, load_return",
+    [
+        pytest.param("http://example.com/context", {"@context": {"some": "context"}}, id="Context as URL"),
+        pytest.param({"@context": {"some": "context"}}, None, id="Context as dict"),
+        pytest.param(1, TypeError, id="Context as invalid type")
+    ]
+)
+@patch("cim_plugin.to_file_strategies.enrich_graph_datatypes")
+@patch("cim_plugin.to_file_strategies.extract_datatype_map")
+@patch("cim_plugin.to_file_strategies.load_json_from_url")
+def test_jsonldstrategy_enrichdatatypes(mock_load: MagicMock, mock_extract: MagicMock, mock_enrich: MagicMock, context: str|dict, load_return: dict|None|Exception) -> None:
+    g = CIMGraph()
+    processor = CIMProcessor(g)
+    mock_load.return_value = load_return
+    mock_extract.return_value = {"some": "dict"}
+
+    strategy = JSONLDStrategy("out.json", context=context)
+    if isinstance(load_return, type) and issubclass(load_return, Exception):
+        with pytest.raises(load_return):
+            strategy.enrich_datatypes(processor)
+    else:
+        strategy.enrich_datatypes(processor)
+
+        if load_return:
+            mock_load.assert_called_once_with(context)
+        else:
+            mock_load.assert_not_called()
+
+        mock_extract.assert_called_once_with({"@context": {"some": "context"}})
+        mock_enrich.assert_called_once_with(g, {"some": "dict"})
+        assert context == strategy.context  # The context has not been modified
 
 
 # Unit tests _select_strategy
@@ -144,6 +219,8 @@ def test_jsonldstrategy() -> None:
         pytest.param("cimxml", {"qualifier": "urn"}, CIMXMLStrategy, False, id="CIMXML, allowed options"),
         pytest.param("cimxml", {"enrich_datatypes": True}, CIMXMLStrategy, True, id="CIMXML, invalid options"),
         pytest.param("jsonld", {}, JSONLDStrategy, False, id="JSON-LD, no options"),
+        pytest.param("jsonld", {"context": "http://example.com/context"}, JSONLDStrategy, False, id="JSON-LD, allowed options"),
+        pytest.param("jsonld", {"enrich_datatypes": True}, JSONLDStrategy, True, id="JSON-LD, invalid options")
     ]
 )
 def test_select_strategy_various(format: str, options: dict[str, Any], expected: SerializationStrategy, error: bool) -> None:

@@ -28,7 +28,11 @@ class TrigStrategy(SerializationStrategy):
         self.enrich_datatypes = enrich_datatypes
 
     def serialize(self, processor: "CIMProcessor"):
-        """Serialize cim graph to trig file."""
+        """Serialize cim graph to trig file.
+        
+        Parameters:
+            processor (CIMProcessor): The CIMProcessor containing the graph to serialize.
+        """
         if self.schema_path:
             processor.set_schema(self.schema_path)
 
@@ -52,29 +56,36 @@ class CIMXMLStrategy(SerializationStrategy):
         self.qualifier = qualifier
 
     def serialize(self, processor: "CIMProcessor"):
-        """Serialize cim graph to CIMXML file."""
+        """Serialize cim graph to CIMXML file.
+        
+        Parameters:
+            processor (CIMProcessor): The CIMProcessor containing the graph to serialize.
+        """
         if not processor.header:
             logger.error("Serializing without an extracted header may create a corrupt CIMXML file.")
 
         processor.graph.serialize(self.file_path, format="cimxml", qualifier=self.qualifier)
 
 class JSONLDStrategy(SerializationStrategy):
-    """Strategy class for sending a cim graph to JSON-LD file.
-    Not implemented.
-    """
+    """Strategy class for sending a cim graph to JSON-LD file."""
 
     def __init__(self, file_path: str|Path, context: Optional[dict|str] = None) -> None:
         self.file_path = file_path
         self.context = context or DEFAULT_CONTEXT_LINK
 
     def serialize(self, processor: "CIMProcessor") -> None:
-        """Serialize cim graph to JSON-LD file."""
+        """Serialize cim graph to JSON-LD file.
+        
+        Parameters:
+            processor (CIMProcessor): The CIMProcessor containing the graph to serialize.
+        """
         if processor.header:
             processor.merge_header()
+            header_subject = processor.header.subject
+        else:
+            header_subject = None
 
         self.enrich_datatypes(processor)
-
-        header_subject = processor.header.subject if processor.header else None
         
         raw_jsonld = processor.graph.serialize(format="json-ld", context=self.context, auto_compact=True)
         reordered_jsonld = reorder_jsonld(raw_jsonld, priority_subject=header_subject)
@@ -82,12 +93,22 @@ class JSONLDStrategy(SerializationStrategy):
         with open(self.file_path, "w", encoding="utf-8") as f:
             f.write(reordered_jsonld)
 
+
     def enrich_datatypes(self, processor: "CIMProcessor") -> None:
-        """Enrich datatypes in the graph based on the context."""
+        """Enrich datatypes in the graph based on the context.
+        
+        Parameters:
+            processor (CIMProcessor): The CIMProcessor containing the graph to enrich.
+
+        Raises:
+            TypeError: If the context is not a string or a dictionary.
+        """
         if isinstance(self.context, str):
             context_data = load_json_from_url(self.context)
-        else:
+        elif isinstance(self.context, dict):
             context_data = self.context
+        else:
+            raise TypeError("Context must be a string or a dictionary.")
 
         datatype_map = extract_datatype_map(context_data)
         enrich_graph_datatypes(processor.graph, datatype_map)
