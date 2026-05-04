@@ -76,35 +76,6 @@ def load_cimxml_graph(file_path: str|Path) -> CIMGraph:
         raise CIMXMLParseError(file_path, e) from e
 
 
-def group_subjects_by_type(graph: Graph, skip_subjects: list[Node]=[]) -> dict[str, list[Node]]:
-    """Group subjects with prediacte rdf:type by object.
-    
-    Parameters:
-        graph (Graph): Target for grouping.
-        skip_subjects (list[Node]): Optional list of subjects to skip grouping.
-
-    Returns:
-        dict[str, list[Node]]: All the objects with lists of subjects belonging to that type.
-    """
-    groups: dict[str, list[Node]] = {}
-
-    nm = graph.namespace_manager
-
-    for s in graph.subjects():
-        if s in skip_subjects:
-            continue
-
-        t = next(graph.objects(s, RDF.type), None)
-        if t is None:
-            t_qname = "ErrorMissingType"
-        else:
-            t_qname = nm.normalizeUri(str(t))
-
-        groups.setdefault(t_qname, []).append(s)
-
-    return groups
-
-
 def load_graphs_from_trig(filepath: str|Path) -> list[CIMProcessor]:
     """Load graphs from trig file into individual CIMProcessor objects.
     

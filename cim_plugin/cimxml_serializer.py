@@ -6,12 +6,13 @@ from rdflib.term import URIRef, Literal, Node, BNode
 from rdflib.namespace import RDF, DCAT
 from xml.sax.saxutils import quoteattr, escape
 import logging
-from typing import IO, Any, Dict, Optional
-from cim_plugin.utilities import group_subjects_by_type, _extract_uuid_from_urn, create_header_attribute
+from typing import IO, Any, Optional
+from cim_plugin.utilities import _extract_uuid_from_urn, create_header_attribute
 from cim_plugin.namespaces import MD, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
+from functools import lru_cache
 from typing import Callable, cast
 
 logger = logging.getLogger('cimxml_logger')
@@ -28,6 +29,8 @@ class CIMXMLSerializer(Serializer):
 
     write: Callable[[str], int] | None = None
     qualifier_resolver: CIMQualifierResolver | None = None
+    _used_namespaces: list[tuple[str, URIRef]] | None = None    # List of prefix, namespaces ordered alphabetically by prefix
+    _namespace_lookup: list[tuple[str, str]] | None = None    # List of namespaces, prefix ordered longest-first by namespace string. Used for lookup when collecting namespaces.
 
     def __init__(self, store: Graph, **kwargs):
         super().__init__(store)
@@ -86,24 +89,36 @@ class CIMXMLSerializer(Serializer):
 
         return sorted(namespaces.items())
 
-    def _build_subject_index(self, skip_subjects: set[URIRef]) -> dict[URIRef, list[URIRef]]:
-        """ Not tested yet.
-        Build rdf:type → [subjects] mapping.
-        Only stores one triple per subject.
-        """
-        subjects_by_type: dict[URIRef, list[URIRef]] = {}
+    def _build_subject_index(self, skip_subjects: set[URIRef]) -> dict[str, set[Node]]:
+        """Build an index of subjects grouped by their rdf:type object, sorted by qname of the type.
 
-        for s, p, o in self.store.triples((None, RDF.type, None)):
+        Subjects with missing or invalid rdf:type are grouped under the key "ErrorMissingType", to prevent loss of data.
+
+        Parameters:
+            skip_subjects (set[URIRef]): A set of subjects to skip when building the index.
+
+        Returns:
+            dict[str, set[Node]]: A dictionary where keys are qnames of rdf:type objects and values are sets of subjects with that rdf:type.
+        """
+        groups: dict[str, set[Node]] = {}
+
+        nm = self.store.namespace_manager
+
+        for s, _, t in self.store.triples((None, RDF.type, None)):
             if s in skip_subjects:
                 continue
-            if not isinstance(s, URIRef):
-                continue
-            if not isinstance(o, URIRef):
-                continue
 
-            subjects_by_type.setdefault(o, []).append(s)
+            t_qname = nm.normalizeUri(str(t)) if isinstance(t, URIRef) else str(t)
+        
+            groups.setdefault(t_qname, set()).add(s)
 
-        return subjects_by_type
+        all_subjects = set(self.store.subjects())
+        typed_subjects = set().union(*groups.values()) if groups else set()
+        missing: set[Node] = all_subjects - typed_subjects - skip_subjects
+        if missing:
+            groups["ErrorMissingType"] = missing
+
+        return groups
 
 
     def serialize(self, stream: IO[bytes], base: Optional[str] = None, encoding: Optional[str] = None, **kwargs: Any) -> None:
@@ -129,7 +144,11 @@ class CIMXMLSerializer(Serializer):
         # Namespaces not used will not be written
         write("<rdf:RDF\n")
         
-        for prefix, namespace in self._collect_used_namespaces():
+        used_namespaces = self._collect_used_namespaces()
+        self._used_namespaces = used_namespaces
+        self._namespace_lookup = sorted([(str(ns), prefix) for prefix, ns in used_namespaces], key=lambda item: len(item[0]), reverse=True)
+
+        for prefix, namespace in used_namespaces:
             if prefix:
                 write(f'    xmlns:{prefix}="{namespace}"\n')
             else:
@@ -273,12 +292,17 @@ class CIMXMLSerializer(Serializer):
         write = cast(Callable[[str], int], self.write)
         indent = "  " * depth
 
+        qname = self._resolve_qname(str(predicate))
         # Shape the predicate name to right format and deal with malformed predicates
-        try:
-            qname = self.store.namespace_manager.qname_strict(str(predicate))
-        except (KeyError, ValueError):
-            logger.error(f"Predicate {str(predicate)} not a valid predicate.")
-            qname = f"MALFORMED_{str(predicate)}"
+        # try:
+        #     prefix, namespace, local = self.store.namespace_manager.compute_qname(str(predicate), generate=False)
+        #     qname = f"{prefix}:{local}"
+            # qname = self.store.namespace_manager.qname(str(predicate))
+            # qname = self.store.namespace_manager.qname_strict(str(predicate))
+        # except (KeyError, ValueError):
+            # logger.error(f"Predicate {str(predicate)} not a valid predicate.")
+            # qname = str(predicate)
+            # qname = f"MALFORMED_{str(predicate)}"
 
         # Write predicate and object
         if isinstance(obj, Literal):
@@ -327,6 +351,25 @@ class CIMXMLSerializer(Serializer):
         # Close MALFORMED subject
         write(f"{indent}</MALFORMED>\n")
 
+    @lru_cache(maxsize=4096)
+    def _resolve_qname(self, uri: str) -> str:
+        """Resolve a URI to a QName using the collected namespaces.
+
+        Parameters:
+            uri (str): The URI to resolve.
+
+        Returns:
+            str: The resolved QName, or the original URI if no namespace matches.
+
+        Not tested yet.
+        """
+        if self._namespace_lookup is not None:
+            for ns_str, prefix in self._namespace_lookup:
+                if uri.startswith(ns_str):
+                    local_part = uri[len(ns_str):]
+                    return f"{prefix}:{local_part}" if prefix else uri
+        return uri
+    
 
 def _subject_sort_key(uri: Node) -> tuple[int, str]:
     """Create sort key for subject nodes.

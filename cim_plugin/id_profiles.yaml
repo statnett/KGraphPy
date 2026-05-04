@@ -7,13 +7,13 @@ prefixes:
 
 profiles:
   # CGMES 3.0 (IEC 61970-600-2:2021)
-  "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0": &coreequipment_eu_3_0 []
   "http://iec.ch/TC57/ns/CIM/DiagramLayout-EU/3.0": []
   "http://iec.ch/TC57/ns/CIM/Dynamics-EU/1.0":
     - cim:EnergyConsumer
   "http://iec.ch/TC57/ns/CIM/EquipmentBoundary-EU/3.0": []
   "http://iec.ch/TC57/ns/CIM/GeographicalLocation-EU/3.0": []
-  "http://iec.ch/TC57/ns/CIM/Operation-EU/3.0": []
+  "http://iec.ch/TC57/ns/CIM/Operation-EU/3.0": &operation_eu_3_0 []
   "http://iec.ch/TC57/ns/CIM/ShortCircuit/4.0": &shortcircuit_4_0 
     - cim:ACLineSegment
     - cim:AsynchronousMachine
@@ -106,3 +106,8 @@ profiles:
   "https://ap-voc.cim4.eu/GridDisturbance/1.1": *griddisturbance_1_1
   "https://ap-voc.cim4.eu/RemedialAction/2.3": *remedialaction_2_3
   "https://ap-voc.cim4.eu/RemedialActionSchedule/2.3": *remedialactionschedule_2_3
+
+  # Wrongly named profiles (note the "European" instead of "EU"):
+  "http://iec.ch/TC57/61970-600/CoreEquipment-European/3/0": *coreequipment_eu_3_0
+  "http://iec.ch/TC57/61970-600/ShortCircuit-European/3/0": *shortcircuit_4_0  # Is this correct? Is 3.0 the same as 4.0?
+  "http://iec.ch/TC57/61970-600/Operation-European/3/0": *operation_eu_3_0
