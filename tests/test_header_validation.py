@@ -1088,7 +1088,7 @@ def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_dateti
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
     mock_check_rdfgraph.assert_not_called()
-    assert "Validation for MD.FullModel header is not implemented yet. No validation performed." in caplog.text
+    assert "Validation for header type ['http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel'] is not implemented." in caplog.text
 
 
 @patch("cim_plugin.header_validation._check_trig_rdfg_graph")
@@ -1098,21 +1098,21 @@ def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_dateti
 @patch("cim_plugin.header_validation._check_dcterms_issued_count")
 @patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
 @patch("cim_plugin.header_validation._remove_invalid_triples")
-def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-    # Header should never have two header_type triples.
+def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_trig: MagicMock, mock_fix_period_cimxml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, MD.FullModel)
     header.add_triple(RDF.type, DCAT.Dataset)
-    with pytest.raises(ValueError, match="Multiple header types found in header."):
-        validate_header(header=header, format="cimxml")
 
-    mock_remove.assert_not_called()
-    mock_fix_datetime.assert_not_called()
-    mock_check_issued.assert_not_called()
-    mock_fix_period_cimxml.assert_not_called()
+    validate_header(header=header, format="cimxml")
+
+    mock_remove.assert_called_once_with(header.graph, predicates=[DCAT.distribution, JSONLD.base], obj=DCAT.Distribution)
+    mock_fix_datetime.assert_called_once_with(header.graph)
+    mock_check_issued.assert_called_once_with(header.graph, URIRef("id1"))
+    mock_fix_period_cimxml.assert_called_once_with(header.graph, URIRef("id1"))
     mock_fix_period_trig.assert_not_called()
-    mock_remove_rdfgraph.assert_not_called()
+    mock_remove_rdfgraph.assert_called_once_with(header.graph)
     mock_check_rdfgraph.assert_not_called()
+    assert "Multiple header types found in header:" in caplog.text # Carried over from header.header_type
 
 
 @patch("cim_plugin.header_validation._check_trig_rdfg_graph")
@@ -1134,7 +1134,7 @@ def test_validate_header_unknownheader(mock_remove: MagicMock, mock_fix_datetime
     mock_fix_period_trig.assert_not_called()
     mock_remove_rdfgraph.assert_not_called()
     mock_check_rdfgraph.assert_not_called()
-    assert "Unknown header type: www.custom.org/header. No validation performed." in caplog.text
+    assert "Validation for header type ['www.custom.org/header'] is not implemented." in caplog.text
 
 
 @pytest.mark.parametrize("header", [None, CIMMetadataHeader.empty(URIRef("id1"))])

@@ -1,4 +1,4 @@
-from typing import Callable, Type, cast
+from typing import Callable, Type, cast, Any
 import pytest
 from unittest.mock import MagicMock, call, patch, Mock
 import uuid
@@ -286,7 +286,6 @@ def test_collect_used_namespaces_collisions() -> None:
 
     ser = CIMXMLSerializer(g)
     ns_list = dict(ser._collect_used_namespaces())
-    print(ns_list)
 
     assert len(ns_list) == 1    # Only one prefix should survive
     assert "ex" in ns_list
@@ -531,7 +530,7 @@ def test_serialize_nonamespaces() -> None:
     ser.serialize(buf)
     out = buf.getvalue().decode()
     # Header is malformed because it lacks the rdf:type, which is excluded to keep it from being collected in the namespaces
-    assert out == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    >\n  <<MALFORMED> rdf:about="urn:uuid:h1"/>\n\n</rdf:RDF>\n'
+    assert out == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    >\n  <dcat:Dataset rdf:about="urn:uuid:h1"/>\n\n</rdf:RDF>\n'
 
 
 def test_serialize_namespacewithnoprefix() -> None:
@@ -693,18 +692,18 @@ def test_write_header_predicatesorting(capture_writer: tuple[list, Callable]) ->
     ser.write_header(header)
 
     result = "".join(output)
-    print(result)
+    
     assert result == '  <dcat:Dataset rdf:about="urn:uuid:s1">\n    <ex:a rdf:resource="o"/>\n    <ex:p>o</ex:p>\n  </dcat:Dataset>\n'
     assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
 
 
-def test_write_header_rdftypehandling(capture_writer: tuple[list, Callable]) -> None:
+def test_write_header_multiplerdftypes(capture_writer: tuple[list, Callable]) -> None:
     output, writer = capture_writer
     g = CIMGraph()
     g.bind("ex", "http://example.com/")
     header = CIMMetadataHeader.empty(subject=URIRef("s1"))
-    header.add_triple(RDF.type, DCAT.Dataset)   # The first rdf.type in metadata_object is set as main_type
-    header.add_triple(RDF.type, MD.FullModel)   # The next rdf.type is treated as any other triple
+    header.add_triple(RDF.type, DCAT_EXT.Dataset)   # dcat:Dataset is prioritized as header type.
+    header.add_triple(RDF.type, MD.FullModel)   # Other rdf.type triples are treated as any other triple
     header.add_triple(RDF.type, URIRef("o"))
     g.metadata_header = header
     ser = CIMXMLSerializer(g)
@@ -716,8 +715,31 @@ def test_write_header_rdftypehandling(capture_writer: tuple[list, Callable]) -> 
 
     result = "".join(output)
     
+    assert '<dcat:Dataset rdf:about="urn:uuid:s1">' in result
     assert '<rdf:type rdf:resource="http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel"/>' in result
     assert type(ser.qualifier_resolver.output) == UnderscoreQualifier
+
+
+def test_write_header_multiplerdftypesnodcatdataset(capture_writer: tuple[list, Callable]) -> None:
+    # If there are multiple rdf:type triples in the header, but none of them is dcat:Dataset, the first is used as header type
+    output, writer = capture_writer
+    g = CIMGraph()
+    g.bind("ex", "http://example.com/")
+    g.bind("md", MD)
+    header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    header.graph.bind("md", MD)
+    header.add_triple(RDF.type, MD.FullModel)
+    header.add_triple(RDF.type, URIRef("o"))
+    g.metadata_header = header
+    ser = CIMXMLSerializer(g)
+    ser._namespace_lookup = [("http://example.com/", "ex"), ("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "rdf")]
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser.write_header(header)
+
+    assert output[0] == '  <md:FullModel rdf:about="urn:uuid:s1"'
+    assert output[2] == '    <rdf:type rdf:resource="o"/>\n'
 
 
 def test_write_header_predicatecalls(capture_writer: tuple[list, Callable]) -> None:
@@ -774,14 +796,16 @@ def test_write_header_nomaintype(capture_writer: tuple[list, Callable], caplog: 
     output, writer = capture_writer
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty(subject=URIRef("s1"))
+    g.metadata_header.add_triple(URIRef("http://example.com/p"), Literal("o"))
     ser = CIMXMLSerializer(g)
     ser.qualifier_resolver = CIMQualifierResolver(NamespaceQualifier())
     ser.write = writer
     
     ser.write_header(g.metadata_header)
-    result = "".join(output)
-    assert "MALFORMED" in result
-    assert "Header type missing:" in caplog.text
+
+    assert output[0] == '  <dcat:Dataset rdf:about="urn:uuid:s1"'
+    assert output[2] == '    <http://example.com/p>o</http://example.com/p>\n'
+    assert "Header type missing. dcat:Dataset used as default." in caplog.text
 
 
 def test_write_header_noqualifierresolver(capture_writer: tuple[list, Callable]) -> None:
@@ -798,37 +822,37 @@ def test_write_header_noqualifierresolver(capture_writer: tuple[list, Callable])
 # Unit tests .subject
 def test_subject_nonuriref(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    ser.store.bind("ex", "http://example.com/")
     subject = Literal("not-a-uri")
+    ser.store.add((subject, RDF.type, URIRef("http://example.com/TypeA")))
 
     ser.subject(subject)
+    print(output)
+    assert output[0] == '  <ex:TypeA rdf:about="not-a-uri">\n'  # Non-uriref subjects gets written out as string
+    # assert "Subject is not a URIRef: not-a-uri" in caplog.text # If logging is uncommented
 
-    result = "".join(output)
-
-    assert "<MALFORMED" in result
-    assert "Subject is not a URIRef" in result
-    assert "</MALFORMED>" in result
-
-
-def test_subject_missingtype(serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about")
+def test_subject_missingtype(mock_find: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
-
-    s = URIRef("http://example.com/s")
+    s = URIRef("s1")
     g.add((s, URIRef("http://example.com/p"), Literal("x")))
+    ser._write_untyped_subject = Mock()
 
     ser.subject(s)
 
-    result = "".join(output)
+    ser._write_untyped_subject.assert_called_once_with(s, 1)
+    mock_find.assert_not_called()
+    # assert "No rdf:type triple detected for s1." in caplog.text # If logging is uncommented
 
-    assert "<MALFORMED" in result
-    assert f"Invalid rdf:type count for {s}" in result
-
-
-def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list], caplog: pytest.LogCaptureFixture) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about", return_value="about")
+def test_subject_multipletypes(mock_find: MagicMock, mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
+    ser._write_untyped_subject = Mock()
+    ser.predicate = Mock()
     g = ser.store
     g.bind("ex", "http://example.com/")
-    ser._namespace_lookup = [("http://example.com/", "ex")]
     s = URIRef("http://example.com/s")
     t1 = URIRef("http://example.com/ClassA")
     t2 = URIRef("http://example.com/ClassB")
@@ -839,23 +863,24 @@ def test_subject_multipletypes(serializer: tuple[CIMXMLSerializer, list], caplog
 
     ser.subject(s)
 
-    result = "".join(output)
+    ser._write_untyped_subject.assert_not_called()
+    mock_find.assert_called_once_with(None, "http://example.com/ClassA")  # First rdf:type triple is picked as subject type
+    predicate_calls = [
+        call(URIRef("http://example.com/p"), Literal("x"), 2, use_qualifier=False),
+        call(RDF.type, URIRef("http://example.com/ClassB"), 2, use_qualifier=False) # Other rdf:type triples are treated as normal triples
+    ]
+    ser.predicate.assert_has_calls(predicate_calls, any_order=True)
+    # assert "Multiple rdf:type triples detected for http://example.com/s" in caplog.text # If logging is uncommented
 
-    assert "<MALFORMED" in result
-    assert f"Invalid rdf:type count for {s}" in result
-    assert "ClassA" in result
-    assert "ClassB" in result
-    assert "<ex:p>x</ex:p>" in result
-    assert "Invalid rdf:type count for http://example.com/s" in caplog.text
-
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_valid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about", return_value="about")
+def test_subject_valid(mock_find: MagicMock, mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
-    mock_qualified.return_value = False
+    ser._write_untyped_subject = Mock()
+    ser.predicate = Mock()
     g = ser.store
 
     g.bind("ex", "http://example.com/")
-    ser._namespace_lookup = [("http://example.com/", "ex")]
 
     s = URIRef("s123")
     t = URIRef("http://example.com/Class")
@@ -866,19 +891,19 @@ def test_subject_valid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerial
 
     ser.subject(s)
 
-    result = "".join(output)
-
-    assert '<ex:Class rdf:about="s123"' in result
-    assert "<ex:p>value</ex:p>" in result
-    assert "</ex:Class>" in result
+    ser._write_untyped_subject.assert_not_called()
+    mock_find.assert_called_once_with(None, "http://example.com/Class")
+    ser.predicate.assert_called_once_with(p, Literal("value"), 2, use_qualifier=False)
+    
+    assert output[0] == '  <ex:Class rdf:about="s123">\n' # The rdf:type triple is written first
 
 
 @pytest.mark.parametrize("qualifier_return", [True, False])
 @patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list], qualifier_return: bool) -> None:
+def test_subject_objectuuid(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list], qualifier_return: bool) -> None:
     # If the object is a uuid it needs to be written with the correct qualifier. This test checks that the predicate is called correctly.
     ser, output = serializer
-    mock_qualified.return_value = qualifier_return
+    mock_uuid.return_value = qualifier_return
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -893,18 +918,19 @@ def test_subject_objectuuid(mock_qualified: MagicMock, serializer: tuple[CIMXMLS
 
     ser.subject(s)
 
-    mock_qualified.assert_called_once_with(ser.qualifier_resolver, Literal("value"))
+    mock_uuid.assert_called_once_with(ser.qualifier_resolver, Literal("value"))
     ser.predicate.assert_called_once_with(p, Literal("value"), 2, use_qualifier=qualifier_return)
 
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_rdfid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
+@pytest.mark.parametrize("find_return", ["ID", "about", None])
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about")
+def test_subject_rdfid(mock_find: MagicMock, mock_uuid: MagicMock, find_return: str, serializer: tuple[CIMXMLSerializer, list]) -> None:
+    # The return of find_rdf_id_or_about desides how the rdf:type triple is written
     ser, output = serializer
-    mock_qualified.return_value = False
-    g = cast(CIMGraph, ser.store)
-    assert g.metadata_header is not None
-    g.metadata_header.add_triple(DCTERMS.conformsTo, URIRef("http://cim-profile.ucaiug.io/grid/Dynamics/2.0"))
-    
+    ser.predicate = Mock()
+    mock_find.return_value = find_return
+    g = ser.store
     g.bind("ex", "http://example.com/")
     ser._namespace_lookup = [("http://example.com/", "ex")]
 
@@ -917,13 +943,21 @@ def test_subject_rdfid(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerial
 
     ser.subject(s)
 
-    result = "".join(output)
+    mock_find.assert_called_once_with(None, "http://example.com/Class")
+    mock_uuid.assert_called_once_with(ser.qualifier_resolver, Literal("value"))
+    ser.predicate.assert_called_once_with(p, Literal("value"), 2, use_qualifier=False)
+    
+    assert output[0] == f'  <ex:Class rdf:{find_return}="s123">\n'
+    assert ser.qualifier_resolver
+    assert isinstance(ser.qualifier_resolver, Mock) # To silence pylance
 
-    assert '<ex:Class rdf:ID="s123"' in result
-    assert "<ex:p>value</ex:p>" in result
-    assert "</ex:Class>" in result
-
-
+    if find_return == "ID":
+        ser.qualifier_resolver.convert_to_special_qualifier.assert_called_once_with(URIRef("s123"))
+        ser.qualifier_resolver.convert_to_default_qualifier.assert_not_called()
+    if find_return == "about" or find_return is None:
+        ser.qualifier_resolver.convert_to_default_qualifier.assert_called_once_with(URIRef("s123"))
+        ser.qualifier_resolver.convert_to_special_qualifier.assert_not_called()
+    
 def test_subject_onlyrdftype(serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
@@ -954,53 +988,30 @@ def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) ->
     assert str.count(result, "<ex:Class ") == 1  # Subject should be serialized only once
     
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_malformedpredicate(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+def test_subject_malformedpredicateandobject(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
-    mock_qualified.return_value = False
+    ser.predicate = Mock()
     g = ser.store
 
     g.bind("ex", "http://example.com/")
 
     s = URIRef("http://example.com/s")
     t = URIRef("http://example.com/Class")
+    bn = BNode("b")
 
     g.add((s, RDF.type, t))
-    g.add((s, Literal("not-a-uri"), Literal("x")))  # Not a proper predicate
+    g.add((s, Literal("not-a-uri"), bn))
 
     ser.subject(s)
+    # Predicates and objects are passed on to .predicate whether they are valid or not
+    ser.predicate.assert_called_once_with(Literal("not-a-uri"), bn, 2, use_qualifier=False)
 
-    result = "".join(output)
 
-    assert "<not-a-uri>x</not-a-uri>\n" in result # Predicate is written as if the literal is a full uri.
-
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_malformedobject(mock_qualified, serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+def test_subject_predicatesorting(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
-    mock_qualified.return_value = False
-    g = ser.store
-
-    g.bind("ex", "http://example.com/")
-    ser._namespace_lookup = [("http://example.com/", "ex")]
-
-    s = URIRef("s123")
-    t = URIRef("http://example.com/Class")
-    p = URIRef("http://example.com/p")
-
-    g.add((s, RDF.type, t))
-    g.add((s, p, BNode("value")))
-
-    ser.subject(s)
-
-    result = "".join(output)
-    assert '<ex:Class rdf:about="s123"' in result
-    assert "<ex:p>MALFORMED_value</ex:p>" in result
-    assert "</ex:Class>" in result
-
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_predicatesorting(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
-    ser, output = serializer
-    mock_qualified.return_value = False
+    ser.predicate = Mock()
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -1019,81 +1030,51 @@ def test_subject_predicatesorting(mock_qualified: MagicMock, serializer: tuple[C
 
     ser.subject(s)
 
-    result = "".join(output)
-
-    assert result == '  <ex:Class rdf:about="s123">\n    <ex:a_d>o3</ex:a_d>\n    <ex:ad>o</ex:ad>\n    <ex:p>value</ex:p>\n    <foo:ad>o2</foo:ad>\n  </ex:Class>\n'
-
-
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_rdftypewithoutprefix(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
-    ser, output = serializer
-    mock_qualified.return_value = False
-    g = ser.store
-
-    g.bind("ex", "http://example.com/")
-    ser._namespace_lookup = [("http://example.com/", "ex")]
-
-    s = URIRef("s123")
-    t = URIRef("http://unknown.com/Class")   # No prefix registered
-    p = URIRef("http://example.com/p")
-
-    g.add((s, RDF.type, t))
-    g.add((s, p, Literal("value")))
-
-    ser.subject(s)
-
-    result = "".join(output)
-    # .qname_strict adds <> around the type.
-    assert result == '  <<http://unknown.com/Class> rdf:about="s123">\n    <ex:p>value</ex:p>\n  </<http://unknown.com/Class>>\n'
-
-
-def test_subject_rdftypenoturi(serializer: tuple[CIMXMLSerializer, list]) -> None:
-    ser, output = serializer
-    g = ser.store
-
-    g.bind("ex", "http://example.com/")
-    ser._namespace_lookup = [("http://example.com/", "ex"), ("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "rdf")]
-    s = URIRef("s123")
-    t = Literal("Not-a-uri")
-    p = URIRef("http://example.com/p")
-
-    g.add((s, RDF.type, t))
-    g.add((s, p, Literal("value")))
-
-    ser.subject(s)
-
-    result = "".join(output)
-    print(result)
-    assert result == '  <MALFORMED rdf:about="s123">\n    <message>The rdf:type object is not a uri: Not-a-uri</message>\n    <rdf:type>Not-a-uri</rdf:type>\n    <ex:p>value</ex:p>\n  </MALFORMED>\n'
-
-
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_rdftypemalformed(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
-    ser, output = serializer
-    mock_qualified.return_value = False
-    g = ser.store
-
-    g.bind("ex", "http://example.com/")
-    ser._namespace_lookup = [("http://example.com/", "ex")]
-
-    s = URIRef("s123")
-    t = URIRef("http://example.com/1Class")   # Name starts with number
-    p = URIRef("http://example.com/p")
-
-    g.add((s, RDF.type, t))
-    g.add((s, p, Literal("value")))
-
-    ser.subject(s)
-
-    result = "".join(output)
+    predicate_calls = [
+        call(URIRef("http://example.com/a_d"), Literal("o3"), 2, use_qualifier=False),
+        call(URIRef("http://example.com/ad"), Literal("o"), 2, use_qualifier=False),
+        call(URIRef("http://example.com/p"), Literal("value"), 2, use_qualifier=False),
+        call(URIRef("http://bar.com/ad"), Literal("o2"), 2, use_qualifier=False)
+    ]
+    ser.predicate.assert_has_calls(predicate_calls, any_order=False) # Triples sent to .predicate in correct order
     
-    assert result == '  <ex:1Class rdf:about="s123">\n    <ex:p>value</ex:p>\n  </ex:1Class>\n'
 
-
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_circulartriples(mock_qualifier: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
+bn = BNode("b")    # Creating a shared bnode for test below
+@pytest.mark.parametrize(
+    "pred, pred_output",
+    [
+        pytest.param(URIRef("http://unknown.com/Class"), "<http://unknown.com/Class>", id="Unknown namespace"),
+        pytest.param(Literal("Not-a-uri"), "<Not-a-uri>", id="Literal type rdf:type"),
+        pytest.param(URIRef("http://example.com/1Class"), "ex:1Class", id="Name starting with number"),
+        pytest.param(bn, "<b>", id="BNode type rdf:type")
+    ]
+)
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+def test_subject_predicateedgecases(mock_uuid: MagicMock, pred: Any, pred_output: str, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
-    mock_qualifier.return_value = False
+    ser.predicate = Mock()
+    g = ser.store
+
+    g.bind("ex", "http://example.com/")
+    ser._namespace_lookup = [("http://example.com/", "ex")]
+
+    s = URIRef("s123")
+    t = pred   # No prefix registered
+    p = URIRef("http://example.com/p")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, Literal("value")))
+
+    ser.subject(s)
+
+    # .normalizeUri adds <> around the type.
+    assert output[0] == f'  <{pred_output} rdf:about="s123">\n'
+    ser.predicate.assert_called_once_with(p, Literal("value"), 2, use_qualifier=False)
+    
+
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+def test_subject_circulartriples(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
+    ser, output = serializer
     g = ser.store
 
     g.bind("ex", "http://example.com/")
@@ -1112,72 +1093,36 @@ def test_subject_circulartriples(mock_qualifier: MagicMock, serializer: tuple[CI
     assert result == '  <ex:Class rdf:about="s123">\n    <ex:p rdf:resource="s123"/>\n  </ex:Class>\n'
     
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
-def test_subject_predicatecalls(mock_qualified: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
-    ser, output = serializer
-    mock_qualified.side_effect = [False, False]
-    g = ser.store
-
-    s = URIRef("http://example.com/s")
-    t = URIRef("http://example.com/Class")
-    p1 = URIRef("http://example.com/p1")
-    p2 = URIRef("http://example.com/p2")
-
-    g.add((s, RDF.type, t))
-    g.add((s, p1, Literal("x")))
-    g.add((s, p2, Literal("y")))
-
-    ser.predicate = Mock()
-
-    ser.subject(s)
-
-    qual_calls = [call(ser.qualifier_resolver, Literal("x")), call(ser.qualifier_resolver, Literal("y"))]
-    pred_calls = [call(p1, Literal("x"), 2, use_qualifier=False), call(p2, Literal("y"), 2, use_qualifier=False)]
-    mock_qualified.assert_has_calls(qual_calls)
-    ser.predicate.assert_has_calls(pred_calls)
-
-
 b = BNode("bad")    # Creating a shared bnode for test below
-
 @pytest.mark.parametrize(
-        "input, reachable",
+        "subject, reachable",
         [
-            pytest.param(Literal("bad"), set(), id="Literal subject"),
-            pytest.param(BNode("bad"), set(), id="BNode not reachable"),
+            pytest.param(b, set(), id="BNode not reachable"),
             pytest.param(b, {b}, id="BNode reachable"),
         ]
 )
-def test_subject_malformedsubjectcalls(input: Literal|BNode, reachable: set, serializer: tuple[CIMXMLSerializer, list]) -> None:
+@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about", return_value="about")
+def test_subject_bnodesubjects(mock_find: MagicMock, mock_uuid: MagicMock, subject: Literal|BNode, reachable: set, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
-    ser._write_malformed_subject = Mock()
+    ser.predicate = Mock()
     header_mock = Mock()
     header_mock.reachable_nodes = reachable
-    cast(CIMGraph, ser.store).metadata_header = header_mock
-    
-    subject = input
+    g = cast(CIMGraph, ser.store)
+    g.metadata_header = header_mock
+    g.bind("ex", "http://example.com/")
+    g.add((subject, RDF.type, URIRef("http://example.com/Class")))
+    g.add((subject, URIRef("http://example.com/p"), Literal("value")))
 
     ser.subject(subject)
 
-    if len(reachable) == 0:
-        ser._write_malformed_subject.assert_called_once()
-    else:
-        ser._write_malformed_subject.assert_not_called()
-
-
-def test_subject_multipletypesmalformedcalls(serializer: tuple[CIMXMLSerializer, list]) -> None:
-    # Checking that _write_malformed_subject is called only once when there are multiple rdf:type values.
-    ser, output = serializer
-    g = ser.store
-
-    s = URIRef("http://example.com/s")
-    g.add((s, RDF.type, URIRef("http://example.com/A")))
-    g.add((s, RDF.type, URIRef("http://example.com/B")))
-
-    ser._write_malformed_subject = Mock()
-
-    ser.subject(s)
-
-    ser._write_malformed_subject.assert_called_once()
+    if len(reachable) > 0:   # If the bnode is in the header reachable nodes it is handled by the header writer
+        mock_find.assert_not_called()
+        ser.predicate.assert_not_called()
+    else: # If the bnode is not in the header reachable nodes it is treated as a regular subject
+        mock_find.assert_called_once()
+        assert output[0] == '  <ex:Class rdf:about="bad">\n'
+        ser.predicate.assert_called_once_with(URIRef("http://example.com/p"), Literal("value"), 2, use_qualifier=False)
 
 
 # Unit tests .predicate
@@ -1345,7 +1290,7 @@ def test_predicate_indentation(depth: int, spaces: str, capture_writer: tuple[li
     pytest.param(Literal("p"), "p", id="Literal"), # New changes
     pytest.param(BNode("p"), "p", id="BNode") # New changes
 ])
-def test_predicate_predicatetypes(predicate: Node, expected: str, capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+def test_predicate_predicatetypes(predicate: Node, expected: str, capture_writer: tuple[list, Callable]) -> None:
     output, writer = capture_writer
     g = Graph()
     g.bind("ex", "http://example.com/")
@@ -1367,7 +1312,7 @@ def test_predicate_predicatetypes(predicate: Node, expected: str, capture_writer
     assert expected in result
 
 
-def test_predicate_noobject(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+def test_predicate_noobject(capture_writer: tuple[list, Callable]) -> None:
     # Documents what happens if object does not exist or is not a URIRef or Literal.
     output, writer = capture_writer
     g = Graph()
@@ -1382,8 +1327,8 @@ def test_predicate_noobject(capture_writer: tuple[list, Callable], caplog: pytes
     # Pylance silenced to test invalid input
     ser.predicate(pred, obj)    # type: ignore
     result = "".join(output)
-    assert "MALFORMED_None" in result
-    assert "Invalid object detected." in caplog.text
+    assert output[0] == '  <http://unknown/p>None</http://unknown/p>\n'
+    # assert "Invalid object detected: None.\n" in caplog.text # If logging is uncommented
 
 # Integration tests .predicate and .subject
 @pytest.mark.parametrize(
@@ -1568,88 +1513,128 @@ def test_subject_and_predicate_resolver_integration_with_special_qualifier(
     assert f'rdf:ID="{expected_about}"' in result
     assert f'rdf:resource="{expected_resource}"' in result
 
-# Unit tests ._write_malformed_subject
-def test_write_malformed_subject_success(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
+
+# Unit tests ._write_untyped_subject
+def test_write_untyped_subject_basic(capture_writer: tuple[list, Callable]) -> None:
     output, writer = capture_writer
     g = Graph()
     g.bind("ex", "http://example.com/")
     sub = URIRef("s1")
     pred = URIRef("http://example.com/p")
-    obj = Literal(True)
-    g.add((sub, pred, obj))
+    obj1 = Literal(True)
+    obj2 = URIRef("http://example.com/o")
+    obj3 = URIRef("urn:uuid:abcd")
+    g.add((sub, pred, obj1))
+    g.add((sub, pred, obj2))
+    g.add((sub, pred, obj3))
+    ser = CIMXMLSerializer(g)
+    ser._namespace_lookup = [("http://example.com/", "ex"), ("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "rdf")]
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser._write_untyped_subject(sub, depth=1)
+
+    assert output[0] == '  <rdf:Description rdf:about="s1">\n'
+    assert output[1] == '    <ex:p>true</ex:p>\n'
+    assert output[2] == '    <ex:p rdf:resource="http://example.com/o"/>\n'
+    assert output[3] == '    <ex:p rdf:resource="#_abcd"/>\n'
+    assert output[4] == '  </rdf:Description>\n'
+    
+    # Indentations:
+    assert len(output[0]) - len(output[0].lstrip()) == 2
+    assert len(output[4]) - len(output[4].lstrip()) == 2
+    for line in output[1:3]:
+        assert len(line) - len(line.lstrip()) == 4
+
+
+def test_write_untyped_subject_rdftypepresent(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    g.bind("ex", "http://example.com/")
+    sub = URIRef("s1")
+    pred = URIRef("http://example.com/p")
+    obj1 = Literal(True)
+    obj2 = URIRef("http://example.com/o")
+    g.add((sub, pred, obj1))
+    g.add((sub, RDF.type, obj2))
+    ser = CIMXMLSerializer(g)
+    ser._namespace_lookup = [("http://example.com/", "ex"), ("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "rdf")]
+    ser.write = writer
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser._write_untyped_subject(sub, depth=1)
+
+    assert output == [] # Nothing is written when one of the subjects carries an rdf:type
+
+def test_write_untyped_subject_noqualifier(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
+    g = Graph()
+    sub = URIRef("s1")
     ser = CIMXMLSerializer(g)
     ser._namespace_lookup = [("http://example.com/", "ex")]
     ser.write = writer
 
-    ser._write_malformed_subject(sub, "error", depth=1)
+    with pytest.raises(AssertionError):
+        ser._write_untyped_subject(sub, depth=1)
 
-    result = "".join(output)
-    print(result)
-    assert result == '  <MALFORMED rdf:about="s1">\n    <message>error</message>\n    <ex:p>true</ex:p>\n  </MALFORMED>\n'
-    assert "error" in caplog.text
-
-
-def test_write_malformed_subject_predicatecalls(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
-    output, writer = capture_writer
-    g = Graph()
-    g.bind("ex", "http://example.com/")
-    sub = URIRef("s1")
-    pred = URIRef("http://example.com/p")
-    obj = Literal(True)
-    g.add((sub, pred, obj))
-    g.add((sub, URIRef("http://example.com/p2"), Literal("1")))
-    ser = CIMXMLSerializer(g)
-    ser.predicate = Mock()
-    ser.write = writer
-
-    ser._write_malformed_subject(sub, "oops", depth=1)
-
-    assert ser.predicate.call_count == 2
-    error_logs = [rec for rec in caplog.records if rec.levelname == "ERROR"] 
-    assert len(error_logs) == 1
-    assert error_logs[0].message == "oops"
+    assert ser.qualifier_resolver is None
+    assert output == [] 
 
 
-def test_write_malformed_subject_nopredicates(capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
-    output, writer = capture_writer
-    g = Graph()
-    g.bind("ex", "http://example.com/")
-    sub = URIRef("s1")
-    ser = CIMXMLSerializer(g)
-    ser.predicate = Mock()
-    ser.write = writer
+# Unit tests ._resolve_qname
+@pytest.mark.parametrize("lookup", [[], None])
+def test_resolve_qname_nonamespaces(lookup: list|None) -> None:
+    ser = CIMXMLSerializer(Graph())
+    ser._namespace_lookup = lookup
+    ser.store.bind("ex", "http://example.com/") 
 
-    ser._write_malformed_subject(sub, "error", depth=1)
-    result = "".join(output)
+    result = ser._resolve_qname("http://example.com/p")
+    # The namespace manager is ignored, so the result is not "ex:p" but the full uri.
+    assert result == "http://example.com/p"
 
-    assert ser.predicate.call_count == 0
-    assert result == '  <MALFORMED rdf:about="s1">\n    <message>error</message>\n  </MALFORMED>\n'
-    assert "error" in caplog.text
 
 @pytest.mark.parametrize(
-        "depth, expected",
-        [
-            pytest.param(1, '  <MALFORMED rdf:about="s1">\n    <message>error</message>\n  </MALFORMED>\n', id="depth 1"),
-            pytest.param(0, '<MALFORMED rdf:about="s1">\n  <message>error</message>\n</MALFORMED>\n', id="depth 0"),
-            pytest.param(3, '      <MALFORMED rdf:about="s1">\n        <message>error</message>\n      </MALFORMED>\n', id="depth 3")
-        ]
+    "uri, lookup, expected",
+    [
+        pytest.param("http://example.com/p", [("http://example.com/", "ex")], "ex:p", id="Simple qname"),
+        pytest.param("http://example.com/p", [("http://example.com/", "ex"), ("http://other.com/p", "ot")], "ex:p", id="Multiple namespaces in lookup"),
+        pytest.param("http://example.com/extended/p", [("http://example.com/", "ex")], "ex:extended/p", id="Partial namespace match"),
+        pytest.param("http://example.com/p", [("http://other.com/", "ot")], "http://example.com/p", id="No matching namespace"),
+        pytest.param(URIRef("http://example.com/p"), [("http://example.com/", "ex")], "ex:p", id="URIRef input with match"),
+        pytest.param("http://example.com/p", [("http://example.com/", "")], "http://example.com/p", id="Empty prefix"),
+        pytest.param("http://example.com/p", [("http://example.com/p", "ex")], "ex:", id="Namespace matches uri entirely"),
+        
+        # ._namespace_lookup is ordered in reverse length order when made by the .serialize method. This ensures the longest match. 
+        # The below tests document that this behaviour is not enforced by ._resolve_qname.
+        pytest.param("http://example.com/p", [("http://example.com/longer/", "exl"), ("http://example.com/", "ex")], "ex:p", id="Overlapping namespaces, shortest match"),
+        pytest.param("http://example.com/longer/p", [("http://example.com/longer/", "exl"), ("http://example.com/", "ex")], "exl:p", id="Overlapping namespaces, longest match"),
+        pytest.param("http://example.com/longer/p", [("http://example.com/", "ex"), ("http://example.com/longer/", "exl")], "ex:longer/p", id="Overlapping namespaces, the first match wins"),
+        
+        # The method is at the moment only used for predicates, which should never be BNodes or Literals. The below tests document the behavior with such inputs.
+        pytest.param(Literal("http://example.com/p"), [("http://example.com/", "ex")], "ex:p", id="Literal input with match"),
+        pytest.param(BNode("http://example.com/bnode"), [("http://example.com/", "ex")], "ex:bnode", id="BNode input with match")
+    ]
 )
-def test_write_malformed_subject_indents(depth: int, expected: str, capture_writer: tuple[list, Callable], caplog: pytest.LogCaptureFixture) -> None:
-    output, writer = capture_writer
+def test_resolve_qname_various(uri: Any, lookup: list[tuple[str, str]], expected: str) -> None:
     g = Graph()
-    g.bind("ex", "http://example.com/")
-    sub = URIRef("s1")
     ser = CIMXMLSerializer(g)
-    ser.predicate = Mock()
-    ser.write = writer
-
-    ser._write_malformed_subject(sub, "error", depth=depth)
-    result = "".join(output)
-
-    assert ser.predicate.call_count == 0
+    ser._namespace_lookup = lookup  
+    result = ser._resolve_qname(uri)
     assert result == expected
-    assert "error" in caplog.text
 
+
+def test_resolve_qname_cache() -> None:
+    ser = CIMXMLSerializer(Graph())
+    ser._namespace_lookup = [("http://example.com/", "ex")]
+
+    first = ser._resolve_qname("http://example.com/p")
+    assert first == "ex:p"
+
+    # Change lookup after caching
+    ser._namespace_lookup = [("http://example.com/", "changed")]
+
+    second = ser._resolve_qname("http://example.com/p")
+    assert second == "ex:p"  # still cached
 
 # Unit tests _subject_sort_key
 

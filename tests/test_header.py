@@ -776,12 +776,12 @@ def test_repair_blank_header_subject_norepairneeded(mock_repair: MagicMock, head
 @pytest.mark.parametrize(
         "triples, metadata_objects, expected",
         [
-            pytest.param([(RDF.type, MD.FullModel)], None, MD.FullModel, id="Fullmodel header"),
-            pytest.param([(RDF.type, DCAT.Dataset)], None, DCAT.Dataset, id="Dcat header"),
-            pytest.param([(RDF.type, URIRef("www.custom.org/type"))], [URIRef("www.custom.org/type")], URIRef("www.custom.org/type"), id="Custom type header"),
+            pytest.param([(RDF.type, MD.FullModel)], None, {MD.FullModel}, id="Fullmodel header"),
+            pytest.param([(RDF.type, DCAT.Dataset)], None, {DCAT.Dataset}, id="Dcat header"),
+            pytest.param([(RDF.type, URIRef("www.custom.org/type"))], [URIRef("www.custom.org/type")], {URIRef("www.custom.org/type")}, id="Custom type header"),
         ]
 )
-def test_header_type_success(triples: tuple, metadata_objects: Iterable|None, expected: str) -> None:
+def test_header_type_various(triples: tuple, metadata_objects: Iterable|None, expected: str) -> None:
     header = CIMMetadataHeader.empty(URIRef("s1"), metadata_objects=metadata_objects)
     for predicate, obj in triples:
         header.add_triple(predicate, obj)
@@ -808,15 +808,14 @@ def test_header_type_notriples() -> None:
 
     assert "No header type found in header." in str(exc.value)
 
-def test_header_type_multipletypes() -> None:
+def test_header_type_multipletypes(caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("s1"))
     header.add_triple(RDF.type, MD.FullModel)
     header.add_triple(RDF.type, DCAT.Dataset)
 
-    with pytest.raises(ValueError) as exc:
-        header.header_type
-
-    assert "Multiple header types found in header." in str(exc.value)    
+    assert header.header_type == {MD.FullModel, DCAT.Dataset}
+    types = {str(t) for t in header.header_type}
+    assert f"Multiple header types found in header: {types}. Returning all types." in caplog.text   
 
 # Unit tests .collect_profile
 @pytest.mark.parametrize(

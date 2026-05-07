@@ -29,7 +29,7 @@ def expand(uri: str) -> str:
 
 def find_rdf_id_or_about(profiles: list[str]|None, obj_type: str|URIRef) -> str:
     if not profiles:
-        logger.error("No profile found. Defaults to 'about'.")
+        # logger.error("No profile found. Defaults to 'about'.")    # This error message gets heavy with many subjects
         return "about"
     
     if isinstance(obj_type, URIRef):

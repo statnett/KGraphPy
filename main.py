@@ -1,7 +1,5 @@
-import rdflib
 from rdflib.graph import Graph
 from rdflib import URIRef, Literal, XSD
-import cim_plugin
 import logging
 from logging.config import dictConfig
 from cim_plugin.log_config import LOG_CONFIG
@@ -52,10 +50,7 @@ def normalize_strings(g):
     return new
 
 def main():
-    # file2="../Nordic44/instances/Enterprise/cimxml/N44-ENT-Schneider_AC.xml"
     file="../Nordic44/instances/Grid/cimxml/Nordic44-HV_EQ.xml"
-    # file2="../Nordic44/instances/Grid/cimxml/Nordic44-HV_SSH.xml"
-    # file3="../Nordic44/instances/NetworkCode/cimxml/N44-NC-HV_ER.xml"
     # linkmlfile = "../CoreEquipment.linkml.yaml"
     g = load_graphs_from_cimxml([file])
     g1 = g[0]
@@ -77,18 +72,14 @@ def main():
     #         if counter == 5:
     #             break
 
-    # for triple in t1.graph.metadata_header.graph.triples((None, None, DCTERMS.PeriodOfTime)):
+    # for triple in t1.header.graph:
     #       print(triple)
 
     # g1.replace_header(new_header)
-    # g1.validate_header(format="cimxml")
+
     # output_file = Path.cwd().parent / "fromcimxml_grid_eq_corrected_header.xml"
     # g1.to_file(output_file, format="cimxml", qualifier="underscore")
 
-    # t1.graph.metadata_header.remove_triple(DCTERMS.issued, Literal('2025-02-14', datatype=XSD.date))
-    # t1.validate_header(format="trig")
-    # output_file_trig = Path.cwd().parent / "fromtrig_grid_eq_corrected_header.trig"
-    # t1.to_file(output_file_trig, format="trig", enrich_datatypes=False)
 
 if __name__ == "__main__":
     main()

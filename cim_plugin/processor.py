@@ -138,10 +138,11 @@ class CIMProcessor:
             
         unconverted_triples = set()
         for triple in self.graph.metadata_header.triples:
-            if triple[2] == self.graph.metadata_header.header_type:
+            if triple[2] in self.graph.metadata_header.header_type:
                 continue
 
             converted = convert_triple(triple, target_format=target_format)
+            print(converted)
             if converted:
                 temp_graph.add(converted)
             else:
@@ -169,28 +170,6 @@ class CIMProcessor:
             header = self.graph.metadata_header
             self.graph += header.graph
             merge_namespace_managers(self.graph.namespace_manager, header.graph.namespace_manager)
-
-
-    # Keeping this commented out for now, in case sorting header triples first becomes necessary
-    # def merge_header(self):
-    #     """Merge header back into graph with header triples first."""
-    #     header = self.graph.metadata_header
-    #     if not header:
-    #         return
-
-    #     # Extract existing triples
-    #     original_triples = list(self.graph.triples((None, None, None)))
-
-    #     # Clear graph
-    #     self.graph.remove((None, None, None))
-
-    #     # Insert header triples first
-    #     for t in header.triples:
-    #         self.graph.add(t)
-
-    #     # Insert the rest
-    #     for t in original_triples:
-    #         self.graph.add(t)
 
 
     def namespaces_different_from_model(self) -> set[tuple[str, str, str]]|None:
@@ -439,16 +418,6 @@ def merge_namespace_managers(main_nm: NamespaceManager, other_nm: NamespaceManag
             if main_dict[prefix] != ns:
                 logger.error(f"Namespace for '{prefix}' differs between graphs ({main_dict[prefix]} vs {ns}). {main_dict[prefix]} is kept.")
                 
-        # The below was removed because it is dangerous to change the namespace in the manager without changing the triples.
-        # If this is needed in the future, consider how to change the triples too.
-                # if not keep_other:
-                #     logger.warning(f"{main_dict[prefix]} overwrites {ns} for {prefix}.")
-                #     other_nm.bind(prefix, main_dict[prefix], override=True, replace=True)
-                # else:
-                #     logger.warning(f"{ns} overwrites {main_dict[prefix]} for {prefix}.")
-                #     main_nm.bind(prefix, ns, override=True, replace=True)
-                #     main_dict[prefix] = URIRef(ns)
-
 
 def replace_namespace(predicate: str, graph: CIMGraph, replacements: set[tuple[str, str, str]]) -> str:
     """Replace namespace for a uri from a set of replacements.
@@ -492,18 +461,23 @@ def _make_header_graph_for_conversion(header: CIMMetadataHeader) -> tuple[str, G
         tuple[str, Graph]: The target format and the graph with the correct type triple.
     """    
     graph = Graph()
+    types = header.header_type
 
-    if header.header_type == DCAT_EXT.Dataset:
+    has_dataset = DCAT_EXT.Dataset in types
+    has_fullmodel = MD.FullModel in types
+
+    if has_dataset and not has_fullmodel:
         graph.bind("md", MD)    # Must be bound explicitly because it is not a default namespace in rdflib. 
         graph.add((header.subject, RDF.type, MD.FullModel))
-        target_format = "md_fullmodel"
-    elif header.header_type == MD.FullModel:
-        graph.add((header.subject, RDF.type, DCAT_EXT.Dataset))
-        target_format = "dcat_dataset"
-    else:
-        raise ValueError(f"Unknown header type: {header.header_type}. Conversion not possible.")
+        return "md_fullmodel", graph
 
-    return target_format, graph
+    if has_fullmodel and not has_dataset:
+        graph.add((header.subject, RDF.type, DCAT_EXT.Dataset))
+        return "dcat_dataset", graph
+    
+    types_str = {str(t) for t in types}
+    raise ValueError(f"Ambiguous or unknown header type: {types_str}. Conversion not possible.")
+
 
 if __name__ == "__main__":
     print("CIMProcessor for processing cim graphs.")

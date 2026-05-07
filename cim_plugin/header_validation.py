@@ -30,7 +30,7 @@ from rdflib import XSD, BNode, Literal, Node, Graph, URIRef
 from rdflib.namespace import DCAT, DCTERMS, RDF
 
 from cim_plugin.enriching import cast_datetime_utc
-from cim_plugin.namespaces import RDFG, JSONLD, MD
+from cim_plugin.namespaces import RDFG, JSONLD, MD, DCAT_EXT
 from cim_plugin.header import CIMMetadataHeader
 
 import logging
@@ -325,15 +325,11 @@ def validate_header(header: CIMMetadataHeader, format: str="cimxml") -> None:
         logger.error("Header graph is empty. No validation performed.")
         return
 
-    if header.header_type not in CIMMetadataHeader.DEFAULT_METADATA_OBJECTS:
-        logger.error(f"Unknown header type: {header.header_type}. No validation performed.")
-        return
-
-    if header.header_type == MD.FullModel:
-        logger.error(f"Validation for MD.FullModel header is not implemented yet. No validation performed.")
-        return
+    if not DCAT_EXT.Dataset in header.header_type:
+         types = [str(t) for t in header.header_type]
+         logger.error(f"Validation for header type {types} is not implemented.")
+         return
     
-
     format = format.lower().strip()
     identifier = header.subject
     

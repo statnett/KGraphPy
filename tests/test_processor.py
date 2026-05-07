@@ -1,5 +1,3 @@
-from unittest import result
-
 import pytest
 from unittest.mock import call, patch, MagicMock, PropertyMock
 from rdflib import Namespace, URIRef, Literal, BNode, Graph
@@ -7,7 +5,7 @@ from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.graph import CIMGraph
 from cim_plugin.namespaces import MD, DCAT_EXT, DCTERMS, CIM, CGMES_CIM
 from cim_plugin.exceptions import LiteralCastingError
-from cim_plugin.provenance import Provenance
+# from cim_plugin.provenance import Provenance
 from dataclasses import FrozenInstanceError
 from rdflib.namespace import RDF
 from linkml_runtime import SchemaView
@@ -187,7 +185,6 @@ def test_replace_header_namespaces(prefix: str, namespace: str, collision: bool)
         assert header_nm.namespace(prefix) == URIRef(namespace) # The header keeps its old namespace
         assert data_nm.namespace(prefix) != header_nm.namespace(prefix) # The header and data namespaces are now different
         assert f"{data_nm.namespace(prefix)} overwrites {namespace} for {prefix}"
-
 
 
 def test_replace_header_nooverrideofoldprefix() -> None:
@@ -1782,7 +1779,7 @@ def test_to_file(mock_select: MagicMock, mock_build: MagicMock) -> None:
 def test_make_header_graph_for_conversion_unknowntype() -> None:
     header = CIMMetadataHeader.empty(subject=URIRef("h1"), metadata_objects=[URIRef("custom_type")])
     header.add_triple(RDF.type, URIRef("custom_type"))
-    with pytest.raises(ValueError, match=f"Unknown header type: {header.header_type}. Conversion not possible."):
+    with pytest.raises(ValueError, match="Ambiguous or unknown header type: {'custom_type'}. Conversion not possible."):
         _make_header_graph_for_conversion(header)
 
 @pytest.mark.parametrize("header", [None, CIMMetadataHeader.empty(subject=URIRef("h1"))])
@@ -1832,7 +1829,7 @@ def test_make_header_graph_for_conversion_ambiguoustype() -> None:
     header = CIMMetadataHeader.empty(subject=URIRef("h1"))
     header.add_triple(RDF.type, MD.FullModel)
     header.add_triple(RDF.type, DCAT_EXT.Dataset)
-    with pytest.raises(ValueError, match='Multiple header types found in header.'): # ValueError carried forward from header.header_type.
+    with pytest.raises(ValueError, match='Ambiguous or unknown header type:'):
         _make_header_graph_for_conversion(header)
 
 

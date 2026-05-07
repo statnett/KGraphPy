@@ -21,17 +21,17 @@ def big_graph() -> Graph:
     NS_OTHER = Namespace("http://example.org/other/")
 
     # Example: 20% of triples use the special namespace
-    for i in range(5_000_000):
+    for i in range(2_000_000):
         if i % 100 < 20:
             subj = NS_SPECIAL[f"s{i}"]
         else:
             subj = NS_OTHER[f"s{i}"]
 
-        g.add((
-            subj,
-            URIRef("http://example.org/p"),
-            Literal(i),
-        ))
+        g.add((subj, RDF.type, DCAT_EXT.Dataset))
+        g.add((subj, URIRef("http://example.org/p1"), Literal(i)))
+        g.add((subj, URIRef("http://example.org/p2"), Literal(i)))
+        g.add((subj, URIRef("http://example.org/p3"), Literal(i)))
+        g.add((subj, URIRef("http://example.org/p4"), Literal(i)))
 
     return g
 
@@ -54,7 +54,7 @@ def test_update_namespace(big_graph: Graph) -> None:
     # with about 0.17 seconds per 100k triples updated (~30sec per 1 million).
 
 
-@pytest.mark.skip(reason="No more testing needed unless optimizations are made to the function.")
+@pytest.mark.stress   #skip(reason="No more testing needed unless optimizations are made to the function.")
 def test_cimxmlserialize(big_graph: Graph) -> None:
     stream = io.BytesIO()
 
@@ -63,11 +63,21 @@ def test_cimxmlserialize(big_graph: Graph) -> None:
     duration = time.perf_counter() - start
 
     assert stream.getvalue()  # minimal sanity check
-    print(f"CIMXML serialization: {duration:.2f} seconds for 5 million triples")
+    print(f"CIMXML serialization: {duration:.2f} seconds for 10 million triples")
 
     # CIMXML serialization: 23.82 seconds for 5 million triples without header
     # CIMXML serialization: 24.60 seconds for 5 million triples with header
+    
+    # After refactoring
+    # CIMXML serialization: 132.56 seconds for 6 million triples
+    # CIMXML serialization: 239.76 seconds for 10 million triples
+    # CIMXML serialization: 133.02 seconds for 5 million triples
 
+    # Without logging
+    # CIMXML serialization: 122.95 seconds for 5 million triples with no errors
+    # CIMXML serialization: 122.69 seconds for 5 million triples with errors in every triple
+    # CIMXML serialization: 85.72 seconds for 5 million triples, 1 million subjects with 5 predicates each (no errors)
+    # CIMXML serialization: 165.58 seconds for 10 million triples, 2 million subjects with 5 predicates each (no errors)
 
 @pytest.mark.skip(reason="No more testing needed unless optimizations are made to the function.")
 def test_cimtrigserialize(big_graph: Graph) -> None:
@@ -84,7 +94,7 @@ def test_cimtrigserialize(big_graph: Graph) -> None:
     # CIMTRIG serialization: 231.84 seconds for 5 million triples with header
 
 
-@pytest.mark.stress
+@pytest.mark.skip(reason="No more testing needed unless optimizations are made to the function.")
 def test_jsonldserialize(big_graph: CIMGraph) -> None:
     pr = CIMProcessor(big_graph)
 

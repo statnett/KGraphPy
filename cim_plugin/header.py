@@ -264,26 +264,28 @@ class CIMMetadataHeader:
         return list(self.graph.triples((None, None, None)))
 
     @property
-    def header_type(self) -> Node:
+    def header_type(self) -> set[Node]:
         """The object node of the rdf:type triple.
         
         Raises:
             ValueError: If rdf:type is not found in any of the triples.
 
         Returns:
-            Node: The object node.
+            set[Node]: The object nodes.
         """
         headertypes = set()
         for (_, p, o) in self.graph.triples((self.subject, RDF.type, None)):
             if o in self.metadata_objects:
                 headertypes.add(o)
-        
-        if len(headertypes) == 1:
-            return headertypes.pop()
-        elif len(headertypes) == 0:
+
+        if len(headertypes) == 0:
             raise ValueError("No header type found in header.")
-        else:
-            raise ValueError("Multiple header types found in header.")
+
+        if len(headertypes) > 1:
+            types = {str(t) for t in headertypes}
+            logger.error(f"Multiple header types found in header: {types}. Returning all types.")
+
+        return headertypes
 
     @property
     def profiles(self) -> Optional[list[str]]:
@@ -305,12 +307,9 @@ class CIMMetadataHeader:
                 elif isinstance(o, URIRef):
                     profiles.append(str(o))
 
-        # if len(profiles) > 1:
-        #     raise ValueError(f"Multiple profiles found in header: {profiles}")
         
         return profiles if profiles else None
-        # return profiles[0] if profiles else None
-
+        
 
     def set_subject(self, new_subject: URIRef) -> None:
         """Set a new subject uuid for the headers.

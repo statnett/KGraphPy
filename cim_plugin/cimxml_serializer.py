@@ -8,7 +8,7 @@ from xml.sax.saxutils import quoteattr, escape
 import logging
 from typing import IO, Any, Optional
 from cim_plugin.utilities import _extract_uuid_from_urn, create_header_attribute
-from cim_plugin.namespaces import MD, collect_specific_namespaces
+from cim_plugin.namespaces import MD, DCAT_EXT, collect_specific_namespaces
 from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
 from cim_plugin.header import CIMMetadataHeader
 from cim_plugin.rdf_id_selection import find_rdf_id_or_about
@@ -34,8 +34,6 @@ class CIMXMLSerializer(Serializer):
 
     def __init__(self, store: Graph, **kwargs):
         super().__init__(store)
-        # self.write: Optional[Callable[[str], int]] = None
-        # self.qualifier_resolver: Optional[CIMQualifierResolver] = None
 
     def _init_qualifier_resolver(self, qualifier_name: str|None) -> None:
         """Initialize the qualifier resolver based on the provided qualifier name.
@@ -112,8 +110,8 @@ class CIMXMLSerializer(Serializer):
         
             groups.setdefault(t_qname, set()).add(s)
 
-        all_subjects = set(self.store.subjects())
-        typed_subjects = set().union(*groups.values()) if groups else set()
+        all_subjects: set[Node] = set(self.store.subjects())
+        typed_subjects: set[Node] = set().union(*groups.values()) if groups else set()
         missing: set[Node] = all_subjects - typed_subjects - skip_subjects
         if missing:
             groups["ErrorMissingType"] = missing
@@ -188,10 +186,15 @@ class CIMXMLSerializer(Serializer):
 
         subject = header.subject
         try:
-            subject_type = header.header_type
-        except ValueError as e:
-            logger.error(f"Header type missing: {e}")
-            subject_type = URIRef("MALFORMED")
+            types = header.header_type
+            # dcat:Dataset is prioritized if multiple header types are present
+            if DCAT_EXT.Dataset in types:
+                subject_type = DCAT_EXT.Dataset
+            else:
+                subject_type = next(iter(types))
+        except ValueError:
+            logger.error(f"Header type missing. dcat:Dataset used as default.")
+            subject_type = DCAT_EXT.Dataset
 
         # --- Temporarily override qualifier strategy ---
         assert self.qualifier_resolver is not None  # For type checker
@@ -236,33 +239,36 @@ class CIMXMLSerializer(Serializer):
         header = self._ensure_header()
         
         # Dealing with malformed subjects
-        if not isinstance(subject, URIRef):
-            if isinstance(subject, BNode) and subject in header.reachable_nodes:
-                # Header blank nodes are dealt with by the header object
-                return
-            else:
-                self._write_malformed_subject(subject, f"Subject is not a URIRef: {subject}", depth)
-                return
+        if isinstance(subject, BNode) and subject in header.reachable_nodes:
+            # Header blank nodes are dealt with by the header object
+            return
         
         types = list(self.store.objects(subject, RDF.type))
 
-        if len(types) != 1:
-            self._write_malformed_subject(subject, f"Invalid rdf:type count for {subject}", depth)
+        if not types:
+            # logger.error(f"No rdf:type triple detected for {subject}.")
+            self._write_untyped_subject(subject, depth)
             return
+            
+        # if len(types) > 1:
+            # logger.error(f"Multiple rdf:type triples detected for {subject}.")
                 
-        subject_type = types[0] # In the triple this is the object, it specifies the rdf:type for the subject
-        if not isinstance(subject_type, URIRef):
-            self._write_malformed_subject(subject, f"The rdf:type object is not a uri: {subject_type}", depth)
-            return
-        
+        subject_type = types[0] # In the triple this is the object, it specifies the rdf:type for the subject. If multiple, the first is arbitrarily chosen.
+        # if not isinstance(subject_type, URIRef):
+            # logger.error(f"The rdf:type object is not a uri: {subject_type}")
+            
         # Shape and write the subject line
         rdf_keyword = find_rdf_id_or_about(header.profiles, str(subject_type))
 
         assert self.qualifier_resolver is not None  # For type checker
-        if rdf_keyword == "ID":
-            raw_uri = self.qualifier_resolver.convert_to_special_qualifier(subject)
+        if isinstance(subject, URIRef):
+            if rdf_keyword == "ID":
+                raw_uri = self.qualifier_resolver.convert_to_special_qualifier(subject)
+            else:
+                raw_uri = self.qualifier_resolver.convert_to_default_qualifier(subject)
         else:
-            raw_uri = self.qualifier_resolver.convert_to_default_qualifier(subject)
+            # logger.error(f"Subject is not a URIRef: {subject}")
+            raw_uri = str(subject)
 
         uri = quoteattr(raw_uri)
         subject_type_qname = nm.normalizeUri(str(subject_type))
@@ -270,10 +276,9 @@ class CIMXMLSerializer(Serializer):
         write(f"{indent}<{subject_type_qname} rdf:{rdf_keyword}={uri}>\n")
 
         # Sort and write predicates and objects
-        preds = [(p, o) for p, o in self.store.predicate_objects(subject) if p != RDF.type]
+        preds = [(p, o) for p, o in self.store.predicate_objects(subject) if not (p == RDF.type and o == subject_type)]
         preds.sort(key=lambda po: nm.normalizeUri(str(po[0])))
 
-        # if (subject, None, None) in self.store:
         for predicate, obj in preds:
             use_qualifier = is_uuid_qualified(self.qualifier_resolver, obj)
             self.predicate(predicate, obj, depth + 1, use_qualifier=use_qualifier)
@@ -293,16 +298,6 @@ class CIMXMLSerializer(Serializer):
         indent = "  " * depth
 
         qname = self._resolve_qname(str(predicate))
-        # Shape the predicate name to right format and deal with malformed predicates
-        # try:
-        #     prefix, namespace, local = self.store.namespace_manager.compute_qname(str(predicate), generate=False)
-        #     qname = f"{prefix}:{local}"
-            # qname = self.store.namespace_manager.qname(str(predicate))
-            # qname = self.store.namespace_manager.qname_strict(str(predicate))
-        # except (KeyError, ValueError):
-            # logger.error(f"Predicate {str(predicate)} not a valid predicate.")
-            # qname = str(predicate)
-            # qname = f"MALFORMED_{str(predicate)}"
 
         # Write predicate and object
         if isinstance(obj, Literal):
@@ -319,56 +314,55 @@ class CIMXMLSerializer(Serializer):
             write(f"{indent}<{qname} rdf:resource={relativized_obj}/>\n")
 
         else:
-            logger.error("Invalid object detected.")
-            write(f"{indent}<{qname}>MALFORMED_{obj}</{qname}>\n")
+            # logger.error(f"Invalid object detected: {obj}.")
+            write(f"{indent}<{qname}>{obj}</{qname}>\n")
 
+    def _write_untyped_subject(self, subject: Node, depth: int) -> None:
+        """Write subjects without rdf:type triple.
 
-    def _write_malformed_subject(self, subject: Node, message: str, depth: int) -> None:
-        """Write triples with a malformed subject.
-
-        - Marks subject as MALFORMED
-        - Writes all predicates and object to the subject
-        - Logs an error
-
+        The triples are written with an rdf:Description triple first, with all the predicates and objects listed below.
+        
         Parameters:
-            subject (Node): The malformed subject.
-            message (str): The message to write in the triple and send to log.
+            subject (Node): The untyped subject.
             depth (int): Size of indentation.
+
+        Raises:
+            AssertionError: If the qualifier resolver is not initialized.
         """
         write = cast(Callable[[str], int], self.write)
         indent = "  " * depth
+    
+        if any(self.store.objects(subject, RDF.type)):
+            return
 
-        logger.error(message)
+        assert self.qualifier_resolver is not None  # For type checker
 
-        # Open MALFORMED subject
-        write(f"{indent}<MALFORMED rdf:about={quoteattr(str(subject))}>\n")
-        write(f"{indent}  <message>{message}</message>\n")
+        write(f"{indent}<rdf:Description rdf:about={quoteattr(str(subject))}>\n")
 
-        # Write all predicates/objects for debugging
+        # Write all predicates/objects so the triples are not lost.
         for p, o in self.store.predicate_objects(subject):
-            self.predicate(p, o, depth + 1)
+            use_qualifier = is_uuid_qualified(self.qualifier_resolver, o)
+            self.predicate(p, o, depth + 1, use_qualifier=use_qualifier)
 
-        # Close MALFORMED subject
-        write(f"{indent}</MALFORMED>\n")
+        write(f"{indent}</rdf:Description>\n")
 
-    @lru_cache(maxsize=4096)
+
+    @lru_cache(maxsize=5000)
     def _resolve_qname(self, uri: str) -> str:
-        """Resolve a URI to a QName using the collected namespaces.
+        """Resolve a URI to a QName using the namespaces collected in ._namespace_lookup.
 
         Parameters:
             uri (str): The URI to resolve.
 
         Returns:
             str: The resolved QName, or the original URI if no namespace matches.
-
-        Not tested yet.
         """
-        if self._namespace_lookup is not None:
+        if self._namespace_lookup:
             for ns_str, prefix in self._namespace_lookup:
                 if uri.startswith(ns_str):
                     local_part = uri[len(ns_str):]
-                    return f"{prefix}:{local_part}" if prefix else uri
-        return uri
+                    return f"{prefix}:{local_part}" if prefix else str(uri)
+        return str(uri)
     
 
 def _subject_sort_key(uri: Node) -> tuple[int, str]:
