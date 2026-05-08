@@ -11,6 +11,9 @@ dependencies = [
 [tool.setuptools]
 packages = ["cim_plugin"]
 
+[tool.setuptools.package-data]
+KGraphPy = ["cim_plugin/*.yaml"]
+
 [tool.pytest.ini_options]
 pythonpath = [
     "."
