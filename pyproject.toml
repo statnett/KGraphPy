@@ -2,7 +2,6 @@
 name = "KGraphPy"
 version = "0.2.2"
 description = "Plugin for rdflib for handling parsing and serialization of cim graphs."
-readme = "README.adoc"
 requires-python = ">=3.12"
 dependencies = [
     "linkml>=1.9.6",
