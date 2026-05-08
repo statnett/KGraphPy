@@ -1,14 +1,16 @@
 [project]
-name = "rdflib-cim"
+name = "KGraphPy"
 version = "0.2.2"
-description = "Add your description here"
-readme = "README.md"
+description = "Plugin for rdflib for handling parsing and serialization of cim graphs."
+readme = "README.adoc"
 requires-python = ">=3.12"
 dependencies = [
     "linkml>=1.9.6",
     "rdflib[graphdb]>=7.5.0",
 ]
 
+[tool.setuptools]
+packages = ["cim_plugin"]
 
 [tool.pytest.ini_options]
 pythonpath = [
