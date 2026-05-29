@@ -4,9 +4,9 @@ from rdflib import BNode, Literal, Namespace, URIRef, Graph
 from rdflib.namespace import DCAT, RDF
 from rdflib.plugins.serializers.turtle import OBJECT, SUBJECT
 
-from cim_plugin.cimtrig_serializer import CIMTrigSerializer
-from cim_plugin.graph import CIMGraph
-from cim_plugin.header import CIMMetadataHeader
+from kgraphpy.cimtrig_serializer import CIMTrigSerializer
+from kgraphpy.graph import CIMGraph
+from kgraphpy.header import CIMMetadataHeader
 
 
 # Unit tests .reset

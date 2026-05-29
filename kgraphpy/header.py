@@ -4,7 +4,7 @@ from pathlib import Path
 
 from rdflib import Graph, Node, URIRef, RDF, BNode, Literal
 from rdflib.namespace import DCTERMS, NamespaceManager
-from cim_plugin.namespaces import MD, collect_specific_namespaces
+from kgraphpy.namespaces import MD, collect_specific_namespaces
 from typing import Iterable, List, Tuple, Optional, Set
 import logging
 import uuid

@@ -6,13 +6,13 @@ from rdflib import Graph, Namespace, URIRef, Literal, BNode, Dataset
 from rdflib.namespace import RDF, RDFS, DCAT
 from rdflib.exceptions import ParserError
 from typing import Callable, Any
-from cim_plugin.exceptions import CIMXMLParseError
-from cim_plugin.namespaces import MD
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.graph import CIMGraph
-from cim_plugin.processor import CIMProcessor
+from kgraphpy.exceptions import CIMXMLParseError
+from kgraphpy.namespaces import MD
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.graph import CIMGraph
+from kgraphpy.processor import CIMProcessor
 from tests.fixtures import cimxml_plugin, mock_extract_uuid, make_graph, make_cimgraph
-from cim_plugin.utilities import (
+from kgraphpy.utilities import (
     extract_uuid,
     _extract_uuid_from_urn, 
     load_cimxml_graph,
@@ -102,7 +102,7 @@ def test_extract_uuid_from_urn(input: str, expected: str|None, error_match: str|
 
 # Unit tests load_cimxml_graph
 
-@patch("cim_plugin.utilities.CIMGraph")
+@patch("kgraphpy.utilities.CIMGraph")
 def test_load_cimxml_graph_success(mock_graph_cls: MagicMock) -> None:
     mock_graph = MagicMock(spec=Graph)
     mock_graph_cls.return_value = mock_graph
@@ -113,7 +113,7 @@ def test_load_cimxml_graph_success(mock_graph_cls: MagicMock) -> None:
     assert graph is mock_graph
 
 
-@patch("cim_plugin.utilities.CIMGraph")
+@patch("kgraphpy.utilities.CIMGraph")
 def test_load_cimxml_graph_schema_path(mock_graph_cls: MagicMock) -> None:
     mock_graph = mock_graph_cls.return_value
     
@@ -134,7 +134,7 @@ def test_load_cimxml_graph_schema_path(mock_graph_cls: MagicMock) -> None:
             # already verify the exception-wrapping behavior.
         ]
 )
-@patch("cim_plugin.utilities.Graph")
+@patch("kgraphpy.utilities.Graph")
 def test_load_cimxml_graph_exceptions(mock_graph_cls: MagicMock, exception: Exception) -> None:
     mock_graph = mock_graph_cls.return_value
     mock_graph.parse.side_effect = exception
@@ -157,7 +157,7 @@ def test_collect_cimxml_to_dataset_emptylist() -> None:
     assert len(default_graph) == 0
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_singlefile(mock_loader: MagicMock) -> None:
     g = Graph()
     g.add((URIRef("s"), URIRef("p"), URIRef("o")))
@@ -181,7 +181,7 @@ def test_collect_cimxml_to_dataset_singlefile(mock_loader: MagicMock) -> None:
     assert mock_loader.call_count == 1
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_multiplefiles(mock_loader: MagicMock) -> None:
     g1 = Graph()
     g1.add((URIRef("s1"), URIRef("p1"), URIRef("o1")))
@@ -207,7 +207,7 @@ def test_collect_cimxml_to_dataset_multiplefiles(mock_loader: MagicMock) -> None
     assert mock_loader.call_count == 2
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_multiplenssameprefix(mock_loader: MagicMock) -> None:
     # Two graphs with different namespaces to same prefix. First added wins in dataset. 
     # Namespace changed for second graph.
@@ -236,7 +236,7 @@ def test_collect_cimxml_to_dataset_multiplenssameprefix(mock_loader: MagicMock) 
     assert g2_named.namespace_manager.store.namespace("foo") == URIRef("bar.com")
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_multipleprefixsamens(mock_loader: MagicMock) -> None:
     # Two graphs with same namespaces bound to different prefixes. Only one is kept; the last. 
     # Namespace changed to None for first graph.
@@ -267,7 +267,7 @@ def test_collect_cimxml_to_dataset_multipleprefixsamens(mock_loader: MagicMock) 
     assert g2_named.namespace_manager.store.namespace("bar") == URIRef("bar.com")
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_samefileinputtwice(mock_loader: MagicMock) -> None:
     g1 = Graph()
     g1.add((URIRef("s1"), URIRef("p1"), URIRef("o1")))
@@ -285,7 +285,7 @@ def test_collect_cimxml_to_dataset_samefileinputtwice(mock_loader: MagicMock) ->
     assert mock_loader.call_count == 2
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_nonamespaces(mock_loader: MagicMock) -> None:
     g1 = Graph()
     g1.add((URIRef("s1"), URIRef("p1"), URIRef("o1")))
@@ -309,7 +309,7 @@ def test_collect_cimxml_to_dataset_nonamespaces(mock_loader: MagicMock) -> None:
     assert g1_ns - blank_ns == set()
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_nondata(mock_loader: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     g1 = Graph()
     g1.bind("ex", "http://example.com/")
@@ -328,7 +328,7 @@ def test_collect_cimxml_to_dataset_nondata(mock_loader: MagicMock, caplog: pytes
     assert "Random id generated for graph" in caplog.text
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_collect_cimxml_to_dataset_failedfile(mock_loader: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     good_graph = Graph()
     good_graph.add((URIRef("s"), URIRef("p"), URIRef("o")))
@@ -356,7 +356,7 @@ def test_collect_cimxml_to_dataset_failedfile(mock_loader: MagicMock, caplog: py
 #             pytest.param(None, id="No schema"), 
 #             pytest.param("schema.yaml", id="Schema present")
 #         ])
-# @patch("cim_plugin.utilities.load_cimxml_graph")
+# @patch("kgraphpy.utilities.load_cimxml_graph")
 # def test_collect_cimxml_to_dataset_passesschema(mock_loader: MagicMock, schema: str|None) -> None:
 #     g = Graph()
 #     mock_loader.return_value = g
@@ -473,7 +473,7 @@ def test_extract_subjects_by_object_type_literalsubject():
 
 
 # Unit tests load_graphs_from_Trig
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_empty(mock_dataset_cls: MagicMock) -> None:
     ds = Dataset()
     ds.parse = MagicMock()
@@ -486,7 +486,7 @@ def test_load_graphs_from_trig_empty(mock_dataset_cls: MagicMock) -> None:
     assert len(processors) == 0
 
 
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_onegraph(mock_dataset_cls: MagicMock) -> None:
     ds = Dataset()
     g = ds.graph(identifier="graph1")
@@ -520,7 +520,7 @@ def test_load_graphs_from_trig_onegraph(mock_dataset_cls: MagicMock) -> None:
             pytest.param(None, None, id="None. A random URIRef created.")
         ]
 )
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_identifiers(mock_dataset_cls: MagicMock, id: Any, expected: Any) -> None:
     ds = Dataset()
     g = ds.graph(identifier=id)
@@ -537,7 +537,7 @@ def test_load_graphs_from_trig_identifiers(mock_dataset_cls: MagicMock, id: Any,
     else:
         assert isinstance(identifier, URIRef) or isinstance(identifier, BNode)
 
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_multiplegraphs(mock_dataset_cls: MagicMock) -> None:
     ds = Dataset()
     tr1 = (URIRef("s1"), URIRef("p1"), Literal("o"))
@@ -568,7 +568,7 @@ def test_load_graphs_from_trig_multiplegraphs(mock_dataset_cls: MagicMock) -> No
     assert p2.provenance
     assert "Graph graph2 loaded from trig file." in p2.provenance.entries[0]["description"]
 
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_namespaces(mock_dataset_cls: MagicMock) -> None:
     ds = Dataset()
     g = ds.graph(identifier="graph1")
@@ -589,7 +589,7 @@ def test_load_graphs_from_trig_namespaces(mock_dataset_cls: MagicMock) -> None:
     assert ns.namespace("foo") == URIRef("www.bar.com/")    # Unused namespaces are also preserved
 
 
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_defaultgraph(mock_dataset_cls: MagicMock) -> None:
     ds = Dataset()
     g = ds.graph(identifier="graph1")
@@ -615,7 +615,7 @@ def test_load_graphs_from_trig_defaultgraph(mock_dataset_cls: MagicMock) -> None
     assert "Graph urn:x-rdflib:default loaded from trig file." in p2.provenance.entries[0]["description"]
 
 
-@patch("cim_plugin.utilities.Dataset")
+@patch("kgraphpy.utilities.Dataset")
 def test_load_graphs_from_trig_parseexception(mock_dataset_cls: MagicMock) -> None:
     ds = Dataset()
     ds.parse = MagicMock(side_effect = ValueError)
@@ -627,8 +627,8 @@ def test_load_graphs_from_trig_parseexception(mock_dataset_cls: MagicMock) -> No
     ds.parse.assert_called_once_with("dummy.xml", format="trig")
 
 # Unit tests load_graphs_from_cimxml
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_emptygraph(mock_load: MagicMock, mock_create: MagicMock) -> None:
     g = CIMGraph()
     mock_load.return_value = g
@@ -652,8 +652,8 @@ def test_load_graphs_from_cimxml_emptygraph(mock_load: MagicMock, mock_create: M
     assert pr._provenance._entries[0].sub_steps == []  # The provenance is initiated after the graph is loaded and header created, so should not have any sub-steps yet.
 
 
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_parsingerror(mock_load: MagicMock, mock_create: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     g2 = CIMGraph()
     mock_header2 = CIMMetadataHeader.empty(URIRef("h2"))
@@ -672,8 +672,8 @@ def test_load_graphs_from_cimxml_parsingerror(mock_load: MagicMock, mock_create:
     assert "loaded from CIMXML file." in ds[0].provenance.entries[0]["description"]
     
 
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_graphcontent(mock_load: MagicMock, mock_create: MagicMock) -> None:
     g = CIMGraph()
     g.bind("inc", "included.com")
@@ -696,8 +696,8 @@ def test_load_graphs_from_cimxml_graphcontent(mock_load: MagicMock, mock_create:
     assert (URIRef("h1"), URIRef("excluded.org"), Literal("oh")) not in pr.graph
 
 
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_multiplefiles(mock_load: MagicMock, mock_create: MagicMock) -> None:
     g1 = CIMGraph()
     g2 = CIMGraph()
@@ -721,7 +721,7 @@ def test_load_graphs_from_cimxml_multiplefiles(mock_load: MagicMock, mock_create
     assert "Graph h2 loaded from CIMXML file." in pr2.provenance.entries[0]["description"]
 
 
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_integrated(mock_load: MagicMock) -> None:
     g = CIMGraph()
     g.bind("inc", "included.com")
@@ -752,8 +752,8 @@ def test_load_graphs_from_cimxml_integrated(mock_load: MagicMock) -> None:
             pytest.param(None, None, id="None. A random URIRef created.")
         ]
 )
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_identifiers(mock_load: MagicMock, mock_create: MagicMock, id: Any, expected: Any) -> None:
     g = CIMGraph()
     mock_header = CIMMetadataHeader.empty(id)
@@ -770,8 +770,8 @@ def test_load_graphs_from_cimxml_identifiers(mock_load: MagicMock, mock_create: 
         assert isinstance(identifier, URIRef) or isinstance(identifier, BNode)
 
 
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_loadfailure(mock_load: MagicMock, mock_create: MagicMock) -> None:
     mock_load.return_value = "wrong"
 
@@ -783,8 +783,8 @@ def test_load_graphs_from_cimxml_loadfailure(mock_load: MagicMock, mock_create: 
     mock_create.assert_called_once_with("wrong")
 
 
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_nofiles(mock_load: MagicMock, mock_create: MagicMock) -> None:
     ds = load_graphs_from_cimxml([])
     assert len(ds) == 0
@@ -792,8 +792,8 @@ def test_load_graphs_from_cimxml_nofiles(mock_load: MagicMock, mock_create: Magi
     mock_create.assert_not_called()
 
 
-@patch("cim_plugin.utilities.create_header_attribute")
-@patch("cim_plugin.utilities.load_cimxml_graph")
+@patch("kgraphpy.utilities.create_header_attribute")
+@patch("kgraphpy.utilities.load_cimxml_graph")
 def test_load_graphs_from_cimxml_generator(mock_load: MagicMock, mock_create: MagicMock) -> None:
     g1 = CIMGraph()
     g2 = CIMGraph()

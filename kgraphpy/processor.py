@@ -1,16 +1,16 @@
 """The CIMProcessor class, which allows for handling and manipulating CIM graphs in memory."""
 
 from linkml_runtime.utils.schemaview import SchemaView, SchemaDefinition
-from cim_plugin.graph import CIMGraph
-from cim_plugin.header import create_header_attribute, CIMMetadataHeader
-from cim_plugin.header_validation import validate_header
-from cim_plugin.namespaces import update_namespace_in_triples, MD, DCAT_EXT, validate_and_fix_namespaces_by_cimtype
-from cim_plugin.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
-from cim_plugin.exceptions import LiteralCastingError
-from cim_plugin.to_file_strategies import _select_strategy
-from cim_plugin.header_conversion import convert_triple
-from cim_plugin.rdf_id_selection import PROFILES
-from cim_plugin.provenance import Provenance, log_provenance
+from kgraphpy.graph import CIMGraph
+from kgraphpy.header import create_header_attribute, CIMMetadataHeader
+from kgraphpy.header_validation import validate_header
+from kgraphpy.namespaces import update_namespace_in_triples, MD, DCAT_EXT, validate_and_fix_namespaces_by_cimtype
+from kgraphpy.enriching import _build_slot_index, resolve_datatype_from_slot, create_typed_literal
+from kgraphpy.exceptions import LiteralCastingError
+from kgraphpy.to_file_strategies import _select_strategy
+from kgraphpy.header_conversion import convert_triple
+from kgraphpy.rdf_id_selection import PROFILES
+from kgraphpy.provenance import Provenance, log_provenance
 from rdflib import URIRef, Literal, Graph, IdentifiedNode
 from rdflib.namespace import NamespaceManager, RDF
 from pathlib import Path

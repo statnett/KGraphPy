@@ -3,8 +3,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import Graph, URIRef, Literal, BNode, Node
 from rdflib.namespace import DCAT, DCTERMS, RDF
-from cim_plugin.namespaces import MD
-from cim_plugin.header import CIMMetadataHeader, create_header_attribute
+from kgraphpy.namespaces import MD
+from kgraphpy.header import CIMMetadataHeader, create_header_attribute
 from tests.fixtures import build_graph_with_blank_header, make_graph, fake_parse_factory
 import logging
 
@@ -71,7 +71,7 @@ def test_init_profilepredicatesoverride() -> None:
 
 
 # Unit tests .from_graph
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_noheadertriples(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
@@ -81,7 +81,7 @@ def test_from_graph_noheadertriples(mock_triples: MagicMock, mock_namespaces: Ma
     mock_triples.assert_not_called()
     mock_namespaces.assert_not_called()
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_multipleheaders(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
@@ -94,7 +94,7 @@ def test_from_graph_multipleheaders(mock_triples: MagicMock, mock_namespaces: Ma
     mock_namespaces.assert_not_called()
 
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_onlyheadertriple(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
@@ -110,7 +110,7 @@ def test_from_graph_onlyheadertriple(mock_triples: MagicMock, mock_namespaces: M
     mock_namespaces.assert_called_once_with([(header, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_namespaces(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
@@ -130,7 +130,7 @@ def test_from_graph_namespaces(mock_triples: MagicMock, mock_namespaces: MagicMo
     mock_triples.assert_called_once_with(g, header)
     mock_namespaces.assert_called_once_with([(header, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_blankheaderrepair(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
@@ -150,7 +150,7 @@ def test_from_graph_blankheaderrepair(mock_triples: MagicMock, mock_namespaces: 
     mock_namespaces.assert_called_once_with([(repaired, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 @patch.object(CIMMetadataHeader, "_collect_header_triples")
 def test_from_graph_metadataobjectsoverride(mock_triples: MagicMock, mock_namespaces: MagicMock) -> None:
     g = Graph()
@@ -464,9 +464,9 @@ def test_empty_profilepredicatesoverride() -> None:
 
 
 # Unit tests .from_manifest
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 def test_from_manifest_wrongfiletype(mock_collect: MagicMock) -> None:
-    with patch("cim_plugin.header.Graph.parse", side_effect=Exception) as mock_parse:
+    with patch("kgraphpy.header.Graph.parse", side_effect=Exception) as mock_parse:
         with pytest.raises(Exception) as exc:
             CIMMetadataHeader.from_manifest("dummy.ttl", "graph1")
             mock_parse.assert_called_once_with("dummy.ttl", format="trig")
@@ -474,10 +474,10 @@ def test_from_manifest_wrongfiletype(mock_collect: MagicMock) -> None:
     mock_collect.assert_not_called()
 
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 def test_from_manifest_emptyfile(mock_collect: MagicMock, fake_parse_factory: Callable) -> None:
     mock_graph = Graph()
-    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)) as mock_parse:
+    with patch("kgraphpy.header.Graph.parse", new=fake_parse_factory(mock_graph)) as mock_parse:
         with pytest.raises(ValueError) as exc:
             CIMMetadataHeader.from_manifest("dummy.xml", "graph1", format="xml")    # Trying with xml format to check that the format argument is passed correctly
             mock_parse.assert_called_once_with("dummy.xml", format="xml")
@@ -585,7 +585,7 @@ def test_from_manifest_emptyfile(mock_collect: MagicMock, fake_parse_factory: Ca
         ),
     ]
 )
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 def test_from_manifest_parametrized(
     mock_collect: MagicMock,
     make_graph: Callable[..., Graph],
@@ -598,7 +598,7 @@ def test_from_manifest_parametrized(
     mock_collect.return_value = {"ex": "http://example.org/"}
     manifest = make_graph(manifest_triples)
     
-    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(manifest)):
+    with patch("kgraphpy.header.Graph.parse", new=fake_parse_factory(manifest)):
         
         if expect_error:
             with pytest.raises(ValueError) as exc:
@@ -624,7 +624,7 @@ def test_from_manifest_namespaces(fake_parse_factory: MagicMock) -> None:
     mock_graph.add((URIRef("graph2"), URIRef("www.extra.com/p3"), Literal("o3")))
     
     
-    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
+    with patch("kgraphpy.header.Graph.parse", new=fake_parse_factory(mock_graph)):
         header = CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
     
     assert header.subject == URIRef("graph1")
@@ -645,7 +645,7 @@ def test_from_manifest_nonamespacemanager(fake_parse_factory: MagicMock) -> None
     # Pylance silenced to test an edge case
     mock_graph.namespace_manager = None    # type: ignore
     
-    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
+    with patch("kgraphpy.header.Graph.parse", new=fake_parse_factory(mock_graph)):
         header = CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
     
     assert header.subject == URIRef("graph1")
@@ -654,7 +654,7 @@ def test_from_manifest_nonamespacemanager(fake_parse_factory: MagicMock) -> None
     assert (URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")) in header.graph
     assert header.graph.namespace_manager.store.namespace("ex") == None
 
-@patch("cim_plugin.header.collect_specific_namespaces")
+@patch("kgraphpy.header.collect_specific_namespaces")
 def test_from_manifest_differentnamespacereturned(mock_collect: MagicMock, fake_parse_factory: MagicMock) -> None:
     # Documents what happends if collect_specific_namespaces return a different namespace then in the triples (but same prefix).
     # This should never happen because it only returns the namespaces used by the triples.
@@ -663,7 +663,7 @@ def test_from_manifest_differentnamespacereturned(mock_collect: MagicMock, fake_
     mock_graph.add((URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")))
     mock_collect.return_value = {"ex": "www.new.com/"}
     
-    with patch("cim_plugin.header.Graph.parse", new=fake_parse_factory(mock_graph)):
+    with patch("kgraphpy.header.Graph.parse", new=fake_parse_factory(mock_graph)):
         header = CIMMetadataHeader.from_manifest("dummy.trig", "graph1")
     
     assert (URIRef("graph1"), URIRef("https://example.org/p1"), Literal("o1")) in header.graph

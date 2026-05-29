@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["cim_plugin"]
+packages = ["kgraphpy"]
 
 [tool.setuptools.package-data]
 cim_plugin = ["*.yaml"]

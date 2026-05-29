@@ -10,7 +10,7 @@ import copy
 from collections import defaultdict
 from tests.fixtures import make_schemaview #, PatchMocks, mock_patch_integer_ranges, set_prefixes
 import logging
-from cim_plugin.cimxml_parser import (
+from kgraphpy.cimxml_parser import (
     _get_current_namespace_from_model, 
     update_namespace_in_model,
     inject_integer_type,

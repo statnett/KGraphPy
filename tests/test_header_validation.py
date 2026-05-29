@@ -2,12 +2,12 @@ import pytest
 from unittest.mock import call, patch, MagicMock
 from rdflib import BNode, Graph, Literal, Node, URIRef
 from rdflib.namespace import XSD, DCAT, DCTERMS, RDF
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.namespaces import JSONLD, RDFG, MD
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.namespaces import JSONLD, RDFG, MD
 from typing import Any
 import datetime
 
-from cim_plugin.header_validation import (
+from kgraphpy.header_validation import (
     _check_dcterms_issued_count, 
     _check_trig_rdfg_graph,
     _correct_triple_representation_by_predicate,
@@ -190,7 +190,7 @@ def test_fix_datetime_format(input: Any, expected: Any, comment: str|None, caplo
         pytest.param("2025-02-14t00:00:00Z", False, id="Lowercase 't' cast not called"),
     ]
 )
-@patch("cim_plugin.header_validation.cast_datetime_utc")
+@patch("kgraphpy.header_validation.cast_datetime_utc")
 def test_fix_datetime_format_calls(mock_cast: MagicMock, input: str, calls: bool) -> None:
     o = Literal(input)
     return_value = Literal("2025-02-14T00:00:00+00:00", datatype=XSD.dateTime)
@@ -205,7 +205,7 @@ def test_fix_datetime_format_calls(mock_cast: MagicMock, input: str, calls: bool
         assert fixed_object == return_value
 
 
-@patch("cim_plugin.header_validation.cast_datetime_utc")
+@patch("kgraphpy.header_validation.cast_datetime_utc")
 def test_fix_datetime_format_castingerror(mock_cast: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     o = Literal("not a date")
     mock_cast.side_effect = ValueError("Invalid date format")
@@ -229,7 +229,7 @@ def test_fix_datetime_format_castingerror(mock_cast: MagicMock, caplog: pytest.L
         pytest.param([DCAT.startDate, DCAT.keyword], Literal("new"), id="Multiple predicates, only one match, one triple updated"),
     ]
 )
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_basic(mock_fix: MagicMock, predicates: list[URIRef], object_returned: Any, caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
     s = URIRef("s")
@@ -265,7 +265,7 @@ def test_fix_datetime_format_in_triples_basic(mock_fix: MagicMock, predicates: l
         pytest.param(DCAT.keyword, id="DCAT.keyword"),
     ]
 )
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_calls(mock_fix: MagicMock, predicate: URIRef) -> None:
     g = Graph()
     s = URIRef("s")
@@ -280,7 +280,7 @@ def test_fix_datetime_format_in_triples_calls(mock_fix: MagicMock, predicate: UR
         mock_fix.assert_not_called()
 
 
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_logcounts(mock_fix: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
     s = URIRef("s")
@@ -299,7 +299,7 @@ def test_fix_datetime_format_in_triples_logcounts(mock_fix: MagicMock, caplog: p
     assert caplog.text.count("Corrected date format for predicate") == 2
 
 
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_idempotency(mock_fix: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
     s = URIRef("s")
@@ -318,7 +318,7 @@ def test_fix_datetime_format_in_triples_idempotency(mock_fix: MagicMock, caplog:
     assert caplog.text.count("Corrected date format for predicate") == 1
 
 
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_duplicates(mock_fix: MagicMock) -> None:
     g = Graph()
     s = URIRef("s")
@@ -334,7 +334,7 @@ def test_fix_datetime_format_in_triples_duplicates(mock_fix: MagicMock) -> None:
     assert len(g) == 1
     assert (s, DCAT.endDate, Literal("new")) in g
 
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_emptygraph(mock_fix: MagicMock) -> None:
     g = Graph()
     _fix_datetime_format_in_triples(g)
@@ -343,7 +343,7 @@ def test_fix_datetime_format_in_triples_emptygraph(mock_fix: MagicMock) -> None:
     assert len(g) == 0
 
 
-@patch("cim_plugin.header_validation._fix_datetime_format")
+@patch("kgraphpy.header_validation._fix_datetime_format")
 def test_fix_datetime_format_in_triples_exception(mock_fix: MagicMock) -> None:
     g = Graph()
     s = URIRef("s")
@@ -746,7 +746,7 @@ def test_fix_cimxml_period_of_time_format_blanknodes() -> None:
     assert (id, RDF.type, DCTERMS.PeriodOfTime) not in g
 
 # Unit tests _fix_trig_period_of_time_format
-@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+@patch("kgraphpy.header_validation._make_bnode_triple_for_given_predicate")
 def test__fix_trig_period_of_time_format_emptygraph(mock_make_bnode: MagicMock) -> None:
     g = Graph()
     id = URIRef("id1")
@@ -760,7 +760,7 @@ def test__fix_trig_period_of_time_format_emptygraph(mock_make_bnode: MagicMock) 
     mock_make_bnode.assert_not_called()
 
 
-@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+@patch("kgraphpy.header_validation._make_bnode_triple_for_given_predicate")
 def test__fix_trig_period_of_time_format_nodatetriples(mock_make_bnode: MagicMock) -> None:
     g = Graph()
     id = URIRef("id1")
@@ -786,7 +786,7 @@ def test__fix_trig_period_of_time_format_nodatetriples(mock_make_bnode: MagicMoc
         pytest.param(2, id="Two temporal triples"),
     ]
 )
-@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+@patch("kgraphpy.header_validation._make_bnode_triple_for_given_predicate")
 def test__fix_trig_period_of_time_format_temporalremoval(mock_make_bnode: MagicMock, occurences: int) -> None:
     g = Graph()
     id = URIRef("id1")
@@ -816,7 +816,7 @@ def test__fix_trig_period_of_time_format_temporalremoval(mock_make_bnode: MagicM
         pytest.param(2, id="Two temporal triples"),
     ]
 )
-@patch("cim_plugin.header_validation._make_bnode_triple_for_given_predicate")
+@patch("kgraphpy.header_validation._make_bnode_triple_for_given_predicate")
 def test__fix_trig_period_of_time_format_periodoftimeremoval(mock_make_bnode: MagicMock, occurences: int) -> None:
     g = Graph()
     id = URIRef("id1")
@@ -1014,13 +1014,13 @@ def test_correct_triple_representation_by_predicate_onlyonedummy(caplog: pytest.
         pytest.param(" trig ", id="Format with whitespace"),
     ]
 )
-@patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._check_trig_rdfg_graph")
-@patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
-@patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._check_dcterms_issued_count")
-@patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
-@patch("cim_plugin.header_validation._remove_invalid_triples")
+@patch("kgraphpy.header_validation._fix_trig_period_of_time_format")
+@patch("kgraphpy.header_validation._check_trig_rdfg_graph")
+@patch("kgraphpy.header_validation._remove_cimxml_rdfg_graph")
+@patch("kgraphpy.header_validation._fix_cimxml_period_of_time_format")
+@patch("kgraphpy.header_validation._check_dcterms_issued_count")
+@patch("kgraphpy.header_validation._fix_datetime_format_in_triples")
+@patch("kgraphpy.header_validation._remove_invalid_triples")
 def test_validate_header_calls(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_xml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, mock_fix_period_trig: MagicMock, format: str, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, DCAT.Dataset)
@@ -1046,13 +1046,13 @@ def test_validate_header_calls(mock_remove: MagicMock, mock_fix_datetime: MagicM
     else:
         assert f"Unknown format specified for header validation: {format}. No validation performed." in caplog.text
 
-@patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._check_trig_rdfg_graph")
-@patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
-@patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._check_dcterms_issued_count")
-@patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
-@patch("cim_plugin.header_validation._remove_invalid_triples")
+@patch("kgraphpy.header_validation._fix_trig_period_of_time_format")
+@patch("kgraphpy.header_validation._check_trig_rdfg_graph")
+@patch("kgraphpy.header_validation._remove_cimxml_rdfg_graph")
+@patch("kgraphpy.header_validation._fix_cimxml_period_of_time_format")
+@patch("kgraphpy.header_validation._check_dcterms_issued_count")
+@patch("kgraphpy.header_validation._fix_datetime_format_in_triples")
+@patch("kgraphpy.header_validation._remove_invalid_triples")
 def test_validate_header_nordftype(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, mock_fix_period_trig: MagicMock) -> None:
     # If there are no rdf.type triples the header is invalid and ValueError is raised.
     header = CIMMetadataHeader.empty(URIRef("id1"))
@@ -1069,13 +1069,13 @@ def test_validate_header_nordftype(mock_remove: MagicMock, mock_fix_datetime: Ma
     mock_check_rdfgraph.assert_not_called()
     mock_fix_period_trig.assert_not_called()
 
-@patch("cim_plugin.header_validation._check_trig_rdfg_graph")
-@patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
-@patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._check_dcterms_issued_count")
-@patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
-@patch("cim_plugin.header_validation._remove_invalid_triples")
+@patch("kgraphpy.header_validation._check_trig_rdfg_graph")
+@patch("kgraphpy.header_validation._remove_cimxml_rdfg_graph")
+@patch("kgraphpy.header_validation._fix_cimxml_period_of_time_format")
+@patch("kgraphpy.header_validation._fix_trig_period_of_time_format")
+@patch("kgraphpy.header_validation._check_dcterms_issued_count")
+@patch("kgraphpy.header_validation._fix_datetime_format_in_triples")
+@patch("kgraphpy.header_validation._remove_invalid_triples")
 def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, MD.FullModel)
@@ -1091,13 +1091,13 @@ def test_validate_header_fullmodelheader(mock_remove: MagicMock, mock_fix_dateti
     assert "Validation for header type ['http://iec.ch/TC57/61970-552/ModelDescription/1#FullModel'] is not implemented." in caplog.text
 
 
-@patch("cim_plugin.header_validation._check_trig_rdfg_graph")
-@patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
-@patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._check_dcterms_issued_count")
-@patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
-@patch("cim_plugin.header_validation._remove_invalid_triples")
+@patch("kgraphpy.header_validation._check_trig_rdfg_graph")
+@patch("kgraphpy.header_validation._remove_cimxml_rdfg_graph")
+@patch("kgraphpy.header_validation._fix_cimxml_period_of_time_format")
+@patch("kgraphpy.header_validation._fix_trig_period_of_time_format")
+@patch("kgraphpy.header_validation._check_dcterms_issued_count")
+@patch("kgraphpy.header_validation._fix_datetime_format_in_triples")
+@patch("kgraphpy.header_validation._remove_invalid_triples")
 def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_trig: MagicMock, mock_fix_period_cimxml: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"))
     header.add_triple(RDF.type, MD.FullModel)
@@ -1115,13 +1115,13 @@ def test_validate_header_multiplerdftypes(mock_remove: MagicMock, mock_fix_datet
     assert "Multiple header types found in header:" in caplog.text # Carried over from header.header_type
 
 
-@patch("cim_plugin.header_validation._check_trig_rdfg_graph")
-@patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
-@patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._check_dcterms_issued_count")
-@patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
-@patch("cim_plugin.header_validation._remove_invalid_triples")
+@patch("kgraphpy.header_validation._check_trig_rdfg_graph")
+@patch("kgraphpy.header_validation._remove_cimxml_rdfg_graph")
+@patch("kgraphpy.header_validation._fix_cimxml_period_of_time_format")
+@patch("kgraphpy.header_validation._fix_trig_period_of_time_format")
+@patch("kgraphpy.header_validation._check_dcterms_issued_count")
+@patch("kgraphpy.header_validation._fix_datetime_format_in_triples")
+@patch("kgraphpy.header_validation._remove_invalid_triples")
 def test_validate_header_unknownheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     header = CIMMetadataHeader.empty(URIRef("id1"), metadata_objects=[URIRef("www.custom.org/header")])
     header.add_triple(RDF.type, URIRef("www.custom.org/header"))
@@ -1138,13 +1138,13 @@ def test_validate_header_unknownheader(mock_remove: MagicMock, mock_fix_datetime
 
 
 @pytest.mark.parametrize("header", [None, CIMMetadataHeader.empty(URIRef("id1"))])
-@patch("cim_plugin.header_validation._check_trig_rdfg_graph")
-@patch("cim_plugin.header_validation._remove_cimxml_rdfg_graph")
-@patch("cim_plugin.header_validation._fix_cimxml_period_of_time_format")
-@patch("cim_plugin.header_validation._fix_trig_period_of_time_format")
-@patch("cim_plugin.header_validation._check_dcterms_issued_count")
-@patch("cim_plugin.header_validation._fix_datetime_format_in_triples")
-@patch("cim_plugin.header_validation._remove_invalid_triples")
+@patch("kgraphpy.header_validation._check_trig_rdfg_graph")
+@patch("kgraphpy.header_validation._remove_cimxml_rdfg_graph")
+@patch("kgraphpy.header_validation._fix_cimxml_period_of_time_format")
+@patch("kgraphpy.header_validation._fix_trig_period_of_time_format")
+@patch("kgraphpy.header_validation._check_dcterms_issued_count")
+@patch("kgraphpy.header_validation._fix_datetime_format_in_triples")
+@patch("kgraphpy.header_validation._remove_invalid_triples")
 def test_validate_header_emptyheader(mock_remove: MagicMock, mock_fix_datetime: MagicMock, mock_check_issued: MagicMock, mock_fix_period_cimxml: MagicMock, mock_fix_period_trig: MagicMock, mock_remove_rdfgraph: MagicMock, mock_check_rdfgraph: MagicMock, header: Any, caplog: pytest.LogCaptureFixture) -> None:
     header = header
     validate_header(header=header, format="cimxml")

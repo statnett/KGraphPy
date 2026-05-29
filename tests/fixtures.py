@@ -6,10 +6,10 @@ from rdflib import Graph, URIRef, Namespace, BNode, Literal
 from rdflib.namespace import RDF, DCAT
 from dataclasses import dataclass
 from unittest.mock import MagicMock, Mock
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.cimxml_serializer import CIMXMLSerializer
-from cim_plugin.graph import CIMGraph
-from cim_plugin.provenance import Provenance
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.cimxml_serializer import CIMXMLSerializer
+from kgraphpy.graph import CIMGraph
+from kgraphpy.provenance import Provenance
 import uuid
 import textwrap
 from rdflib.plugin import register
@@ -166,7 +166,7 @@ def mock_patch_integer_ranges(monkeypatch: pytest.MonkeyPatch) -> PatchMocks:
     """Patching all functions used by patch_integer_ranges."""
 
     mocks = PatchMocks(find_slots=MagicMock(), add_slot=MagicMock(), set_modified=MagicMock(), calls=[])
-    monkeypatch.setattr("cim_plugin.cimxml_parser.find_slots_with_range", mocks.find_slots)
+    monkeypatch.setattr("kgraphpy.cimxml_parser.find_slots_with_range", mocks.find_slots)
     monkeypatch.setattr(SchemaView, "add_slot", mocks.add_slot)
     monkeypatch.setattr(SchemaView, "set_modified", mocks.set_modified)
     
@@ -215,7 +215,7 @@ def sample_yaml() -> str:
 
 @pytest.fixture 
 def cimxml_plugin() -> Generator: 
-    register( "cimxml", Parser, "cim_plugin.cimxml_parser", "CIMXMLParser" ) 
+    register( "cimxml", Parser, "kgraphpy.cimxml_parser", "CIMXMLParser" ) 
     # yield so the test can run after registration 
     yield
 
@@ -224,7 +224,7 @@ def cimxml_plugin() -> Generator:
 def mock_extract_uuid(monkeypatch: pytest.MonkeyPatch) -> Mock: 
     mock = Mock() 
     mock.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678") 
-    monkeypatch.setattr("cim_plugin.utilities._extract_uuid_from_urn", mock) 
+    monkeypatch.setattr("kgraphpy.utilities._extract_uuid_from_urn", mock) 
     return mock
 
 

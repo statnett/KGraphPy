@@ -4,7 +4,7 @@ import re
 from linkml_runtime.utils.schemaview import SchemaView, SlotDefinition
 from rdflib import Literal, URIRef
 from rdflib.namespace import XSD
-from cim_plugin.exceptions import LiteralCastingError
+from kgraphpy.exceptions import LiteralCastingError
 from typing import cast
 from datetime import datetime, timezone, date
 import logging

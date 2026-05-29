@@ -2,7 +2,7 @@
 
 from rdflib import Node, Literal, URIRef
 from rdflib.namespace import DCTERMS, XSD
-from cim_plugin.namespaces import MD, DCAT_EXT
+from kgraphpy.namespaces import MD, DCAT_EXT
 from typing import Any
 
 # Conversion mapping

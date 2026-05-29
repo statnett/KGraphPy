@@ -2,8 +2,8 @@ from rdflib.graph import Graph
 from rdflib import URIRef, Literal, XSD
 import logging
 from logging.config import dictConfig
-from cim_plugin.log_config import LOG_CONFIG
-from cim_plugin.utilities import load_graphs_from_trig, load_graphs_from_cimxml
+from kgraphpy.log_config import LOG_CONFIG
+from kgraphpy.utilities import load_graphs_from_trig, load_graphs_from_cimxml
 dictConfig(LOG_CONFIG)
 logger = logging.getLogger('cimxml_logger')
 

@@ -8,8 +8,8 @@ from linkml_runtime.linkml_model.meta import TypeDefinition
 import yaml
 import logging
 from typing import Optional
-from cim_plugin.utilities import extract_uuid
-from cim_plugin.namespaces import update_namespace_in_triples
+from kgraphpy.utilities import extract_uuid
+from kgraphpy.namespaces import update_namespace_in_triples
 import io
 import contextlib
 
@@ -22,10 +22,8 @@ class CIMXMLParser(Parser):
 
     def __init__(self) -> None:
         super().__init__()
-        logger.info("CIMXMLParser loaded")
 
     def parse(self, source: InputSource, sink: Graph, **kwargs) -> None:
-        logger.info("CIMXMLParser.parse called")
         rdfxml = RDFXMLParser()     # Parsing data as if it was RDF/XML format
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):   

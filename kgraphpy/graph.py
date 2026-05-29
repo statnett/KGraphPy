@@ -4,8 +4,8 @@ from typing import Iterable
 
 from rdflib import Graph, Dataset
 from rdflib.graph import _TripleType
-from cim_plugin.provenance import Provenance, log_provenance
-from cim_plugin.header import CIMMetadataHeader
+from kgraphpy.provenance import Provenance, log_provenance
+from kgraphpy.header import CIMMetadataHeader
 
 class CIMGraph(Graph):
     _provenance: Provenance|None = None
