@@ -13,7 +13,7 @@ dependencies = [
 packages = ["kgraphpy"]
 
 [tool.setuptools.package-data]
-cim_plugin = ["*.yaml"]
+kgraphpy = ["*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = [
