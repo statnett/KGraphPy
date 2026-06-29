@@ -173,7 +173,7 @@ def test_collect_cimxml_to_dataset_singlefile(mock_loader: MagicMock) -> None:
     assert len(named) == 1
     assert named.metadata_header is not None
     assert named.metadata_header.subject == URIRef("urn:uuid:uuid1")
-    assert named.metadata_header.triples == [(URIRef("urn:uuid:uuid1"), RDF.type, MD.FullModel)]
+    assert list(named.metadata_header.triples) == [(URIRef("urn:uuid:uuid1"), RDF.type, MD.FullModel)]
     assert (URIRef("s"), URIRef("p"), URIRef("o")) in named
 
     assert ds.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
@@ -200,8 +200,8 @@ def test_collect_cimxml_to_dataset_multiplefiles(mock_loader: MagicMock) -> None
 
     assert g1_named.metadata_header
     assert g2_named.metadata_header
-    assert (URIRef("urn:uuid:uuid1"), RDF.type, MD.FullModel) in g1_named.metadata_header.triples
-    assert (URIRef("urn:uuid:uuid2"), RDF.type, DCAT.Dataset) in g2_named.metadata_header.triples
+    assert (URIRef("urn:uuid:uuid1"), RDF.type, MD.FullModel) in list(g1_named.metadata_header.triples)
+    assert (URIRef("urn:uuid:uuid2"), RDF.type, DCAT.Dataset) in list(g2_named.metadata_header.triples)
     assert (URIRef("s1"), URIRef("p1"), URIRef("o1")) in g1_named
     assert (URIRef("s2"), URIRef("p2"), URIRef("o2")) in g2_named
     assert mock_loader.call_count == 2
@@ -322,7 +322,7 @@ def test_collect_cimxml_to_dataset_nondata(mock_loader: MagicMock, caplog: pytes
     assert len(g1_named) == 0
     assert mock_loader.call_count == 1
     assert g1_named.metadata_header
-    assert g1_named.metadata_header.triples == []
+    assert list(g1_named.metadata_header.triples) == []
     assert ds.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
     assert g1_named.namespace_manager.store.namespace("ex") == URIRef("http://example.com/")
     assert "Random id generated for graph" in caplog.text
@@ -390,7 +390,7 @@ def test_collect_cimxml_to_dataset_integrationrealparse(tmp_path: Path, cimxml_p
     named = ds.graph(URIRef(f"urn:uuid:{uuid}"))
     assert len(named) == 1
     assert named.metadata_header
-    assert (URIRef(subject), RDF.type, MD.FullModel) in named.metadata_header.triples
+    assert (URIRef(subject), RDF.type, MD.FullModel) in list(named.metadata_header.triples)
     assert RDF.type in list(named.predicates())
     assert URIRef("https://cim.ucaiug.io/ns#ACLineSegment") in list(named.objects())
     assert len(ds.default_graph) == 0

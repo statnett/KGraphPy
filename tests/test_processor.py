@@ -261,7 +261,7 @@ def test_extract_header_basic() -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in list(pr.graph.metadata_header.triples)
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
 
@@ -278,7 +278,7 @@ def test_extract_header_headeralready(caplog: pytest.LogCaptureFixture) -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1") # Header remains unchanged
-    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in list(pr.graph.metadata_header.triples)
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
     assert caplog.records[0].levelname == "ERROR"
@@ -297,7 +297,7 @@ def test_extract_header_multiplecalls(caplog: pytest.LogCaptureFixture) -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in list(pr.graph.metadata_header.triples)
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
     assert "Metadata header already exist. Use .replace_header instead." in caplog.text
@@ -316,7 +316,7 @@ def test_extract_header_largergraphs() -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    header_triples = pr.graph.metadata_header.triples
+    header_triples = list(pr.graph.metadata_header.triples)
     assert len(header_triples) == 2
     assert (URIRef("h1"), DCAT_EXT.keyword, Literal("header")) in header_triples
     assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in header_triples
@@ -341,8 +341,9 @@ def test_extract_header_bnodes() -> None:
 
     assert pr.graph.metadata_header
     assert pr.graph.metadata_header.subject == URIRef("h1")
-    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph.metadata_header.triples
-    assert (URIRef("h1"), URIRef("urn:p:3"), Literal("value")) in pr.graph.metadata_header.triples
+    header_triples = list(pr.graph.metadata_header.triples)
+    assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in header_triples
+    assert (URIRef("h1"), URIRef("urn:p:3"), Literal("value")) in header_triples
     assert len(pr.graph) == 1
     assert (URIRef("s1"), URIRef("p1"), URIRef("o")) in pr.graph
 
@@ -377,8 +378,9 @@ def test_convert_header_typetriplenotconverted(mock_make: MagicMock, mock_conver
     mock_make.assert_called_once()
     mock_convert.assert_not_called()  # The type triple is not converted
     assert pr.graph.metadata_header
-    assert len(pr.graph.metadata_header.triples) == 1
-    assert (header_subject, RDF.type, MD.FullModel) in pr.graph.metadata_header.triples
+    header_triples = list(pr.graph.metadata_header.triples)
+    assert len(header_triples) == 1
+    assert (header_subject, RDF.type, MD.FullModel) in header_triples
     assert "Converted 0 header triples to md_fullmodel." in caplog.text
     assert "triples could not be converted and was not included in the new header" not in caplog.text  # No unconverted triples
 
@@ -414,9 +416,10 @@ def test_convert_header_success(mock_make: MagicMock, mock_convert: MagicMock, m
     mock_convert.assert_has_calls([call((header_subject, DCAT_EXT.keyword, Literal("test")), target_format="md_fullmodel"),
                                    call((header_subject, DCAT_EXT.version, Literal("unconverted_description")), target_format="md_fullmodel")], any_order=True)
 
-    assert len(pr.graph.metadata_header.triples) == 2
-    assert (header_subject, RDF.type, MD.FullModel) in pr.graph.metadata_header.triples
-    assert (header_subject, MD.Model.description, Literal("converted_keyword")) in pr.graph.metadata_header.triples
+    header_triples = list(pr.graph.metadata_header.triples)
+    assert len(header_triples) == 2
+    assert (header_subject, RDF.type, MD.FullModel) in header_triples
+    assert (header_subject, MD.Model.description, Literal("converted_keyword")) in header_triples
     assert "Converted 1 header triples to md_fullmodel." in caplog.text
     assert "1 triples could not be converted and was not included in the new header" in caplog.text
     assert "Literal('unconverted_description')" in caplog.text  # The DCAT_CIM.version triple is not converted and should be logged

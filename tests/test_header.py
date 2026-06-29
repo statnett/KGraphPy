@@ -105,7 +105,7 @@ def test_from_graph_onlyheadertriple(mock_triples: MagicMock, mock_namespaces: M
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == header
-    assert result.triples == [(header, RDF.type, DCAT.Dataset)]
+    assert list(result.triples) == [(header, RDF.type, DCAT.Dataset)]
     mock_triples.assert_called_once_with(g, header)
     mock_namespaces.assert_called_once_with([(header, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
@@ -122,7 +122,7 @@ def test_from_graph_namespaces(mock_triples: MagicMock, mock_namespaces: MagicMo
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == header
-    assert result.triples == [(header, RDF.type, DCAT.Dataset)]
+    assert list(result.triples) == [(header, RDF.type, DCAT.Dataset)]
     ns = result.graph.namespace_manager.store
     assert len(list(ns.namespaces())) == 2
     assert ns.namespace("rdf") == URIRef("rdf_test")
@@ -145,7 +145,7 @@ def test_from_graph_blankheaderrepair(mock_triples: MagicMock, mock_namespaces: 
     result = CIMMetadataHeader.from_graph(g)
 
     assert result.subject == repaired
-    assert result.triples == [(repaired, RDF.type, DCAT.Dataset)]
+    assert list(result.triples) == [(repaired, RDF.type, DCAT.Dataset)]
     mock_triples.assert_called_once_with(g, header)
     mock_namespaces.assert_called_once_with([(repaired, RDF.type, DCAT.Dataset)], g.namespace_manager)
 
@@ -439,7 +439,7 @@ def test_collect_header_triples_mixedobjects(mock_repair: MagicMock, obj: Node, 
 def test_empty_basic() -> None:
     h = CIMMetadataHeader.empty()
     assert isinstance(h.subject, URIRef)
-    assert h.triples == []
+    assert list(h.triples) == []
     assert h.reachable_nodes == set()
     assert h.metadata_objects == CIMMetadataHeader.DEFAULT_METADATA_OBJECTS
     assert h.profile_predicates == CIMMetadataHeader.DEFAULT_PROFILE_PREDICATES
@@ -883,7 +883,7 @@ def test_set_subject_basic(new_subject: str) -> None:
     header.set_subject(URIRef(new_subject))
 
     assert header.subject == URIRef(new_subject)
-    assert len(header.triples) == 4
+    assert len(list(header.triples)) == 4
     assert (URIRef(new_subject), DCTERMS.contributor, URIRef("h1")) in header.triples
     for s, p, o in header.triples:
         assert s == URIRef(new_subject)
@@ -895,7 +895,7 @@ def test_set_subject_emptyheader() -> None:
     header.set_subject(URIRef("h2"))
 
     assert header.subject == URIRef("h2")
-    assert len(header.triples) == 0
+    assert len(list(header.triples)) == 0
 
 
 def test_set_subject_multiplecalls() -> None:
@@ -909,7 +909,7 @@ def test_set_subject_multiplecalls() -> None:
     header.set_subject(URIRef("h3"))
 
     assert header.subject == URIRef("h3")
-    assert len(header.triples) == 4
+    assert len(list(header.triples)) == 4
     for s, p, o in header.triples:
         assert s == URIRef("h3")
 

@@ -179,7 +179,7 @@ def collect_cimxml_to_dataset(files: list[str], schema_path: str|None = None) ->
             named.namespace_manager.bind(prefix, uri)
 
         for triple in graph:
-            if triple in header.triples:
+            if triple in list(header.triples):
                 continue
             named.add(triple)
         

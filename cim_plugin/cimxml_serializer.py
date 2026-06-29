@@ -205,7 +205,7 @@ class CIMXMLSerializer(Serializer):
             uri = quoteattr(self.qualifier_resolver.convert_to_special_qualifier(subject))
             subject_type_qname = nm.normalizeUri(str(subject_type))
 
-            body_triples = [(p, o) for (_, p, o) in header.triples if not (p == RDF.type and o == subject_type)]
+            body_triples = [(p, o) for (_, p, o) in list(header.triples) if not (p == RDF.type and o == subject_type)]
             body_triples.sort(key=lambda po: nm.normalizeUri(str(po[0])))
 
             write(f"{indent}<{subject_type_qname} rdf:about={uri}")

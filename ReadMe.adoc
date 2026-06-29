@@ -65,6 +65,40 @@ KGraphPy is intentionally lightweight and composable:
 
 KGraphPy does not replace RDFLib; it **extends it with operational and standards-oriented capabilities**.
 
+
+== Setup
+Make sure the latest python is installed. It is recommended to install the library in a virtual environment.
+
+[source,bash]
+----
+python -m venv .venv
+# or
+py -m venv .venv
+
+.venv\Scripts\activate
+pip install -e .
+----
+
+== Usage
+The quick_demo jupyter file gives a short description of how to use the library. By using the CIMProcessor class as a handler of the graph data,
+the triples belonging to the metadata header can be edited and replaced easily. It can even switch between a dcat:Dataset header and a md:FullModel
+header. Namespaces can also be verified and replaced. When serialising with the CIMProcessor.to_file method, the header is placed first and the data subjects
+are sorted. This is available for CIMXML, trig and json-ld. CIMXML file format has a different style for the header compared with the data, so it is therefore recommended
+to use the CIMProcessor for output into CIMXML format.
+
+How to use the parsers and serialisers without the CIMProcessor:
+
+[source,python]
+----
+g = CIMGraph()  # You can also use the standard rdflib.Graph object
+
+# Parsing from CIMXML file
+g.parse(filename, format="cimxml")
+
+# Serialising to trig (unlike the regular rdflib trig serialiser this creates layers from blank nodes):
+g.serialize(filename, format="cimtrig")
+----
+
 == Licensing
 
 KGraphPy is released under the **Apache License, Version 2.0**.

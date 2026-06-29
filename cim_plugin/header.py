@@ -259,9 +259,9 @@ class CIMMetadataHeader:
 
 
     @property
-    def triples(self):
-        """Convenient access to a list of all the triples in the header."""
-        return list(self.graph.triples((None, None, None)))
+    def triples(self) -> Iterable[Tuple[Node, Node, Node]]:
+        """Convenient access to the triples in the header."""
+        return self.graph.triples((None, None, None))
 
     @property
     def header_type(self) -> set[Node]:

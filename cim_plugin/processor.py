@@ -130,7 +130,7 @@ class CIMProcessor:
         Triples that cannot be converted will be dropped and logged. 
         This is especially notable for dcat -> md conversion because the dcat:Dataset format typically contains more information.
         """
-        if not self.graph.metadata_header or not self.graph.metadata_header.triples:
+        if not self.graph.metadata_header or not list(self.graph.metadata_header.triples):
             logger.error("No metadata header found for conversion.")
             return
         
