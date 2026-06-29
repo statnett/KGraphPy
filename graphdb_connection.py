@@ -4,14 +4,14 @@ It requires user and password handling, which should be done via a key vault or 
 
 """
 
-import cim_plugin
+import kgraphpy
 import os
 from rdflib import URIRef, Graph, Variable
 from rdflib.contrib.graphdb.client import GraphDBClient
-from cim_plugin.processor import CIMProcessor
-from cim_plugin.utilities import load_graphs_from_cimxml
+from kgraphpy.processor import CIMProcessor
+from kgraphpy.utilities import load_graphs_from_cimxml
 
-USER: str = os.getenv("GRAPHDB_USER", "christha")
+USER: str = os.getenv("GRAPHDB_USER", "unknown_user")
 PASSWORD: str = os.getenv("GRAPHDB_PASSWORD", "wrong_password")
 url: str = "https://rndpsvc.statnett.no/graphdb/"
 

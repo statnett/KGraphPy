@@ -7,11 +7,11 @@ from rdflib.namespace import RDF, DCAT
 from xml.sax.saxutils import quoteattr, escape
 import logging
 from typing import IO, Any, Optional
-from cim_plugin.utilities import _extract_uuid_from_urn, create_header_attribute
-from cim_plugin.namespaces import MD, DCAT_EXT, collect_specific_namespaces
-from cim_plugin.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.rdf_id_selection import find_rdf_id_or_about
+from kgraphpy.utilities import _extract_uuid_from_urn, create_header_attribute
+from kgraphpy.namespaces import MD, DCAT_EXT, collect_specific_namespaces
+from kgraphpy.qualifiers import UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, is_uuid_qualified
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.rdf_id_selection import find_rdf_id_or_about
 from functools import lru_cache
 from typing import Callable, cast
 

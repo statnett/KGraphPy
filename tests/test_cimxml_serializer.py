@@ -9,11 +9,11 @@ from rdflib import Namespace, URIRef, Graph, Literal, Node, BNode
 from rdflib.plugins.serializers.xmlwriter import ESCAPE_ENTITIES
 from rdflib.namespace import XSD, RDF, DCAT, DCTERMS
 from xml.sax.saxutils import escape
-from cim_plugin.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
-from cim_plugin.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, uuid_namespace
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.graph import CIMGraph
-from cim_plugin.namespaces import MD, DCAT_EXT
+from kgraphpy.cimxml_serializer import _subject_sort_key, CIMXMLSerializer
+from kgraphpy.qualifiers import CIMQualifierStrategy, UnderscoreQualifier, URNQualifier, NamespaceQualifier, CIMQualifierResolver, uuid_namespace
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.graph import CIMGraph
+from kgraphpy.namespaces import MD, DCAT_EXT
 from tests.fixtures import capture_writer, serializer, make_cimgraph
 
 
@@ -75,7 +75,7 @@ def test_ensure_header_noheader(caplog: pytest.LogCaptureFixture) -> None:
     assert store_header.subject == header.subject
     assert "Random id generated for graph" in caplog.text
 
-@patch("cim_plugin.cimxml_serializer.create_header_attribute")
+@patch("kgraphpy.cimxml_serializer.create_header_attribute")
 def test_ensure_header_createcalled(mock_create: MagicMock) -> None:
     g = CIMGraph()
     ser = CIMXMLSerializer(g)
@@ -87,7 +87,7 @@ def test_ensure_header_createcalled(mock_create: MagicMock) -> None:
     assert store_header is header
 
 
-@patch("cim_plugin.cimxml_serializer.create_header_attribute")
+@patch("kgraphpy.cimxml_serializer.create_header_attribute")
 def test_ensure_header_createnotcalled(mock_create: MagicMock) -> None:
     g = CIMGraph()
     g.metadata_header = CIMMetadataHeader.empty(URIRef("s1"))
@@ -392,7 +392,7 @@ def test_build_subject_index_edgecases(triples: list[tuple[Node, Node, Node]], e
     assert index == expected_result
 
 # Unit tests .serialize
-@patch("cim_plugin.cimxml_serializer._subject_sort_key")
+@patch("kgraphpy.cimxml_serializer._subject_sort_key")
 def test_serialize_allcalls(mock_sort: MagicMock) -> None:
     buf = io.BytesIO()
     g = CIMGraph()
@@ -831,7 +831,7 @@ def test_subject_nonuriref(serializer: tuple[CIMXMLSerializer, list]) -> None:
     assert output[0] == '  <ex:TypeA rdf:about="not-a-uri">\n'  # Non-uriref subjects gets written out as string
     # assert "Subject is not a URIRef: not-a-uri" in caplog.text # If logging is uncommented
 
-@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about")
+@patch("kgraphpy.cimxml_serializer.find_rdf_id_or_about")
 def test_subject_missingtype(mock_find: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
@@ -845,8 +845,8 @@ def test_subject_missingtype(mock_find: MagicMock, serializer: tuple[CIMXMLSeria
     mock_find.assert_not_called()
     # assert "No rdf:type triple detected for s1." in caplog.text # If logging is uncommented
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
-@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about", return_value="about")
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.find_rdf_id_or_about", return_value="about")
 def test_subject_multipletypes(mock_find: MagicMock, mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser._write_untyped_subject = Mock()
@@ -872,8 +872,8 @@ def test_subject_multipletypes(mock_find: MagicMock, mock_uuid: MagicMock, seria
     ser.predicate.assert_has_calls(predicate_calls, any_order=True)
     # assert "Multiple rdf:type triples detected for http://example.com/s" in caplog.text # If logging is uncommented
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
-@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about", return_value="about")
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.find_rdf_id_or_about", return_value="about")
 def test_subject_valid(mock_find: MagicMock, mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser._write_untyped_subject = Mock()
@@ -899,7 +899,7 @@ def test_subject_valid(mock_find: MagicMock, mock_uuid: MagicMock, serializer: t
 
 
 @pytest.mark.parametrize("qualifier_return", [True, False])
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified")
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified")
 def test_subject_objectuuid(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list], qualifier_return: bool) -> None:
     # If the object is a uuid it needs to be written with the correct qualifier. This test checks that the predicate is called correctly.
     ser, output = serializer
@@ -923,8 +923,8 @@ def test_subject_objectuuid(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerial
 
 
 @pytest.mark.parametrize("find_return", ["ID", "about", None])
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
-@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about")
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.find_rdf_id_or_about")
 def test_subject_rdfid(mock_find: MagicMock, mock_uuid: MagicMock, find_return: str, serializer: tuple[CIMXMLSerializer, list]) -> None:
     # The return of find_rdf_id_or_about desides how the rdf:type triple is written
     ser, output = serializer
@@ -988,7 +988,7 @@ def test_subject_alreadyserialized(serializer: tuple[CIMXMLSerializer, list]) ->
     assert str.count(result, "<ex:Class ") == 1  # Subject should be serialized only once
     
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
 def test_subject_malformedpredicateandobject(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser.predicate = Mock()
@@ -1008,7 +1008,7 @@ def test_subject_malformedpredicateandobject(mock_uuid: MagicMock, serializer: t
     ser.predicate.assert_called_once_with(Literal("not-a-uri"), bn, 2, use_qualifier=False)
 
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
 def test_subject_predicatesorting(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser.predicate = Mock()
@@ -1049,7 +1049,7 @@ bn = BNode("b")    # Creating a shared bnode for test below
         pytest.param(bn, "<b>", id="BNode type rdf:type")
     ]
 )
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
 def test_subject_predicateedgecases(mock_uuid: MagicMock, pred: Any, pred_output: str, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser.predicate = Mock()
@@ -1072,7 +1072,7 @@ def test_subject_predicateedgecases(mock_uuid: MagicMock, pred: Any, pred_output
     ser.predicate.assert_called_once_with(p, Literal("value"), 2, use_qualifier=False)
     
 
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
 def test_subject_circulartriples(mock_uuid: MagicMock, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     g = ser.store
@@ -1101,8 +1101,8 @@ b = BNode("bad")    # Creating a shared bnode for test below
             pytest.param(b, {b}, id="BNode reachable"),
         ]
 )
-@patch("cim_plugin.cimxml_serializer.is_uuid_qualified", return_value=False)
-@patch("cim_plugin.cimxml_serializer.find_rdf_id_or_about", return_value="about")
+@patch("kgraphpy.cimxml_serializer.is_uuid_qualified", return_value=False)
+@patch("kgraphpy.cimxml_serializer.find_rdf_id_or_about", return_value="about")
 def test_subject_bnodesubjects(mock_find: MagicMock, mock_uuid: MagicMock, subject: Literal|BNode, reachable: set, serializer: tuple[CIMXMLSerializer, list]) -> None:
     ser, output = serializer
     ser.predicate = Mock()
@@ -1638,7 +1638,7 @@ def test_resolve_qname_cache() -> None:
 
 # Unit tests _subject_sort_key
 
-@patch("cim_plugin.cimxml_serializer._extract_uuid_from_urn")
+@patch("kgraphpy.cimxml_serializer._extract_uuid_from_urn")
 def test_subject_sort_key_uuidfound(mock_extract: MagicMock) -> None:
     mock_extract.return_value = uuid.UUID('12345678123456781234567812345678')
     subject = URIRef('urn:uuid:12345678123456781234567812345678')
@@ -1648,7 +1648,7 @@ def test_subject_sort_key_uuidfound(mock_extract: MagicMock) -> None:
     mock_extract.assert_called_once_with('urn:uuid:12345678123456781234567812345678')
 
 
-@patch("cim_plugin.cimxml_serializer._extract_uuid_from_urn")
+@patch("kgraphpy.cimxml_serializer._extract_uuid_from_urn")
 def test_subject_sort_key_notfound(mock_extract: MagicMock) -> None:
     mock_extract.side_effect = ValueError("Invalid model URI: notuuid")
     subject = URIRef('notuuid')
@@ -1671,7 +1671,7 @@ def test_subject_sort_key_sortingbehavior() -> None:
     assert str(sorted_uris[1]) == "notuuid"
 
 
-@patch("cim_plugin.cimxml_serializer._extract_uuid_from_urn")
+@patch("kgraphpy.cimxml_serializer._extract_uuid_from_urn")
 def test_subject_sort_key_unexpectedexception(mock_extract: MagicMock) -> None:
     mock_extract.side_effect = TypeError("boom")
     subject = URIRef("whatever")
@@ -1679,7 +1679,7 @@ def test_subject_sort_key_unexpectedexception(mock_extract: MagicMock) -> None:
     with pytest.raises(TypeError):
         _subject_sort_key(subject)
 
-@patch("cim_plugin.cimxml_serializer._extract_uuid_from_urn")
+@patch("kgraphpy.cimxml_serializer._extract_uuid_from_urn")
 def test_subject_sort_key_nonstringuri(mock_extract: MagicMock) -> None:
     class Weird:
         def __str__(self):

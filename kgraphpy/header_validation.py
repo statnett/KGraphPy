@@ -29,9 +29,9 @@ from typing import Tuple, Optional
 from rdflib import XSD, BNode, Literal, Node, Graph, URIRef
 from rdflib.namespace import DCAT, DCTERMS, RDF
 
-from cim_plugin.enriching import cast_datetime_utc
-from cim_plugin.namespaces import RDFG, JSONLD, MD, DCAT_EXT
-from cim_plugin.header import CIMMetadataHeader
+from kgraphpy.enriching import cast_datetime_utc
+from kgraphpy.namespaces import RDFG, JSONLD, MD, DCAT_EXT
+from kgraphpy.header import CIMMetadataHeader
 
 import logging
 

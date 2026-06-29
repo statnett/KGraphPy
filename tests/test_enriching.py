@@ -7,8 +7,8 @@ from rdflib.namespace import XSD
 from datetime import date, datetime
 from typing import Callable, Any
 from tests.fixtures import make_schemaview, set_prefixes
-from cim_plugin.exceptions import LiteralCastingError
-from cim_plugin.enriching import (
+from kgraphpy.exceptions import LiteralCastingError
+from kgraphpy.enriching import (
     slots_equal, 
     _build_slot_index, 
     _resolve_type, 
@@ -301,7 +301,7 @@ def test_build_slot_index_multipleoverwrites(make_schemaview: Callable[..., Sche
 
 
 
-@patch("cim_plugin.enriching.slots_equal")
+@patch("kgraphpy.enriching.slots_equal")
 def test_build_slot_index_callinghelperfunction(mock_patch: MagicMock, make_schemaview: Callable[..., SchemaView], set_prefixes: dict, caplog: pytest.LogCaptureFixture) -> None:
     classes = {
         "C": ClassDefinition(name="C", attributes={"a1": SlotDefinition(name="a1", slot_uri="ex:a1", range="string")}),
@@ -410,6 +410,7 @@ def test_resolve_datatype_from_slot_direct(make_schemaview: Callable[..., Schema
         slots={slot_def.name: slot_def}
     )
     slot = sv.get_slot(slot_def.name)
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == expected
 
 
@@ -422,6 +423,7 @@ def test_resolve_datatype_from_slot_enumwithmeaning(make_schemaview: Callable[..
     slots = {"fuel": SlotDefinition(name="fuel", range="FuelType")}
     sv = make_schemaview(slots=slots, enums=enums)
     slot = sv.get_slot("fuel")
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == "xsd:string"
 
 
@@ -433,6 +435,7 @@ def test_resolve_datatype_from_slot_enumnomeaning(make_schemaview: Callable[...,
     slots = {"color": SlotDefinition(name="color", range="ColorEnum")}
     sv = make_schemaview(slots=slots, enums=enums)
     slot = sv.get_slot("color")
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == "xsd:string"
 
 
@@ -444,6 +447,7 @@ def test_resolve_datatype_from_slot_mixedpermissibles(make_schemaview: Callable[
     slots = {"s1": SlotDefinition(name="s1", range="MixedEnum")}
     sv = make_schemaview(slots=slots, enums=enums)
     slot = sv.get_slot("s1")
+    assert slot is not None
     result = resolve_datatype_from_slot(sv, slot) 
     assert result == "xsd:string"
     assert "Literal encountered for enum MixedEnum with meaning." in caplog.text
@@ -453,6 +457,7 @@ def test_resolve_datatype_from_slot_enumnopermissibles(make_schemaview: Callable
     slots = {"color": SlotDefinition(name="color", range="ColorEnum")}
     sv = make_schemaview(slots=slots, enums=enums)
     slot = sv.get_slot("color")
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == "xsd:string"
 
 
@@ -463,35 +468,38 @@ def test_resolve_datatype_from_slot_unknowntype(make_schemaview: Callable[..., S
         }
     )
     slot = sv.get_slot("mystery")
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == "UnknownType"
 
 
 def test_resolve_datatype_from_slot_norange(make_schemaview: Callable[..., SchemaView]) -> None:
     sv = make_schemaview(slots={"mystery": SlotDefinition(name="mystery")})
     slot = sv.get_slot("mystery")
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == None
 
 
-@patch("cim_plugin.enriching._resolve_type")
+@patch("kgraphpy.enriching._resolve_type")
 def test_resolve_datatype_from_slot_funccalledonce(mock_resolve: MagicMock, make_schemaview: Callable[..., SchemaView]) -> None:
     mock_resolve.return_value = "xsd:integer"
     sv = make_schemaview(
         slots={"s1": SlotDefinition(name="s1", range="integer")}
     )
     slot = sv.get_slot("s1")
+    assert slot is not None
     assert resolve_datatype_from_slot(sv, slot) == "xsd:integer"
     mock_resolve.assert_called_once_with(sv, "integer")
     assert mock_resolve.call_count == 1
 
 
-@patch("cim_plugin.enriching._resolve_type")
+@patch("kgraphpy.enriching._resolve_type")
 def test_resolve_datatype_from_slot_funcerror(mock_resolve: MagicMock, make_schemaview: Callable[..., SchemaView]) -> None:
     mock_resolve.side_effect = RecursionError
     sv = make_schemaview(
         slots={"s1": SlotDefinition(name="s1", range="integer")}
     )
     slot = sv.get_slot("s1")
-
+    assert slot is not None
     with pytest.raises(RecursionError):
         resolve_datatype_from_slot(sv, slot)
 
@@ -502,7 +510,7 @@ def test_resolve_datatype_from_slot_classrange(make_schemaview: Callable[..., Sc
     sv = make_schemaview(slots=slots, classes=classes)
 
     slot = sv.get_slot("friend")
-
+    assert slot is not None
     result = resolve_datatype_from_slot(sv, slot)
     assert result is None
     assert "slot.range 'Person' is a class" in caplog.text

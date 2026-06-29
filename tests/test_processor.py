@@ -1,11 +1,11 @@
 import pytest
 from unittest.mock import call, patch, MagicMock, PropertyMock
 from rdflib import Namespace, URIRef, Literal, BNode, Graph
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.graph import CIMGraph
-from cim_plugin.namespaces import MD, DCAT_EXT, DCTERMS, CIM, CGMES_CIM
-from cim_plugin.exceptions import LiteralCastingError
-# from cim_plugin.provenance import Provenance
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.graph import CIMGraph
+from kgraphpy.namespaces import MD, DCAT_EXT, DCTERMS, CIM, CGMES_CIM
+from kgraphpy.exceptions import LiteralCastingError
+# from kgraphpy.provenance import Provenance
 from dataclasses import FrozenInstanceError
 from rdflib.namespace import RDF
 from linkml_runtime import SchemaView
@@ -14,7 +14,7 @@ from tests.fixtures import make_schemaview, make_slot_index, make_cimgraph
 from typing import Callable, Any
 import logging
 
-from cim_plugin.processor import CIMProcessor, merge_namespace_managers, replace_namespace, _make_header_graph_for_conversion
+from kgraphpy.processor import CIMProcessor, merge_namespace_managers, replace_namespace, _make_header_graph_for_conversion
 
 logger = logging.getLogger('cimxml_logger')
 
@@ -99,7 +99,7 @@ def test_identifier_updates() -> None:
     assert pr.identifier == URIRef("graph2")
 
 # Unit tests .replace_header
-@patch("cim_plugin.processor.merge_namespace_managers")
+@patch("kgraphpy.processor.merge_namespace_managers")
 def test_replace_header_inputnone(mock_merge: MagicMock) -> None:
     header1 = CIMMetadataHeader.empty(URIRef("h1"))
     g = CIMGraph()
@@ -128,7 +128,7 @@ def test_replace_header_basic() -> None:
     assert pr.graph.metadata_header.subject == URIRef("h2")
     assert pr.graph.metadata_header is header2
 
-@patch("cim_plugin.processor.merge_namespace_managers")
+@patch("kgraphpy.processor.merge_namespace_managers")
 def test_replace_header_checkcalled(mock_merge: MagicMock) -> None:
     header1 = CIMMetadataHeader.empty(URIRef("h1"))
     header2 = CIMMetadataHeader.empty(URIRef("h2"))
@@ -205,7 +205,7 @@ def test_replace_header_nooverrideofoldprefix() -> None:
     assert "new" not in list(data_nm.namespaces())
 
 
-@patch("cim_plugin.processor.merge_namespace_managers")
+@patch("kgraphpy.processor.merge_namespace_managers")
 def test_replace_header_inputwrongtype(mock_merge: MagicMock) -> None:
     header1 = CIMMetadataHeader.empty(URIRef("h1"))
     g = CIMGraph()
@@ -222,7 +222,7 @@ def test_replace_header_inputwrongtype(mock_merge: MagicMock) -> None:
 
 
 # Unit tests .extract_header
-@patch("cim_plugin.processor.create_header_attribute")
+@patch("kgraphpy.processor.create_header_attribute")
 def test_extract_header_calls(mock_create: MagicMock) -> None:
     header = CIMMetadataHeader.empty(URIRef("h1"))
     mock_create.return_value = header
@@ -237,7 +237,7 @@ def test_extract_header_calls(mock_create: MagicMock) -> None:
     assert pr.graph.metadata_header.subject == URIRef("h1")
 
 
-@patch("cim_plugin.processor.create_header_attribute")
+@patch("kgraphpy.processor.create_header_attribute")
 def test_extract_header_createexception(mock_create: MagicMock) -> None:
     mock_create.side_effect = TypeError
     g = CIMGraph()
@@ -349,7 +349,7 @@ def test_extract_header_bnodes() -> None:
 
 # Unit tests .convert_header
 @pytest.mark.parametrize("header", [None, CIMMetadataHeader.empty(URIRef("h1"))])
-@patch("cim_plugin.processor._make_header_graph_for_conversion")
+@patch("kgraphpy.processor._make_header_graph_for_conversion")
 def test_convert_header_headernone(mock_make: MagicMock, header: CIMMetadataHeader | None, caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
     g.metadata_header = header
@@ -361,8 +361,8 @@ def test_convert_header_headernone(mock_make: MagicMock, header: CIMMetadataHead
     assert pr.graph.metadata_header == header   # No changes to header
     assert "No metadata header found for conversion." in caplog.text
 
-@patch("cim_plugin.processor.convert_triple")
-@patch("cim_plugin.processor._make_header_graph_for_conversion")
+@patch("kgraphpy.processor.convert_triple")
+@patch("kgraphpy.processor._make_header_graph_for_conversion")
 def test_convert_header_typetriplenotconverted(mock_make: MagicMock, mock_convert: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO)
     g = make_cimgraph   # The header contains the type triple, but no other triples
@@ -385,8 +385,8 @@ def test_convert_header_typetriplenotconverted(mock_make: MagicMock, mock_conver
     assert "triples could not be converted and was not included in the new header" not in caplog.text  # No unconverted triples
 
 
-@patch("cim_plugin.processor.convert_triple")
-@patch("cim_plugin.processor._make_header_graph_for_conversion")
+@patch("kgraphpy.processor.convert_triple")
+@patch("kgraphpy.processor._make_header_graph_for_conversion")
 def test_convert_header_success(mock_make: MagicMock, mock_convert: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO)
     g = make_cimgraph
@@ -424,8 +424,8 @@ def test_convert_header_success(mock_make: MagicMock, mock_convert: MagicMock, m
     assert "1 triples could not be converted and was not included in the new header" in caplog.text
     assert "Literal('unconverted_description')" in caplog.text  # The DCAT_CIM.version triple is not converted and should be logged
 
-@patch("cim_plugin.processor.convert_triple")
-@patch("cim_plugin.processor._make_header_graph_for_conversion")
+@patch("kgraphpy.processor.convert_triple")
+@patch("kgraphpy.processor._make_header_graph_for_conversion")
 def test_convert_header_makeheadererror(mock_make: MagicMock, mock_convert: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
     g = make_cimgraph
     pr = CIMProcessor(g)
@@ -439,8 +439,8 @@ def test_convert_header_makeheadererror(mock_make: MagicMock, mock_convert: Magi
     assert pr.graph.metadata_header is g.metadata_header  # No changes to header
 
 
-@patch("cim_plugin.processor.convert_triple")
-@patch("cim_plugin.processor._make_header_graph_for_conversion")
+@patch("kgraphpy.processor.convert_triple")
+@patch("kgraphpy.processor._make_header_graph_for_conversion")
 def test_convert_header_converttripleerror(mock_make: MagicMock, mock_convert: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO)
     g = make_cimgraph
@@ -462,7 +462,7 @@ def test_convert_header_converttripleerror(mock_make: MagicMock, mock_convert: M
     
 
 # Unit tests .merge_header
-@patch("cim_plugin.processor.merge_namespace_managers")
+@patch("kgraphpy.processor.merge_namespace_managers")
 def test_merge_header_headernone(mock_merge: MagicMock) -> None:
     g = CIMGraph()
     g.bind("ex", "https://example.com/")
@@ -490,7 +490,7 @@ def test_merge_header_basic() -> None:
     assert (URIRef("h1"), RDF.type, DCAT_EXT.Dataset) in pr.graph
     assert len(pr.graph) == 2
 
-@patch("cim_plugin.processor.merge_namespace_managers")
+@patch("kgraphpy.processor.merge_namespace_managers")
 def test_merge_header_mergecalled(mock_merge: MagicMock) -> None:
     header = CIMMetadataHeader.empty(URIRef("h1"))
     header.graph.bind("foo", "www.bar.org/")
@@ -823,7 +823,7 @@ def test_update_namespace_various(prefix: str, new_namespace: str|URIRef) -> Non
         pytest.param(" ", "www.new.com/", id="Empty prefix"),
     ]
 )
-@patch("cim_plugin.processor.update_namespace_in_triples")
+@patch("kgraphpy.processor.update_namespace_in_triples")
 def test_update_namespace_nochanges(mock_update: MagicMock, prefix: str, new_namespace: str|URIRef) -> None:
     header = CIMMetadataHeader.empty(URIRef("https://example.com/h1"))
     header.graph.bind("ex", "https://example.com/")
@@ -918,7 +918,7 @@ def test_update_namespace_graphfixed() -> None:
 
 
 @pytest.mark.parametrize("new_namespace", [" ", None])
-@patch("cim_plugin.processor.update_namespace_in_triples")
+@patch("kgraphpy.processor.update_namespace_in_triples")
 def test_update_namespace_invalidnamespace(mock_update: MagicMock, new_namespace: str|None) -> None:
     header = CIMMetadataHeader.empty(URIRef("https://bar.com/h1"))
     g = CIMGraph()
@@ -939,7 +939,7 @@ def test_update_namespace_invalidnamespace(mock_update: MagicMock, new_namespace
 
 
 @pytest.mark.parametrize("header", [None, CIMMetadataHeader.empty(URIRef("h1"))])
-@patch("cim_plugin.processor.update_namespace_in_triples")
+@patch("kgraphpy.processor.update_namespace_in_triples")
 def test_update_namespace_noheader(mock_update: MagicMock, header: CIMMetadataHeader|None) -> None:
     g = CIMGraph()
     g.bind("ex", "https://example.com/")
@@ -993,9 +993,9 @@ def test_update_namespace_multipletriples() -> None:
     pytest.param(None, [{"p": "string"}], id="Schemaview missing"),
     pytest.param("dummy", None, id="slot_index missing"),
 ])
-@patch("cim_plugin.processor.replace_namespace")
-@patch("cim_plugin.processor.resolve_datatype_from_slot")
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.replace_namespace")
+@patch("kgraphpy.processor.resolve_datatype_from_slot")
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, mock_resolve: MagicMock, mock_replace: MagicMock, schemaview: SchemaView|None, slot_dict: list[dict]|None, make_slot_index: Callable[..., dict], caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
     s, p, o = URIRef("s"), URIRef("p"), Literal("x")
@@ -1018,8 +1018,8 @@ def test_enrich_literal_datatypes_missingprerequisites(mock_create: MagicMock, m
     assert len(pr.provenance.entries) == 1
 
 
-@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.resolve_datatype_from_slot", return_value=None)   # If slot.range is None, this function will return None
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     g = CIMGraph()
@@ -1047,8 +1047,8 @@ def test_enrich_literal_datatypes_slotrangenone(mock_create: MagicMock, mock_res
     pytest.param(BNode("x"), False, id="Blank node."),
     pytest.param(URIRef("x"), False, id="URI object")
 ])
-@patch("cim_plugin.processor.resolve_datatype_from_slot")
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.resolve_datatype_from_slot")
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_resolve: MagicMock, object: Literal|BNode|URIRef, resolved: bool, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView]) -> None:
     mock_resolve.return_value = "xsd:string"
     mock_create.return_value = object
@@ -1079,8 +1079,8 @@ def test_enrich_literal_datatypes_objecthandling(mock_create: MagicMock, mock_re
         assert len(list(pr.graph)) == 1   # Size of graph is not affected
         assert len(pr.provenance.entries) == 1 
 
-@patch("cim_plugin.processor.resolve_datatype_from_slot")
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.resolve_datatype_from_slot")
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     logger.setLevel("INFO")
     g = CIMGraph()
@@ -1102,8 +1102,8 @@ def test_enrich_literal_datatypes_predicatenotfound(mock_create: MagicMock, mock
     assert pr.provenance
     assert len(pr.provenance.entries) == 1
 
-@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=None)
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.resolve_datatype_from_slot", return_value=None)
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     logger.setLevel("INFO")
     g = CIMGraph()
@@ -1124,8 +1124,8 @@ def test_enrich_literal_datatypes_nodatatyperesolved(mock_create: MagicMock, moc
     assert len(pr.provenance.entries) == 1
 
 
-@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     g = CIMGraph()
@@ -1156,8 +1156,8 @@ def test_enrich_literal_datatypes_successfulenrichment(mock_create: MagicMock, m
     assert substeps[1]["step_name"] == "add_triple"
 
 
-@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:int"))
-@patch("cim_plugin.processor.create_typed_literal", side_effect=LiteralCastingError("bad cast"))
+@patch("kgraphpy.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:int"))
+@patch("kgraphpy.processor.create_typed_literal", side_effect=LiteralCastingError("bad cast"))
 def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_resolve: MagicMock, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView], caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
     s, p, o = URIRef("s"), URIRef("p"), Literal("not_an_int")
@@ -1191,9 +1191,9 @@ def test_enrich_literal_datatypes_castingerror(mock_create: MagicMock, mock_reso
             pytest.param(True, {("ex", "example.com", "example.org")}, id="Different namespaces allowed, some found"),
         ]
 )
-@patch("cim_plugin.processor.replace_namespace", return_value="p")
-@patch("cim_plugin.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
-@patch("cim_plugin.processor.create_typed_literal")
+@patch("kgraphpy.processor.replace_namespace", return_value="p")
+@patch("kgraphpy.processor.resolve_datatype_from_slot", return_value=URIRef("xsd:string"))
+@patch("kgraphpy.processor.create_typed_literal")
 def test_enrich_literal_datatypes_allownamespaces(mock_create: MagicMock, mock_resolve: MagicMock, mock_replace: MagicMock, allow: bool, returned: set[tuple[str, str, str]]|None, make_slot_index: Callable[..., dict], make_schemaview: Callable[..., SchemaView]) -> None:
     g = CIMGraph()
     s, p, o = URIRef("s"), URIRef("p"), Literal("hello")
@@ -1538,7 +1538,7 @@ def test_replace_namespace_duplicatesinreplacements() -> None:
     assert result in {"https://first.com/p", "https://second.com/p"}
 
 # Unit tests .validate_header
-@patch("cim_plugin.processor.validate_header")
+@patch("kgraphpy.processor.validate_header")
 def test_validate_header_noheader(mock_validate: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
     g = CIMGraph()
     pr = CIMProcessor(g)
@@ -1548,7 +1548,7 @@ def test_validate_header_noheader(mock_validate: MagicMock, caplog: pytest.LogCa
     mock_validate.assert_not_called()
     assert "No metadata header found. Validation not possible." in caplog.text
 
-@patch("cim_plugin.processor.validate_header")
+@patch("kgraphpy.processor.validate_header")
 def test_validate_header_headerpresent(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
     g = make_cimgraph
     pr = CIMProcessor(g)
@@ -1557,7 +1557,7 @@ def test_validate_header_headerpresent(mock_validate: MagicMock, make_cimgraph: 
 
     mock_validate.assert_called_once_with(g.metadata_header, format="cimxml")
 
-@patch("cim_plugin.processor.validate_header")
+@patch("kgraphpy.processor.validate_header")
 def test_validate_header_trigformat(mock_validate: MagicMock, make_cimgraph: CIMGraph, caplog: pytest.LogCaptureFixture) -> None:
     g = make_cimgraph
     pr = CIMProcessor(g)
@@ -1567,7 +1567,7 @@ def test_validate_header_trigformat(mock_validate: MagicMock, make_cimgraph: CIM
     mock_validate.assert_called_once_with(g.metadata_header, format="trig")
 
 # Unit tests .validate_namespaces
-@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+@patch("kgraphpy.processor.validate_and_fix_namespaces_by_cimtype")
 def test_validate_namespaces_noheader(mock_validate: MagicMock) -> None:
     g = CIMGraph()
     pr = CIMProcessor(g)
@@ -1578,7 +1578,7 @@ def test_validate_namespaces_noheader(mock_validate: MagicMock) -> None:
     mock_validate.assert_called_once_with(g, cgmes=False)
 
 
-@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+@patch("kgraphpy.processor.validate_and_fix_namespaces_by_cimtype")
 def test_validate_namespaces_noprofile(mock_validate: MagicMock, make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
     pr = CIMProcessor(g)
@@ -1590,11 +1590,11 @@ def test_validate_namespaces_noprofile(mock_validate: MagicMock, make_cimgraph: 
     mock_validate.assert_called_once_with(g, cgmes=False)
 
 
-@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+@patch("kgraphpy.processor.validate_and_fix_namespaces_by_cimtype")
 def test_validate_namespaces_exception(mock_validate: MagicMock, make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
     assert g.metadata_header
-    with patch("cim_plugin.processor.CIMMetadataHeader.profiles", new_callable=PropertyMock, side_effect=TypeError("other exception")):
+    with patch("kgraphpy.processor.CIMMetadataHeader.profiles", new_callable=PropertyMock, side_effect=TypeError("other exception")):
         pr = CIMProcessor(g, provenance_description="Initial entry")
 
         with pytest.raises(TypeError, match="other exception"):
@@ -1619,7 +1619,7 @@ def test_validate_namespaces_exception(mock_validate: MagicMock, make_cimgraph: 
 
         ]
 )
-@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+@patch("kgraphpy.processor.validate_and_fix_namespaces_by_cimtype")
 def test_validate_namespaces_various(mock_validate: MagicMock, profile_uri: str, predicate: URIRef, cimxml_format: bool, expected_cgmes: bool, make_cimgraph: CIMGraph) -> None:
     g = make_cimgraph
     assert g.metadata_header
@@ -1646,7 +1646,7 @@ def test_validate_namespaces_various(mock_validate: MagicMock, profile_uri: str,
             pytest.param(["not_cgmes_outlier1", "not_cgmes_outlier2"], False, id="Multiple non-outlier profiles"),
         ]
 )
-@patch("cim_plugin.processor.validate_and_fix_namespaces_by_cimtype")
+@patch("kgraphpy.processor.validate_and_fix_namespaces_by_cimtype")
 def test_validate_namespaces_multipleprofiles(mock_validate: MagicMock, make_cimgraph: CIMGraph, profiles: list[str], cgmes_outlier: bool) -> None:
     g = make_cimgraph
     assert g.metadata_header
@@ -1758,7 +1758,7 @@ def test_build_copy_for_serialization_mutability(make_schemaview: Callable[..., 
 
 # Unit tests .to_file
 @patch.object(CIMProcessor, "_build_copy_for_serialization")
-@patch("cim_plugin.processor._select_strategy")
+@patch("kgraphpy.processor._select_strategy")
 def test_to_file(mock_select: MagicMock, mock_build: MagicMock) -> None:
     pr = CIMProcessor(CIMGraph(identifier=URIRef("original")), provenance_description="Initial entry")
     copy = CIMProcessor(CIMGraph(identifier=URIRef("copy")))

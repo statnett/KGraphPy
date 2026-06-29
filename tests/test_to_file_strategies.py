@@ -2,15 +2,15 @@ import pytest
 from unittest.mock import MagicMock, Mock, patch
 from typing import Any, Callable
 from tests.fixtures import make_schemaview, make_cimgraph
-from cim_plugin.graph import CIMGraph
-from cim_plugin.processor import CIMProcessor
-from cim_plugin.jsonld_utilities import DEFAULT_CONTEXT_LINK
+from kgraphpy.graph import CIMGraph
+from kgraphpy.processor import CIMProcessor
+from kgraphpy.jsonld_utilities import DEFAULT_CONTEXT_LINK
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF, DCAT
 from linkml_runtime import SchemaView
 from linkml_runtime.linkml_model.meta import SlotDefinition, ClassDefinition
 
-from cim_plugin.to_file_strategies import SerializationStrategy, TrigStrategy, CIMXMLStrategy, JSONLDStrategy, _select_strategy, _validate_options
+from kgraphpy.to_file_strategies import SerializationStrategy, TrigStrategy, CIMXMLStrategy, JSONLDStrategy, _select_strategy, _validate_options
 
 # Unit tests TrigStrategy
 def test_trigstrategy_noschemapath() -> None:
@@ -126,8 +126,8 @@ def test_cimxmlstrategy_qualifier() -> None:
 
 # Unit tests JSONLDStrategy
 @pytest.mark.parametrize("input_context", [None, "context.json"])
-@patch("cim_plugin.to_file_strategies.open")
-@patch("cim_plugin.to_file_strategies.reorder_jsonld")
+@patch("kgraphpy.to_file_strategies.open")
+@patch("kgraphpy.to_file_strategies.reorder_jsonld")
 def test_jsonldstrategy_context(mock_reorder: MagicMock, mock_open: MagicMock, input_context: str|None) -> None:
     processor = Mock()
     processor.header = Mock()
@@ -152,8 +152,8 @@ def test_jsonldstrategy_context(mock_reorder: MagicMock, mock_open: MagicMock, i
     handle.write.assert_called_once_with(mock_reorder.return_value)
 
 
-@patch("cim_plugin.to_file_strategies.open")
-@patch("cim_plugin.to_file_strategies.reorder_jsonld")
+@patch("kgraphpy.to_file_strategies.open")
+@patch("kgraphpy.to_file_strategies.reorder_jsonld")
 def test_jsonldstrategy_noheader(mock_reorder: MagicMock, mock_open: MagicMock) -> None:
     processor = Mock()
     processor.header = None
@@ -180,9 +180,9 @@ def test_jsonldstrategy_noheader(mock_reorder: MagicMock, mock_open: MagicMock) 
         pytest.param(1, TypeError, id="Context as invalid type")
     ]
 )
-@patch("cim_plugin.to_file_strategies.enrich_graph_datatypes")
-@patch("cim_plugin.to_file_strategies.extract_datatype_map")
-@patch("cim_plugin.to_file_strategies.load_json_from_url")
+@patch("kgraphpy.to_file_strategies.enrich_graph_datatypes")
+@patch("kgraphpy.to_file_strategies.extract_datatype_map")
+@patch("kgraphpy.to_file_strategies.load_json_from_url")
 def test_jsonldstrategy_enrichdatatypes(mock_load: MagicMock, mock_extract: MagicMock, mock_enrich: MagicMock, context: str|dict, load_return: dict|None|Exception) -> None:
     g = CIMGraph()
     processor = CIMProcessor(g)

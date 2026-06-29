@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from dataclasses import FrozenInstanceError
 from typing import Callable, Generator
 from pathlib import Path
-from cim_plugin.provenance import ProvenanceEntry, Provenance, log_provenance
+from kgraphpy.provenance import ProvenanceEntry, Provenance, log_provenance
 from tests.fixtures import provenance_instance, ProvenanceTestClass
 
 # Unit tests ProvenanceEntry

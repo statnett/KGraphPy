@@ -2,14 +2,14 @@ import pytest
 from unittest.mock import patch, MagicMock
 from rdflib import BNode, URIRef, Literal
 from rdflib.namespace import XSD, DCTERMS
-from cim_plugin.namespaces import MD, DCAT_EXT
+from kgraphpy.namespaces import MD, DCAT_EXT
 from typing import Any
 import copy
 
-from cim_plugin.header_conversion import convert_triple, convert_object, TO_DCAT, TO_FULLMODEL
+from kgraphpy.header_conversion import convert_triple, convert_object, TO_DCAT, TO_FULLMODEL
 
 # Unit tests convert_triple
-@patch("cim_plugin.header_conversion.convert_object")
+@patch("kgraphpy.header_conversion.convert_object")
 def test_convert_triple_unknownformat(mock_convert: MagicMock) -> None:
     triple = (URIRef("http://example.com/subject"), URIRef("http://example.com/predicate"), Literal("object"))
     with pytest.raises(ValueError) as excinfo:
@@ -19,7 +19,7 @@ def test_convert_triple_unknownformat(mock_convert: MagicMock) -> None:
     mock_convert.assert_not_called()
 
 
-@patch("cim_plugin.header_conversion.convert_object")
+@patch("kgraphpy.header_conversion.convert_object")
 def test_convert_triple_targetformatmismatch(mock_convert: MagicMock) -> None:
     triple = (URIRef("http://example.com/subject"), URIRef(MD.FullModel), Literal("object"))
     result = convert_triple(triple, target_format="md_fullmodel")
@@ -42,7 +42,7 @@ def test_convert_triple_targetformatmismatch(mock_convert: MagicMock) -> None:
         pytest.param(DCTERMS.replaces, MD.Model.Supersedes, "uri", id="DCTERMS.replaces to MD.Model.Supersedes"),
     ]
 )
-@patch("cim_plugin.header_conversion.convert_object", return_value=Literal("converted_object"))
+@patch("kgraphpy.header_conversion.convert_object", return_value=Literal("converted_object"))
 def test_convert_triple_mdfullmodel(mock_convert: MagicMock, predicate_in: URIRef, predicate_out: URIRef, object_type: str) -> None:
     triple = (URIRef("http://example.com/subject"), predicate_in, Literal("unconverted_object"))
     expected = (URIRef("http://example.com/subject"), predicate_out, Literal("converted_object"))
@@ -66,7 +66,7 @@ def test_convert_triple_mdfullmodel(mock_convert: MagicMock, predicate_in: URIRe
         pytest.param(MD.Model.Supersedes, DCTERMS.replaces, "uri", None, id="MD.Model.Supersedes to DCTERMS.replaces"),
     ]
 )
-@patch("cim_plugin.header_conversion.convert_object", return_value=Literal("converted_object"))
+@patch("kgraphpy.header_conversion.convert_object", return_value=Literal("converted_object"))
 def test_convert_triple_dcatdataset(mock_convert: MagicMock, predicate_in: URIRef, predicate_out: URIRef, object_type: str, datatype: URIRef | None) -> None:
     triple = (URIRef("http://example.com/subject"), predicate_in, Literal("unconverted_object"))
     expected = (URIRef("http://example.com/subject"), predicate_out, Literal("converted_object"))
@@ -77,7 +77,7 @@ def test_convert_triple_dcatdataset(mock_convert: MagicMock, predicate_in: URIRe
     mock_convert.assert_called_once_with(Literal("unconverted_object"), object_type, datatype)
 
 
-@patch("cim_plugin.header_conversion.convert_object", return_value=URIRef("converted_object"))
+@patch("kgraphpy.header_conversion.convert_object", return_value=URIRef("converted_object"))
 def test_convert_triple_sanitycheck(mock_convert: MagicMock) -> None:
     # Checking that the function works as well with URIRef objects (the two parametrized tests only use Literals).
     # Bonus check that the original triple is not modified.
@@ -92,7 +92,7 @@ def test_convert_triple_sanitycheck(mock_convert: MagicMock) -> None:
     assert triple == (s, p, o)  # The original triple should not be modified
 
 
-@patch("cim_plugin.header_conversion.convert_object")
+@patch("kgraphpy.header_conversion.convert_object")
 def test_convert_triple_nonuriinput(mock_convert: MagicMock) -> None:
     triple = (URIRef("http://example.com/subject"), Literal(MD.FullModel), Literal("object"))
     with pytest.raises(AssertionError):

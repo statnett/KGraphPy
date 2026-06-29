@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger('cimxml_logger')
 
-file_path = Path.cwd() /"cim_plugin" / "id_profiles.yaml"
+file_path = Path(__file__).parent / "id_profiles.yaml"
 
 with open(file_path) as f:
     config = yaml.safe_load(f)

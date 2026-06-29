@@ -2,12 +2,12 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 import io
 from rdflib import Graph, URIRef, Literal, Namespace, RDF
-from cim_plugin.graph import CIMGraph
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.processor import CIMProcessor
-from cim_plugin.to_file_strategies import JSONLDStrategy
+from kgraphpy.graph import CIMGraph
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.processor import CIMProcessor
+from kgraphpy.to_file_strategies import JSONLDStrategy
 import time
-from cim_plugin.namespaces import update_namespace_in_triples, DCAT_EXT
+from kgraphpy.namespaces import update_namespace_in_triples, DCAT_EXT
 
 
 @pytest.fixture(scope="session")
@@ -104,7 +104,7 @@ def test_jsonldserialize(big_graph: CIMGraph) -> None:
     fake_open.return_value.__enter__.return_value = buffer
     fake_open.return_value.__exit__.return_value = False
 
-    with patch("cim_plugin.to_file_strategies.open", fake_open, create=True):
+    with patch("kgraphpy.to_file_strategies.open", fake_open, create=True):
         jstrategy = JSONLDStrategy("dummy_path.jsonld")
 
         start = time.perf_counter()

@@ -1,6 +1,6 @@
 import pytest
 from rdflib import URIRef
-from cim_plugin.rdf_id_selection import find_rdf_id_or_about
+from kgraphpy.rdf_id_selection import find_rdf_id_or_about
 
 # Unit tests find_rdf_id_or_about
 @pytest.mark.parametrize(

@@ -2,7 +2,7 @@
 
 from rdflib import Namespace, Node, URIRef, Graph
 from rdflib.namespace import NamespaceManager, DefinedNamespace, DCAT, DCTERMS, PROV, RDF
-from cim_plugin.exceptions import NamespaceEmptyError
+from kgraphpy.exceptions import NamespaceEmptyError
 from typing import Any, Iterable
 import logging
 

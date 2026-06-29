@@ -3,27 +3,27 @@
 from rdflib.plugin import register
 from rdflib.parser import Parser
 from rdflib.serializer import Serializer
-from cim_plugin.header import CIMMetadataHeader
-from cim_plugin.namespaces import MD
+from kgraphpy.header import CIMMetadataHeader
+from kgraphpy.namespaces import MD
 from rdflib.namespace import DCAT
 
 # Register plugins
 register(
     "cimxml",          # formatname
     Parser,            # plugin-type
-    "cim_plugin.cimxml_parser",          # module path
+    "kgraphpy.cimxml_parser",          # module path
     "CIMXMLParser"     # name of class
 )
 register(
     "cimxml",
     Serializer,
-    "cim_plugin.cimxml_serializer",
+    "kgraphpy.cimxml_serializer",
     "CIMXMLSerializer",
 )
 register(
     "cimtrig",
     Serializer,
-    "cim_plugin.cimtrig_serializer",
+    "kgraphpy.cimtrig_serializer",
     "CIMTrigSerializer",
 )
 

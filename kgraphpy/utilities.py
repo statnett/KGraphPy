@@ -7,10 +7,10 @@ from rdflib.namespace import RDF
 from rdflib.exceptions import ParserError
 import logging
 from xml.sax import SAXParseException
-from cim_plugin.exceptions import CIMXMLParseError
-from cim_plugin.graph import CIMDataset, CIMGraph
-from cim_plugin.header import create_header_attribute
-from cim_plugin.processor import CIMProcessor
+from kgraphpy.exceptions import CIMXMLParseError
+from kgraphpy.graph import CIMDataset, CIMGraph
+from kgraphpy.header import create_header_attribute
+from kgraphpy.processor import CIMProcessor
 from typing import Union, Iterable
 from pathlib import Path
 

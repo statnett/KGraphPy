@@ -2,11 +2,11 @@
 
 import logging
 from pathlib import Path
-from cim_plugin.jsonld_utilities import reorder_jsonld, extract_datatype_map, enrich_graph_datatypes, load_json_from_url, DEFAULT_CONTEXT_LINK
+from kgraphpy.jsonld_utilities import reorder_jsonld, extract_datatype_map, enrich_graph_datatypes, load_json_from_url, DEFAULT_CONTEXT_LINK
 from typing import TYPE_CHECKING, Optional, Any
 
 if TYPE_CHECKING:
-    from cim_plugin.processor import CIMProcessor
+    from kgraphpy.processor import CIMProcessor
 
 logger = logging.getLogger('cimxml_logger')
 

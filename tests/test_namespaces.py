@@ -2,8 +2,8 @@ import pytest
 from unittest.mock import patch, MagicMock, call
 from rdflib import URIRef, Namespace, Graph, Literal, BNode
 from rdflib.namespace import RDF
-from cim_plugin.exceptions import NamespaceEmptyError
-from cim_plugin.namespaces import (
+from kgraphpy.exceptions import NamespaceEmptyError
+from kgraphpy.namespaces import (
     collect_specific_namespaces, 
     update_namespace_in_triples, 
     validate_and_fix_namespaces, 
@@ -248,7 +248,7 @@ def test_update_namespace_in_triples() -> None:
 
 
 # Unit tests validate_and_fix_namespaces
-@patch("cim_plugin.namespaces.update_namespace_in_triples")
+@patch("kgraphpy.namespaces.update_namespace_in_triples")
 def test_validate_and_fix_namespaces_emptygraph(mock_update: MagicMock) -> None:
     g = Graph()
 
@@ -268,7 +268,7 @@ def test_validate_and_fix_namespaces_emptygraph(mock_update: MagicMock) -> None:
             pytest.param([("foo", "http://foo.com/")], {"bar": "http://bar.com/"}, id="No match, no update"),
         ]
 )
-@patch("cim_plugin.namespaces.update_namespace_in_triples")
+@patch("kgraphpy.namespaces.update_namespace_in_triples")
 def test_validate_and_fix_namespaces_nofixes(mock_update: MagicMock, graph_ns: tuple, fix_ns: dict) -> None:
     g = Graph()
     for prefix, ns in graph_ns:
@@ -299,7 +299,7 @@ def test_validate_and_fix_namespaces_nofixes(mock_update: MagicMock, graph_ns: t
                          id="Multiple updates of prefix"),
         ]
 )
-@patch("cim_plugin.namespaces.update_namespace_in_triples")
+@patch("kgraphpy.namespaces.update_namespace_in_triples")
 def test_validate_and_fix_namespaces_fixes(mock_update: MagicMock, graph_ns: tuple, fix_ns: dict, update_calls: list[tuple[str, str]], caplog: pytest.LogCaptureFixture) -> None:
     g = Graph()
     g.bind("notfoo", "http://notfoo.com/")
@@ -408,7 +408,7 @@ def test_validate_and_fix_namespaces_defaultnamespace() -> None:
     assert g.namespace_manager.store.namespace("foo") == URIRef("http://foo.com/")
     assert g.namespace_manager.store.namespace("") is None  # Default namespace should be removed
 
-@patch("cim_plugin.namespaces.update_namespace_in_triples", side_effect=[None, ValueError("some other error")])
+@patch("kgraphpy.namespaces.update_namespace_in_triples", side_effect=[None, ValueError("some other error")])
 def test_validate_and_fix_namespaces_errorsfromcalledfunction(mock_update: MagicMock) -> None:
     g = Graph()
     g.bind("foo", "http://foo.com/")
@@ -429,7 +429,7 @@ def test_validate_and_fix_namespaces_errorsfromcalledfunction(mock_update: Magic
 
 
 # Unit tests validate_and_fix_namespaces_by_cimtype
-@patch("cim_plugin.namespaces.validate_and_fix_namespaces")
+@patch("kgraphpy.namespaces.validate_and_fix_namespaces")
 def test_validate_and_fix_namespaces_by_cimtype_default(mock_validate: MagicMock) -> None:
     g = Graph()
     default_namespaces = STANDARD_NAMESPACES|PERSISTENT_NAMESPACES
@@ -440,7 +440,7 @@ def test_validate_and_fix_namespaces_by_cimtype_default(mock_validate: MagicMock
     assert default_namespaces["cim"] == Namespace("https://cim.ucaiug.io/ns#")  # Check one sample namespace
 
 
-@patch("cim_plugin.namespaces.validate_and_fix_namespaces")
+@patch("kgraphpy.namespaces.validate_and_fix_namespaces")
 def test_validate_and_fix_namespaces_by_cimtype_cgmes(mock_validate: MagicMock) -> None:
     g = Graph()
     cgmes_exceptions = CGMES_NAMESPACES|STANDARD_NAMESPACES

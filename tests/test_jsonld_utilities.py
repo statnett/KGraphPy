@@ -6,7 +6,7 @@ from rdflib import XSD
 from typing import Any
 from tests.fixtures import make_fake_response
 
-from cim_plugin.jsonld_utilities import (
+from kgraphpy.jsonld_utilities import (
     reorder_jsonld, 
     sort_subjects, 
     sort_predicates, 
@@ -25,7 +25,7 @@ from cim_plugin.jsonld_utilities import (
         pytest.param({"fallback": True}, None, {"fallback": True}, id="no-charset-fallback-to-utf8",),
     ]
 )
-@patch("cim_plugin.jsonld_utilities.urlopen")
+@patch("kgraphpy.jsonld_utilities.urlopen")
 def test_load_json_from_url_success(mock_urlopen: MagicMock, payload: dict, charset: str | None, expected: dict) -> None:
     encoded = json.dumps(payload).encode(charset or "utf-8")
     fake_response = make_fake_response(encoded, charset)
@@ -44,11 +44,11 @@ def test_load_json_from_url_success(mock_urlopen: MagicMock, payload: dict, char
 def test_load_json_from_url_invalid_json() -> None:
     fake_response = make_fake_response(b"not valid json", "utf-8")
 
-    with patch("cim_plugin.jsonld_utilities.urlopen", return_value=fake_response):
+    with patch("kgraphpy.jsonld_utilities.urlopen", return_value=fake_response):
         with pytest.raises(json.JSONDecodeError):
             load_json_from_url("http://example.com/bad.json")
 
-@ patch("cim_plugin.jsonld_utilities.urlopen")
+@ patch("kgraphpy.jsonld_utilities.urlopen")
 def test_load_json_from_url_emptybody(mock_urlopen: MagicMock) -> None:
     fake_response = make_fake_response(b"", "utf-8")
     mock_urlopen.return_value = fake_response
@@ -477,8 +477,8 @@ def test_reorder_jsonld_unusualinputs(raw: str, expected_result: Any) -> None:
     data = json.loads(result)
     assert data == expected_result
 
-@patch("cim_plugin.jsonld_utilities.sort_predicates", side_effect=lambda x: x)
-@patch("cim_plugin.jsonld_utilities.sort_subjects", return_value=[{"x": 1}])
+@patch("kgraphpy.jsonld_utilities.sort_predicates", side_effect=lambda x: x)
+@patch("kgraphpy.jsonld_utilities.sort_subjects", return_value=[{"x": 1}])
 def test_reorder_jsonld_calls_helpers(mock_subj: MagicMock, mock_pred: MagicMock) -> None:
     
     raw = '{"@graph": [{"x": 2}]}'

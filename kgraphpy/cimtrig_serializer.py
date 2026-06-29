@@ -16,7 +16,7 @@ from rdflib import BNode, Node
 from rdflib.plugins.serializers.trig import TrigSerializer
 from rdflib.plugins.serializers.turtle import SUBJECT
 
-from cim_plugin.graph import CIMGraph
+from kgraphpy.graph import CIMGraph
 
 
 class CIMTrigSerializer(TrigSerializer):

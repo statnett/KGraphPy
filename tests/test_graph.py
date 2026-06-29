@@ -1,9 +1,9 @@
 import pytest
 from rdflib import URIRef, Literal, Namespace
 from rdflib.namespace import XSD
-from cim_plugin.processor import CIMProcessor
+from kgraphpy.processor import CIMProcessor
 from typing import Any
-from cim_plugin.graph import CIMGraph
+from kgraphpy.graph import CIMGraph
 
 
 def test_cimgraph_provenance() -> None:
