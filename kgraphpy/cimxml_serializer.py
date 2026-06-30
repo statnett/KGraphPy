@@ -31,6 +31,8 @@ class CIMXMLSerializer(Serializer):
     qualifier_resolver: CIMQualifierResolver | None = None
     _used_namespaces: list[tuple[str, URIRef]] | None = None    # List of prefix, namespaces ordered alphabetically by prefix
     _namespace_lookup: list[tuple[str, str]] | None = None    # List of namespaces, prefix ordered longest-first by namespace string. Used for lookup when collecting namespaces.
+    invalid_xml_flag: bool = False  # Flag to indicate if ':' were detected in XML element names during serialization
+
 
     def __init__(self, store: Graph, **kwargs):
         super().__init__(store)
@@ -169,6 +171,9 @@ class CIMXMLSerializer(Serializer):
         
         write("</rdf:RDF>\n")
 
+        if self.invalid_xml_flag:
+            logger.error("Invalid XML detected: ':' in local name of predicate(s).")
+
 
     def write_header(self, header: CIMMetadataHeader, depth: int = 1) -> None:
         """Write the CIM metadata header in CIMXML format.
@@ -297,8 +302,10 @@ class CIMXMLSerializer(Serializer):
         write = cast(Callable[[str], int], self.write)
         indent = "  " * depth
 
-        qname = self._resolve_qname(str(predicate))
+        # self._check_for_colon(predicate)
 
+        qname = self._resolve_qname(str(predicate))
+        
         # Write predicate and object
         if isinstance(obj, Literal):
             obj_text = escape(obj, ESCAPE_ENTITIES)
@@ -361,9 +368,21 @@ class CIMXMLSerializer(Serializer):
             for ns_str, prefix in self._namespace_lookup:
                 if uri.startswith(ns_str):
                     local_part = uri[len(ns_str):]
+                    self._check_for_colon(local_part)
                     return f"{prefix}:{local_part}" if prefix else str(uri)
+        
+        self._check_for_colon(uri)
         return str(uri)
     
+
+    def _check_for_colon(self, uri:str) -> None:
+        """Check if the given URI contains a colon, which is invalid in XML element names."""
+        if self.invalid_xml_flag:
+            return
+        
+        if ":" in uri:
+            self.invalid_xml_flag = True
+
 
 def _subject_sort_key(uri: Node) -> tuple[int, str]:
     """Create sort key for subject nodes.

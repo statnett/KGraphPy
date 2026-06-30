@@ -417,7 +417,8 @@ def test_serialize_allcalls(mock_sort: MagicMock) -> None:
     assert mock_sort.call_count == 2
     assert ser.subject.call_count == 2
     assert result == '<?xml version="1.0" encoding="utf-8"?>\n<rdf:RDF\n    xmlns:ex="example.com/"\n    >\n\n</rdf:RDF>\n'
-    
+    assert ser.invalid_xml_flag is False
+
 def test_serialize_namespaces() -> None:
     buf = io.BytesIO()
     g = CIMGraph()
@@ -632,6 +633,26 @@ def test_serialize_streamwritefailurepartial() -> None:
     # Should have attempted exactly one write (XML header)
     assert bad_stream.calls == 1
 
+
+@pytest.mark.parametrize("invalid_flag", [True, False])
+def test_serialize_invalidxmlflag(invalid_flag: bool, caplog: pytest.LogCaptureFixture) -> None:
+    buf = io.BytesIO()
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty(URIRef("h1"))
+    g.metadata_header.add_triple(RDF.type, DCAT.Dataset)
+    
+    ser = CIMXMLSerializer(g)
+    ser.invalid_xml_flag = invalid_flag
+
+    ser.serialize(buf)
+    out = buf.getvalue().decode()
+    assert f'<?xml version="1.0" encoding="{ser.encoding}"?>' in out
+    assert '<dcat:Dataset rdf:about="urn:uuid:h1"/>' in out
+    assert ser.invalid_xml_flag == invalid_flag
+    if invalid_flag:
+        assert "Invalid XML detected: ':' in local name of predicate(s)." in caplog.text
+    else:
+        assert "Invalid XML detected: ':' in local name of predicate(s)." not in caplog.text
 
 # Unit tests .write_header
 def test_write_header_basic(capture_writer: tuple[list, Callable]) -> None:
@@ -1162,7 +1183,6 @@ def test_predicate_literal(literal: Literal, capture_writer: tuple[list, Callabl
     assert "xml:lang" not in result
     assert "rdf:datatype" not in result
 
-
 def test_predicate_booleanliteral(capture_writer: tuple[list, Callable]) -> None:
     output, writer = capture_writer
     g = Graph()
@@ -1306,11 +1326,10 @@ def test_predicate_predicatetypes(predicate: Node, expected: str, capture_writer
     used = ser._collect_used_namespaces()
     ser._namespace_lookup = sorted([(str(ns), prefix) for prefix, ns in used], key=lambda item: len(item[0]), reverse=True) #[("http://example.com/", "ex"), ("http://noprefix.com/p", "")] # New changes
     ser.write = writer
-
+    
     ser.predicate(pred, obj)
     result = "".join(output)
     assert expected in result
-
 
 def test_predicate_noobject(capture_writer: tuple[list, Callable]) -> None:
     # Documents what happens if object does not exist or is not a URIRef or Literal.
@@ -1513,7 +1532,34 @@ def test_subject_and_predicate_resolver_integration_with_special_qualifier(
     assert f'rdf:ID="{expected_about}"' in result
     assert f'rdf:resource="{expected_resource}"' in result
 
+def test_subject_and_predicate_integration_with_invalidpredicate(capture_writer: tuple[list, Callable]) -> None:
+    output, writer = capture_writer
 
+    g = CIMGraph()
+    g.metadata_header = CIMMetadataHeader.empty()
+    g.bind("ex", "http://example.com/")
+
+    s = URIRef("_s")
+    t = URIRef("http://example.com/Class")
+    p = URIRef("http://example.com/uriwith:colon")
+    o = URIRef("_o")
+
+    g.add((s, RDF.type, t))
+    g.add((s, p, o))
+
+    ser = CIMXMLSerializer(g)
+    ser.write = writer
+    ser._namespace_lookup = [("http://example.com/", "ex")]
+    ser.qualifier_resolver = CIMQualifierResolver(UnderscoreQualifier())
+
+    ser.subject(s)
+
+    result = "".join(output)
+
+    assert f'<ex:Class rdf:about="#_s">' in result
+    assert f'<ex:uriwith:colon rdf:resource="#_o"/>' in result
+    assert ser.invalid_xml_flag == True
+    
 # Unit tests ._write_untyped_subject
 def test_write_untyped_subject_basic(capture_writer: tuple[list, Callable]) -> None:
     output, writer = capture_writer
@@ -1585,46 +1631,50 @@ def test_write_untyped_subject_noqualifier(capture_writer: tuple[list, Callable]
 @pytest.mark.parametrize("lookup", [[], None])
 def test_resolve_qname_nonamespaces(lookup: list|None) -> None:
     ser = CIMXMLSerializer(Graph())
+    ser._check_for_colon = Mock()
     ser._namespace_lookup = lookup
     ser.store.bind("ex", "http://example.com/") 
 
     result = ser._resolve_qname("http://example.com/p")
     # The namespace manager is ignored, so the result is not "ex:p" but the full uri.
     assert result == "http://example.com/p"
+    ser._check_for_colon.assert_called_once_with("http://example.com/p")
 
 
 @pytest.mark.parametrize(
-    "uri, lookup, expected",
+    "uri, lookup, exp_output, exp_colon_call",
     [
-        pytest.param("http://example.com/p", [("http://example.com/", "ex")], "ex:p", id="Simple qname"),
-        pytest.param("http://example.com/p", [("http://example.com/", "ex"), ("http://other.com/p", "ot")], "ex:p", id="Multiple namespaces in lookup"),
-        pytest.param("http://example.com/extended/p", [("http://example.com/", "ex")], "ex:extended/p", id="Partial namespace match"),
-        pytest.param("http://example.com/p", [("http://other.com/", "ot")], "http://example.com/p", id="No matching namespace"),
-        pytest.param(URIRef("http://example.com/p"), [("http://example.com/", "ex")], "ex:p", id="URIRef input with match"),
-        pytest.param("http://example.com/p", [("http://example.com/", "")], "http://example.com/p", id="Empty prefix"),
-        pytest.param("http://example.com/p", [("http://example.com/p", "ex")], "ex:", id="Namespace matches uri entirely"),
+        pytest.param("http://example.com/p", [("http://example.com/", "ex")], "ex:p", "p", id="Simple qname"),
+        pytest.param("http://example.com/p", [("http://example.com/", "ex"), ("http://other.com/p", "ot")], "ex:p", "p", id="Multiple namespaces in lookup"),
+        pytest.param("http://example.com/extended/p", [("http://example.com/", "ex")], "ex:extended/p", "extended/p", id="Partial namespace match"),
+        pytest.param("http://example.com/p", [("http://other.com/", "ot")], "http://example.com/p", "http://example.com/p", id="No matching namespace"),
+        pytest.param(URIRef("http://example.com/p"), [("http://example.com/", "ex")], "ex:p", "p", id="URIRef input with match"),
+        pytest.param("http://example.com/p", [("http://example.com/", "")], "http://example.com/p", "p", id="Empty prefix"),
+        pytest.param("http://example.com/p", [("http://example.com/p", "ex")], "ex:", "", id="Namespace matches uri entirely"),
         
         # ._namespace_lookup is ordered in reverse length order when made by the .serialize method. This ensures the longest match. 
         # The below tests document that this behaviour is not enforced by ._resolve_qname.
-        pytest.param("http://example.com/p", [("http://example.com/longer/", "exl"), ("http://example.com/", "ex")], "ex:p", id="Overlapping namespaces, shortest match"),
-        pytest.param("http://example.com/longer/p", [("http://example.com/longer/", "exl"), ("http://example.com/", "ex")], "exl:p", id="Overlapping namespaces, longest match"),
-        pytest.param("http://example.com/longer/p", [("http://example.com/", "ex"), ("http://example.com/longer/", "exl")], "ex:longer/p", id="Overlapping namespaces, the first match wins"),
+        pytest.param("http://example.com/p", [("http://example.com/longer/", "exl"), ("http://example.com/", "ex")], "ex:p", "p", id="Overlapping namespaces, shortest match"),
+        pytest.param("http://example.com/longer/p", [("http://example.com/longer/", "exl"), ("http://example.com/", "ex")], "exl:p", "p", id="Overlapping namespaces, longest match"),
+        pytest.param("http://example.com/longer/p", [("http://example.com/", "ex"), ("http://example.com/longer/", "exl")], "ex:longer/p", "longer/p", id="Overlapping namespaces, the first match wins"),
         
         # The method is at the moment only used for predicates, which should never be BNodes or Literals. The below tests document the behavior with such inputs.
-        pytest.param(Literal("http://example.com/p"), [("http://example.com/", "ex")], "ex:p", id="Literal input with match"),
-        pytest.param(BNode("http://example.com/bnode"), [("http://example.com/", "ex")], "ex:bnode", id="BNode input with match")
+        pytest.param(Literal("http://example.com/p"), [("http://example.com/", "ex")], "ex:p", "p", id="Literal input with match"),
+        pytest.param(BNode("http://example.com/bnode"), [("http://example.com/", "ex")], "ex:bnode", "bnode", id="BNode input with match")
     ]
 )
-def test_resolve_qname_various(uri: Any, lookup: list[tuple[str, str]], expected: str) -> None:
+def test_resolve_qname_various(uri: Any, lookup: list[tuple[str, str]], exp_output: str, exp_colon_call: str) -> None:
     g = Graph()
     ser = CIMXMLSerializer(g)
+    ser._check_for_colon = Mock()
     ser._namespace_lookup = lookup  
     result = ser._resolve_qname(uri)
-    assert result == expected
-
+    assert result == exp_output
+    ser._check_for_colon.assert_called_once_with(exp_colon_call)
 
 def test_resolve_qname_cache() -> None:
     ser = CIMXMLSerializer(Graph())
+    ser._check_for_colon = Mock()
     ser._namespace_lookup = [("http://example.com/", "ex")]
 
     first = ser._resolve_qname("http://example.com/p")
@@ -1635,6 +1685,28 @@ def test_resolve_qname_cache() -> None:
 
     second = ser._resolve_qname("http://example.com/p")
     assert second == "ex:p"  # still cached
+
+# Unit tests ._check_for_colon
+@pytest.mark.parametrize("flag", [True, False])
+def test_check_for_colon_invalidflagset(flag: bool) -> None:
+    ser = CIMXMLSerializer(Graph())
+    ser.invalid_xml_flag = flag
+    ser._check_for_colon("colon")   # Flag is kept False if not already True, but not changed to True if already False
+    assert ser.invalid_xml_flag == flag
+
+@pytest.mark.parametrize(
+    "predicate,expected", 
+    [
+        pytest.param("predicate", False, id="Valid predicate"),
+        pytest.param("http://example.com/nocolon", True, id="Valid name with namespace"),
+        pytest.param("http://example.com/uriwith:colon", True, id="Invalid predicate with colon"),
+        pytest.param("http://example.com/uriwith:colon:twice", True, id="Invalid predicate with colon twice"),
+    ]
+)
+def test_check_for_colon(predicate, expected):
+    ser = CIMXMLSerializer(Graph())
+    ser._check_for_colon(predicate)
+    assert ser.invalid_xml_flag == expected
 
 # Unit tests _subject_sort_key
 
