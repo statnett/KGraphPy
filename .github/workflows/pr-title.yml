@@ -1,0 +1,33 @@
+name: PR title
+
+# Pull requests are squash-merged, so the PR title becomes the commit message
+# on main that release-please reads. Enforce the Conventional Commits format.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: Conventional PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert|deps)(\([a-zA-Z0-9_./-]+\))?!?: [^ ].+$'
+          if [[ "$PR_TITLE" =~ $pattern ]]; then
+            echo "PR title OK: $PR_TITLE"
+          else
+            echo "::error::PR title must follow Conventional Commits, e.g. 'feat: add X', 'fix(parser): handle Y' or 'feat!: drop Z'."
+            echo "Got: $PR_TITLE"
+            exit 1
+          fi

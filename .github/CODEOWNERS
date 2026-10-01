@@ -1,0 +1,6 @@
+# Changes to CI/CD and packaging must be reviewed by a maintainer.
+/.github/                       @statnett/kgraphpy-maintainers
+/pyproject.toml                 @statnett/kgraphpy-maintainers
+/uv.lock                        @statnett/kgraphpy-maintainers
+/release-please-config.json     @statnett/kgraphpy-maintainers
+/.release-please-manifest.json  @statnett/kgraphpy-maintainers

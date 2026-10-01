@@ -53,10 +53,39 @@ For questions, issues, or general discussions, refer to the support guidelines:
 
 1. **Fork the Repository**
 2. **Create a New Branch** for your feature or bug fix.
-3. **Commit Your Changes** following conventional commit messages.
-4. **Run Tests** to ensure your changes do not introduce issues.
-5. **Open a Pull Request** and link to the related issue.
+3. **Commit Your Changes**. Individual commit messages are free-form, but descriptive messages are appreciated.
+4. **Run Tests** to ensure your changes do not introduce issues (`uv sync` then `uv run pytest`).
+5. **Open a Pull Request** with a **Conventional Commit title** and link to the related issue (see below).
 6. **Engage in Review** by addressing feedback and suggestions.
+
+=== Pull Request Titles
+Pull requests are **squash-merged**, so the PR title becomes the single commit on `main`. A CI check requires the title to follow link:https://www.conventionalcommits.org/[Conventional Commits]:
+
+----
+<type>[optional scope][!]: <description>
+----
+
+[cols="1,3"]
+|===
+| Type | Effect on the next release
+
+| `feat` | New feature. Bumps the minor version and is listed under *Features*.
+| `fix` | Bug fix. Bumps the patch version and is listed under *Bug Fixes*.
+| `perf`, `deps`, `docs`, `revert` | Bump the patch version and appear in the changelog.
+| `refactor`, `test`, `build`, `ci`, `chore` | Hidden from the changelog.
+| `!` after the type, e.g. `feat!:` | Breaking change. Bumps the minor version while below 1.0.0, the major version afterwards.
+|===
+
+Examples: `feat: add CIM JSON-LD serializer`, `fix(cimxml): escape colons in predicates`, `feat!: remove deprecated header API`.
+
+== Release Process
+Releases are fully automated with link:https://github.com/googleapis/release-please[release-please]:
+
+1. Every merge to `main` updates an open **Release PR** that bumps the version in `pyproject.toml` and updates `CHANGELOG.md` from the PR titles.
+2. The Release PR is opened by GitHub Actions, so CI does not start on it automatically. A maintainer **closes and reopens** it to run the required checks, then merges it. This creates a `vX.Y.Z` tag and GitHub Release.
+3. The distributions are built from the tag, and after approval in the `pypi` environment, published to link:https://pypi.org/project/kgraphpy/[PyPI] using Trusted Publishing (no API tokens), with signed provenance attestations.
+
+Do not edit the version in `pyproject.toml` or `CHANGELOG.md` by hand.
 
 == Issues and Feature Requests
 - Before opening a new issue, check existing issues to avoid duplicates.
